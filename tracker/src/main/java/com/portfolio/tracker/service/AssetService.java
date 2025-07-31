@@ -28,7 +28,7 @@ public class AssetService {
     public double calculateTotalValue() {
         return assetRepository.findAll()
                 .stream()
-                .mapToDouble(Asset::getQuantity)
-                .sum(); // Adds up all asset values
+                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit()) // Calculate total value
+                .sum(); // Adds up all asset total values
     }
-}
+} 
