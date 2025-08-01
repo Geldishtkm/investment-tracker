@@ -4,6 +4,7 @@ import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.service.CryptoPriceService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -53,7 +54,11 @@ public class AssetController {
         }
         throw new RuntimeException("Asset not found with id: " + id);
     }
-
+        @DeleteMapping("/{id}")  // ✅ This deletes from your portfolio
+        public ResponseEntity<Void> deleteAsset(@PathVariable Long id) {
+        assetService.deleteAssetById(id);
+        return ResponseEntity.noContent().build();
+    }
     // ✅ Get all assets with current crypto prices
     @GetMapping("/with-prices")
     public List<Map<String, Object>> getAllAssetsWithPrices() {

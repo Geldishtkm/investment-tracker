@@ -1,5 +1,8 @@
 package com.portfolio.tracker.service;
 
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -18,10 +21,17 @@ public class CryptoPriceService {
     // ✅ Get current price of a coin in USD
     public double getCryptoPriceInUSD(String coinId) {
         String url = "https://api.coingecko.com/api/v3/simple/price?ids=" + coinId + "&vs_currencies=usd";
-        Map<String, Map<String, Object>> response = restTemplate.getForObject(url, Map.class);
+        ResponseEntity<Map<String, Map<String, Object>>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {}
+        );
 
-        if (response != null && response.containsKey(coinId)) {
-            Object priceObj = response.get(coinId).get("usd");
+        Map<String, Map<String, Object>> priceMap = response.getBody();
+
+        if (priceMap != null && priceMap.containsKey(coinId)) {
+            Object priceObj = priceMap.get(coinId).get("usd");
             if (priceObj instanceof Number) {
                 return ((Number) priceObj).doubleValue();
             } else {
@@ -45,23 +55,23 @@ public class CryptoPriceService {
         Map<String, Object> imageMap = (Map<String, Object>) response.get("image");
 
         return Map.of(
-            "id", response.get("id"),
-            "symbol", response.get("symbol"),
-            "name", response.get("name"),
-            "image", imageMap.get("large")
+                "id", response.get("id"),
+                "symbol", response.get("symbol"),
+                "name", response.get("name"),
+                "image", imageMap.get("large")
         );
     }
 
-    // ✅ Get top 300 coins by market cap (includes image, price, etc.)
+    // ✅ Get top 100 coins by market cap (safe, typed)
     public List<Map<String, Object>> getTopCoins() {
-        String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=200&page=1&sparkline=false";
-        return restTemplate.getForObject(url, List.class);
-    }
-
-    // (Optional) Get all 17k+ coins - not recommended for frontend
-    public List<Map<String, String>> getAllCoins() {
-        String url = "https://api.coingecko.com/api/v3/coins/list";
-        return restTemplate.getForObject(url, List.class);
+        String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false";
+        ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {}
+        );
+        return response.getBody();
     }
 }
 

@@ -6,9 +6,4 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface AssetRepository extends JpaRepository<Asset, Long> {
-    // You get methods like:
-    // - findAll()
-    // - save(asset)
-    // - deleteById(id)
-    // - findById(id)
 }

@@ -31,6 +31,11 @@ public class AssetService {
                 .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
                 .sum();
     }
+    public void deleteAssetById(Long id) {
+    Asset asset = assetRepository.findById(id)
+        .orElseThrow(() -> new RuntimeException("Asset not found with id: " + id));
+    assetRepository.delete(asset);
+}
 
     // ✅ Add this method for your controller
     public Asset getAssetById(Long id) {
