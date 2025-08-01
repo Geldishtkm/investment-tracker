@@ -28,7 +28,13 @@ public class AssetService {
     public double calculateTotalValue() {
         return assetRepository.findAll()
                 .stream()
-                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit()) // Calculate total value
-                .sum(); // Adds up all asset total values
+                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
+                .sum();
     }
-} 
+
+    // ✅ Add this method for your controller
+    public Asset getAssetById(Long id) {
+        return assetRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Asset not found with id: " + id));
+    }
+}
