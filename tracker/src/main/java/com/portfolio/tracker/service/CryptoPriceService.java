@@ -54,7 +54,7 @@ public class CryptoPriceService {
 
     // ✅ Get top 300 coins by market cap (includes image, price, etc.)
     public List<Map<String, Object>> getTopCoins() {
-        String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=false";
+        String url = "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=200&page=1&sparkline=false";
         return restTemplate.getForObject(url, List.class);
     }
 
