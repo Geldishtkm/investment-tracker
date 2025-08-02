@@ -8,7 +8,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/crypto")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "http://localhost:5173") // adjust for production
 public class CryptoController {
 
     private final CryptoPriceService cryptoPriceService;
@@ -17,22 +17,21 @@ public class CryptoController {
         this.cryptoPriceService = cryptoPriceService;
     }
 
-    // ✅ Get current USD price for a coin
+    // ✅ Get current USD price for a coin (like bitcoin, ethereum)
     @GetMapping("/price/{coinId}")
     public double getCryptoPrice(@PathVariable String coinId) {
         return cryptoPriceService.getCryptoPriceInUSD(coinId.toLowerCase());
     }
 
-    // ✅ Get basic info (id, symbol, name, image) for a single coin
+    // ✅ Get details (id, symbol, name, image) of a coin
     @GetMapping("/details/{coinId}")
     public Map<String, Object> getCoinDetails(@PathVariable String coinId) {
         return cryptoPriceService.getCoinDetails(coinId.toLowerCase());
     }
 
-    // ✅ Get top 300 coins by market cap
+    // ✅ Get top coins from cache (auto-refreshes every 10 min)
     @GetMapping("/top")
     public List<Map<String, Object>> getTopCoins() {
         return cryptoPriceService.getTopCoins();
     }
 }
-
