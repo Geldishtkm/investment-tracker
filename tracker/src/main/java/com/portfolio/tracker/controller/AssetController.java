@@ -24,25 +24,25 @@ public class AssetController {
         this.cryptoPriceService = cryptoPriceService;
     }
 
-    // ✅ Add new asset
+    //Add new asset
     @PostMapping
     public Asset addAsset(@RequestBody Asset asset) {
         return assetService.saveAsset(asset);
     }
 
-    // ✅ Get all assets
+    //  Get all assets
     @GetMapping
     public List<Asset> getAllAssets() {
         return assetService.getAllAssets();
     }
 
-    // ✅ Get total portfolio value
+    // Get total portfolio value
     @GetMapping("/total")
     public double getTotalValue() {
         return assetService.calculateTotalValue();
     }
 
-    // ✅ Update one asset’s price
+    // Update one asset’s price
     @PutMapping("/{id}/update-price")
     public Asset updateAssetWithCurrentPrice(@PathVariable Long id) {
         Asset asset = assetService.getAssetById(id);
@@ -54,7 +54,7 @@ public class AssetController {
         }
         throw new RuntimeException("Asset not found with id: " + id);
     }
-        @DeleteMapping("/{id}")  // ✅ This deletes from your portfolio
+        @DeleteMapping("/{id}")  // delete
         public ResponseEntity<Void> deleteAsset(@PathVariable Long id) {
         assetService.deleteAssetById(id);
         return ResponseEntity.noContent().build();

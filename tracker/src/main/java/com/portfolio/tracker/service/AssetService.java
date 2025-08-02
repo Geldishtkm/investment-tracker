@@ -37,7 +37,6 @@ public class AssetService {
     assetRepository.delete(asset);
 }
 
-    // ✅ Add this method for your controller
     public Asset getAssetById(Long id) {
         return assetRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Asset not found with id: " + id));
