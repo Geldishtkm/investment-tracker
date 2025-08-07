@@ -19,12 +19,17 @@ public class Asset {
     private double pricePerUnit;
 
     @Column(name = "purchase_price_per_unit")
-    private double purchasePricePerUnit;  // <-- Added field
+    private double purchasePricePerUnit;
+
+    // 🔁 Relationship to User
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id") // foreign key column in asset table
+    private User user;
 
     // No-arg constructor required by JPA
     public Asset() {}
 
-    // Optional: Constructor with investment calc (useful for manual instantiation)
+    // Optional constructor
     public Asset(String name, double quantity, double pricePerUnit) {
         this.name = name;
         this.quantity = quantity;
@@ -73,12 +78,19 @@ public class Asset {
         this.pricePerUnit = pricePerUnit;
     }
 
-    // Added getter and setter for purchasePricePerUnit
     public double getPurchasePricePerUnit() {
         return purchasePricePerUnit;
     }
 
     public void setPurchasePricePerUnit(double purchasePricePerUnit) {
         this.purchasePricePerUnit = purchasePricePerUnit;
+    }
+
+    public User getUser() {
+        return user;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
     }
 }
