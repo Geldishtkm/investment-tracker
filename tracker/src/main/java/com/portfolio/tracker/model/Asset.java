@@ -1,6 +1,7 @@
 package com.portfolio.tracker.model;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
 public class Asset {
@@ -24,6 +25,7 @@ public class Asset {
     // 🔁 Relationship to User
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id") // foreign key column in asset table
+    @JsonIgnore // Prevent circular reference in JSON serialization
     private User user;
 
     // No-arg constructor required by JPA

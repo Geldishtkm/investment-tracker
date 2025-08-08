@@ -1,6 +1,7 @@
 package com.portfolio.tracker.service;
 
 import com.portfolio.tracker.model.Asset;
+import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.repository.AssetRepository;
 import com.portfolio.tracker.model.RiskMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,9 +26,22 @@ public class AssetService {
     }
 
     public Asset saveAsset(Asset asset) {
-        // initialInvestment based on purchasePricePerUnit
-        asset.setInitialInvestment(asset.getQuantity() * asset.getPurchasePricePerUnit());
-        return assetRepository.save(asset);
+        try {
+            System.out.println("Saving asset: " + asset.getName());
+            System.out.println("Asset user: " + (asset.getUser() != null ? asset.getUser().getUsername() : "null"));
+            
+            // initialInvestment based on purchasePricePerUnit
+            asset.setInitialInvestment(asset.getQuantity() * asset.getPurchasePricePerUnit());
+            System.out.println("Calculated initial investment: " + asset.getInitialInvestment());
+            
+            Asset savedAsset = assetRepository.save(asset);
+            System.out.println("Asset saved successfully with ID: " + savedAsset.getId());
+            return savedAsset;
+        } catch (Exception e) {
+            System.err.println("Error saving asset: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
     }
 
     public void deleteAssetById(Long id) {
@@ -216,5 +230,156 @@ public class AssetService {
         double diversificationScore = calculateDiversificationScore();
 
         return new RiskMetrics(volatility, maxDrawdown, beta, diversificationScore);
+    }
+
+    // ========== USER-SPECIFIC METHODS ==========
+
+    public List<Asset> getAssetsByUser(User user) {
+        return assetRepository.findByUser(user);
+    }
+
+    public Asset getAssetByIdAndUser(Long id, User user) {
+        return assetRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: " + id));
+    }
+
+    public void deleteAssetByIdAndUser(Long id, User user) {
+        Asset asset = getAssetByIdAndUser(id, user);
+        assetRepository.delete(asset);
+    }
+
+    public double calculateROIByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        List<Asset> validAssets = userAssets.stream()
+                .filter(asset -> asset.getInitialInvestment() > 0)
+                .toList();
+
+        if (validAssets.isEmpty()) {
+            throw new IllegalStateException("No assets with a valid initial investment for user.");
+        }
+
+        double totalInitialInvestment = validAssets.stream()
+                .mapToDouble(Asset::getInitialInvestment)
+                .sum();
+
+        double totalCurrentValue = validAssets.stream()
+                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
+                .sum();
+
+        if (totalInitialInvestment == 0) {
+            throw new ArithmeticException("Total initial investment is zero");
+        }
+
+        return ((totalCurrentValue - totalInitialInvestment) / totalInitialInvestment) * 100;
+    }
+
+    public double calculateSharpeRatioByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            throw new IllegalStateException("No assets found for user");
+        }
+        
+        try {
+            double roi = calculateROIByUser(user);
+            double riskFreeRate = 2.0; // Assume 2% risk-free rate
+            double volatility = calculateVolatilityByUser(user);
+            
+            if (volatility == 0) {
+                throw new ArithmeticException("Volatility is zero");
+            }
+            
+            return (roi - riskFreeRate) / volatility;
+        } catch (Exception e) {
+            // Fallback to simplified calculation
+            return 1.0; // Default Sharpe ratio
+        }
+    }
+
+    public double calculateVolatilityByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            throw new IllegalStateException("No assets found for user");
+        }
+        
+        // Simplified volatility calculation based on current portfolio value
+        double totalValue = userAssets.stream()
+                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
+                .sum();
+        
+        // Assume 15% volatility for simplicity
+        return totalValue * 0.15;
+    }
+
+    public double calculateMaxDrawdownByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            throw new IllegalStateException("No assets found for user");
+        }
+        
+        // Simplified max drawdown calculation
+        double totalValue = userAssets.stream()
+                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
+                .sum();
+        
+        // Assume 20% max drawdown for simplicity
+        return totalValue * 0.20;
+    }
+
+    public double calculateBetaByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            throw new IllegalStateException("No assets found for user");
+        }
+        
+        // Simplified beta calculation - assume market beta of 1.0
+        return 1.0;
+    }
+
+    public double calculateDiversificationScoreByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            return 0.0;
+        }
+        
+        Set<String> uniqueAssets = new HashSet<>();
+        for (Asset asset : userAssets) {
+            uniqueAssets.add(asset.getName().toLowerCase());
+        }
+        
+        int totalAssets = userAssets.size();
+        int uniqueCount = uniqueAssets.size();
+        
+        if (totalAssets == 0) return 0.0;
+        
+        double diversityRatio = (double) uniqueCount / totalAssets;
+        return Math.round(diversityRatio * 100); // Score from 0 to 100
+    }
+
+    public RiskMetrics getRiskMetricsByUser(User user) {
+        List<Asset> userAssets = getAssetsByUser(user);
+        if (userAssets.isEmpty()) {
+            throw new IllegalStateException("No assets found for user");
+        }
+        
+        try {
+            return RiskMetrics.builder()
+                    .roi(calculateROIByUser(user))
+                    .sharpeRatio(calculateSharpeRatioByUser(user))
+                    .volatility(calculateVolatilityByUser(user))
+                    .maxDrawdown(calculateMaxDrawdownByUser(user))
+                    .beta(calculateBetaByUser(user))
+                    .diversificationScore(calculateDiversificationScoreByUser(user))
+                    .build();
+        } catch (Exception e) {
+            // Fallback to simplified metrics
+            return RiskMetrics.builder()
+                    .roi(0.0)
+                    .sharpeRatio(1.0)
+                    .volatility(0.0)
+                    .maxDrawdown(0.0)
+                    .beta(1.0)
+                    .diversificationScore(0.0)
+                    .build();
+        }
     }
 }

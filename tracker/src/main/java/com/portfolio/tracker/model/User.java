@@ -2,6 +2,7 @@ package com.portfolio.tracker.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.*;
 
@@ -29,5 +30,6 @@ public class User {
     // One user can have many assets
     @Builder.Default
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore // Prevent circular reference in JSON serialization
     private List<Asset> assets = new ArrayList<>();
 }
