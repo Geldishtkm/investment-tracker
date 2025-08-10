@@ -10,50 +10,50 @@ public class Asset {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private double initialInvestment;
-
+    @Column(nullable = false)
     private String name;
 
+    @Column(nullable = false)
     private double quantity;
 
-    @Column(name = "price_per_unit")
+    @Column(name = "price_per_unit", nullable = false)
     private double pricePerUnit;
 
-    @Column(name = "purchase_price_per_unit")
+    @Column(name = "purchase_price_per_unit", nullable = false)
     private double purchasePricePerUnit;
 
-    // 🔁 Relationship to User
+    @Column(name = "initial_investment")
+    private double initialInvestment;
+
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id") // foreign key column in asset table
-    @JsonIgnore // Prevent circular reference in JSON serialization
+    @JoinColumn(name = "user_id")
+    @JsonIgnore
     private User user;
 
-    // No-arg constructor required by JPA
+    // Default constructor required by JPA
     public Asset() {}
 
-    // Optional constructor
-    public Asset(String name, double quantity, double pricePerUnit) {
+    // Constructor for creating new assets
+    public Asset(String name, double quantity, double pricePerUnit, double purchasePricePerUnit) {
         this.name = name;
         this.quantity = quantity;
         this.pricePerUnit = pricePerUnit;
-        this.initialInvestment = quantity * pricePerUnit;
+        this.purchasePricePerUnit = purchasePricePerUnit;
+        this.initialInvestment = quantity * purchasePricePerUnit;
     }
 
-    // Getters and setters
+    // Constructor for creating assets with current price
+    public Asset(String name, double quantity, double pricePerUnit) {
+        this(name, quantity, pricePerUnit, pricePerUnit);
+    }
+
+    // Getters and Setters
     public Long getId() {
         return id;
     }
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    public double getInitialInvestment() {
-        return initialInvestment;
-    }
-
-    public void setInitialInvestment(double initialInvestment) {
-        this.initialInvestment = initialInvestment;
     }
 
     public String getName() {
@@ -88,11 +88,47 @@ public class Asset {
         this.purchasePricePerUnit = purchasePricePerUnit;
     }
 
+    public double getInitialInvestment() {
+        return initialInvestment;
+    }
+
+    public void setInitialInvestment(double initialInvestment) {
+        this.initialInvestment = initialInvestment;
+    }
+
     public User getUser() {
         return user;
     }
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    // Helper method to calculate current total value
+    public double getCurrentTotalValue() {
+        return quantity * pricePerUnit;
+    }
+
+    // Helper method to calculate total gain/loss
+    public double getTotalGainLoss() {
+        return getCurrentTotalValue() - initialInvestment;
+    }
+
+    // Helper method to calculate gain/loss percentage
+    public double getGainLossPercentage() {
+        if (initialInvestment == 0) return 0.0;
+        return (getTotalGainLoss() / initialInvestment) * 100;
+    }
+
+    @Override
+    public String toString() {
+        return "Asset{" +
+                "id=" + id +
+                ", name='" + name + '\'' +
+                ", quantity=" + quantity +
+                ", currentPrice=" + pricePerUnit +
+                ", purchasePrice=" + purchasePricePerUnit +
+                ", initialInvestment=" + initialInvestment +
+                '}';
     }
 }

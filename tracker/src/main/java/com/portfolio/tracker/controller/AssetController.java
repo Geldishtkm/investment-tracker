@@ -30,20 +30,59 @@ public class AssetController {
         this.userService = userService;
     }
 
+    /**
+     * Test endpoint to verify the API is accessible without authentication
+     * @return simple test message
+     */
     @GetMapping("/test")
-    public ResponseEntity<String> testEndpoint() {
-        return ResponseEntity.ok("Asset controller is working!");
+    public ResponseEntity<?> testEndpoint() {
+        return ResponseEntity.ok(Map.of(
+            "message", "Asset API is accessible",
+            "timestamp", System.currentTimeMillis(),
+            "status", "OK"
+        ));
+    }
+
+    /**
+     * Debug endpoint to show authentication status
+     * @return authentication information
+     */
+    @GetMapping("/debug")
+    public ResponseEntity<?> debugAuth() {
+        try {
+            // Get current authentication context
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            
+            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
+                return ResponseEntity.ok(Map.of(
+                    "message", "User is authenticated",
+                    "username", auth.getName(),
+                    "authorities", auth.getAuthorities().toString(),
+                    "timestamp", System.currentTimeMillis()
+                ));
+            } else {
+                return ResponseEntity.ok(Map.of(
+                    "message", "User is NOT authenticated",
+                    "authentication", auth != null ? auth.getName() : "null",
+                    "timestamp", System.currentTimeMillis()
+                ));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                "message", "Error checking authentication",
+                "error", e.getMessage(),
+                "timestamp", System.currentTimeMillis()
+            ));
+        }
     }
 
     @GetMapping("/health")
     public ResponseEntity<String> healthCheck() {
         try {
-            // Try to access the database
             List<Asset> assets = assetService.getAllAssets();
             return ResponseEntity.ok("Database connection OK. Total assets: " + assets.size());
         } catch (Exception e) {
             System.err.println("Health check failed: " + e.getMessage());
-            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body("Database connection failed: " + e.getMessage());
         }
@@ -52,12 +91,10 @@ public class AssetController {
     @GetMapping
     public ResponseEntity<?> getAllAssets(Authentication authentication) {
         try {
-            // Get current user and return only their assets
             String username = authentication.getName();
             User user = userService.findByUsername(username);
             List<Asset> assets = assetService.getAssetsByUser(user);
             
-            // Convert to simple objects to avoid serialization issues
             List<Map<String, Object>> assetList = assets.stream()
                 .map(asset -> {
                     Map<String, Object> assetMap = new HashMap<>();
@@ -74,7 +111,6 @@ public class AssetController {
             return ResponseEntity.ok(assetList);
         } catch (Exception e) {
             System.err.println("Error getting assets: " + e.getMessage());
-            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Failed to get assets: " + e.getMessage()));
         }
@@ -83,12 +119,11 @@ public class AssetController {
     @PostMapping
     public ResponseEntity<?> createAsset(@RequestBody Asset asset, Authentication authentication) {
         try {
-            // Get current user and associate asset with them
             String username = authentication.getName();
             User user = userService.findByUsername(username);
             asset.setUser(user);
             
-            // Validate required fields
+            // Basic validation
             if (asset.getName() == null || asset.getName().trim().isEmpty()) {
                 return ResponseEntity.badRequest().body("Asset name is required");
             }
@@ -104,7 +139,6 @@ public class AssetController {
             
             Asset savedAsset = assetService.saveAsset(asset);
             
-            // Create a simple response object to avoid serialization issues
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "id", savedAsset.getId(),
                 "name", savedAsset.getName(),
@@ -116,7 +150,6 @@ public class AssetController {
             ));
         } catch (Exception e) {
             System.err.println("Error creating asset: " + e.getMessage());
-            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Failed to create asset: " + e.getMessage()));
         }
@@ -141,7 +174,6 @@ public class AssetController {
             User user = userService.findByUsername(username);
             Asset existingAsset = assetService.getAssetByIdAndUser(id, user);
             
-            // Update asset properties but keep the user relationship
             existingAsset.setName(asset.getName());
             existingAsset.setQuantity(asset.getQuantity());
             existingAsset.setPricePerUnit(asset.getPricePerUnit());
@@ -167,82 +199,182 @@ public class AssetController {
         }
     }
 
-    @GetMapping("/roi")
-    public ResponseEntity<?> getROI(Authentication authentication) {
+    @GetMapping("/analytics")
+    public ResponseEntity<?> getAnalytics(Authentication authentication) {
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
-            double roi = assetService.calculateROIByUser(user);
-            return ResponseEntity.ok(roi);
-        } catch (IllegalStateException | ArithmeticException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            
+            Map<String, Object> analytics = new HashMap<>();
+            
+            List<Asset> userAssets = assetService.getAssetsByUser(user);
+            double totalValue = assetService.getTotalValueByUser(user);
+            double totalInitialInvestment = userAssets.stream()
+                .mapToDouble(Asset::getInitialInvestment)
+                .sum();
+            
+            analytics.put("totalValue", totalValue);
+            analytics.put("totalInitialInvestment", totalInitialInvestment);
+            analytics.put("totalAssets", userAssets.size());
+            
+            // Try to get risk metrics, fallback to defaults if calculation fails
+            try {
+                RiskMetrics riskMetrics = assetService.getRiskMetricsByUser(user);
+                analytics.put("riskMetrics", riskMetrics);
+            } catch (Exception e) {
+                Map<String, Object> fallbackMetrics = new HashMap<>();
+                fallbackMetrics.put("roi", 0.0);
+                fallbackMetrics.put("sharpeRatio", 1.0);
+                fallbackMetrics.put("volatility", 0.0);
+                fallbackMetrics.put("maxDrawdown", 0.0);
+                fallbackMetrics.put("beta", 1.0);
+                fallbackMetrics.put("diversificationScore", 0.0);
+                analytics.put("riskMetrics", fallbackMetrics);
+            }
+            
+            // Calculate individual metrics with fallbacks
+            analytics.put("roi", safeCalculate(() -> assetService.calculateROIByUser(user), 0.0));
+            analytics.put("sharpeRatio", safeCalculate(() -> assetService.calculateSharpeRatioByUser(user), 1.0));
+            analytics.put("volatility", safeCalculate(() -> assetService.calculateVolatilityByUser(user), 0.0));
+            analytics.put("maxDrawdown", safeCalculate(() -> assetService.calculateMaxDrawdownByUser(user), 0.0));
+            analytics.put("beta", safeCalculate(() -> assetService.calculateBetaByUser(user), 1.0));
+            analytics.put("diversificationScore", safeCalculate(() -> assetService.calculateDiversificationScoreByUser(user), 0.0));
+            
+            // Build asset breakdown
+            List<Map<String, Object>> assetBreakdown = userAssets.stream()
+                .map(asset -> {
+                    Map<String, Object> assetData = new HashMap<>();
+                    assetData.put("id", asset.getId());
+                    assetData.put("name", asset.getName());
+                    assetData.put("quantity", asset.getQuantity());
+                    assetData.put("currentPrice", asset.getPricePerUnit());
+                    assetData.put("purchasePrice", asset.getPurchasePricePerUnit());
+                    assetData.put("currentValue", asset.getQuantity() * asset.getPricePerUnit());
+                    assetData.put("initialInvestment", asset.getInitialInvestment());
+                    
+                    double individualRoi = asset.getInitialInvestment() > 0 ? 
+                        ((asset.getQuantity() * asset.getPricePerUnit() - asset.getInitialInvestment()) / asset.getInitialInvestment()) * 100 : 0.0;
+                    assetData.put("individualRoi", individualRoi);
+                    
+                    return assetData;
+                })
+                .toList();
+            
+            analytics.put("assetBreakdown", assetBreakdown);
+            
+            return ResponseEntity.ok(analytics);
+            
+        } catch (Exception e) {
+            System.err.println("Error getting analytics: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to load analytics data: " + e.getMessage()));
         }
     }
 
-    @GetMapping("/sharpe-ratio")
-    public ResponseEntity<?> getSharpeRatio(Authentication authentication) {
+    @GetMapping("/portfolio-summary")
+    public ResponseEntity<?> getPortfolioSummary(Authentication authentication) {
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
-            double sharpe = assetService.calculateSharpeRatioByUser(user);
-            return ResponseEntity.ok(sharpe);
-        } catch (IllegalStateException | ArithmeticException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            
+            Map<String, Object> summary = new HashMap<>();
+            
+            List<Asset> userAssets = assetService.getAssetsByUser(user);
+            double totalValue = assetService.getTotalValueByUser(user);
+            double totalInitialInvestment = userAssets.stream()
+                .mapToDouble(Asset::getInitialInvestment)
+                .sum();
+            
+            double totalGain = totalValue - totalInitialInvestment;
+            double totalGainPercentage = totalInitialInvestment > 0 ? 
+                (totalGain / totalInitialInvestment) * 100 : 0.0;
+            
+            summary.put("totalValue", totalValue);
+            summary.put("totalInitialInvestment", totalInitialInvestment);
+            summary.put("totalAssets", userAssets.size());
+            summary.put("totalGain", totalGain);
+            summary.put("totalGainPercentage", totalGainPercentage);
+            
+            // Build asset list with gains
+            List<Map<String, Object>> assets = userAssets.stream()
+                .map(asset -> {
+                    Map<String, Object> assetData = new HashMap<>();
+                    assetData.put("id", asset.getId());
+                    assetData.put("name", asset.getName());
+                    assetData.put("quantity", asset.getQuantity());
+                    assetData.put("currentPrice", asset.getPricePerUnit());
+                    assetData.put("purchasePrice", asset.getPurchasePricePerUnit());
+                    assetData.put("currentValue", asset.getQuantity() * asset.getPricePerUnit());
+                    assetData.put("initialInvestment", asset.getInitialInvestment());
+                    
+                    double gain = (asset.getQuantity() * asset.getPricePerUnit()) - asset.getInitialInvestment();
+                    double gainPercentage = asset.getInitialInvestment() > 0 ? 
+                        (gain / asset.getInitialInvestment()) * 100 : 0.0;
+                    
+                    assetData.put("gain", gain);
+                    assetData.put("gainPercentage", gainPercentage);
+                    
+                    return assetData;
+                })
+                .toList();
+            
+            summary.put("assets", assets);
+            
+            return ResponseEntity.ok(summary);
+            
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to load portfolio summary: " + e.getMessage()));
         }
     }
 
-    @GetMapping("/volatility")
-    public ResponseEntity<?> getVolatility(Authentication authentication) {
+    @GetMapping("/with-prices")
+    public ResponseEntity<?> getAllAssetsWithPrices(Authentication authentication) {
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
-            double vol = assetService.calculateVolatilityByUser(user);
-            return ResponseEntity.ok(vol);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            List<Asset> userAssets = assetService.getAssetsByUser(user);
+            
+            List<Map<String, Object>> assetsWithPrices = userAssets.stream()
+                .map(asset -> {
+                    Map<String, Object> assetData = new HashMap<>();
+                    assetData.put("id", asset.getId());
+                    assetData.put("name", asset.getName());
+                    assetData.put("quantity", asset.getQuantity());
+                    assetData.put("currentPrice", asset.getPricePerUnit());
+                    assetData.put("purchasePricePerUnit", asset.getPurchasePricePerUnit());
+                    assetData.put("pricePerUnit", asset.getPricePerUnit());
+                    assetData.put("initialInvestment", asset.getInitialInvestment());
+                    assetData.put("totalValue", asset.getQuantity() * asset.getPricePerUnit());
+                    
+                    double profitLoss = asset.getInitialInvestment() > 0 ? 
+                        (asset.getQuantity() * asset.getPricePerUnit()) - asset.getInitialInvestment() : 0.0;
+                    assetData.put("profitLoss", profitLoss);
+                    
+                    return assetData;
+                })
+                .toList();
+            
+            return ResponseEntity.ok(assetsWithPrices);
+            
+        } catch (Exception e) {
+            System.err.println("Error getting assets with prices: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to get assets with prices: " + e.getMessage()));
         }
     }
-
-    @GetMapping("/max-drawdown")
-    public ResponseEntity<?> getMaxDrawdown(Authentication authentication) {
+    
+    // Helper method to safely calculate metrics with fallback values
+    private double safeCalculate(CalculationSupplier supplier, double fallback) {
         try {
-            String username = authentication.getName();
-            User user = userService.findByUsername(username);
-            double maxDD = assetService.calculateMaxDrawdownByUser(user);
-            return ResponseEntity.ok(maxDD);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return supplier.get();
+        } catch (Exception e) {
+            return fallback;
         }
     }
-
-    @GetMapping("/beta")
-    public ResponseEntity<?> getBeta(Authentication authentication) {
-        try {
-            String username = authentication.getName();
-            User user = userService.findByUsername(username);
-            double beta = assetService.calculateBetaByUser(user);
-            return ResponseEntity.ok(beta);
-        } catch (IllegalStateException | ArithmeticException | IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
-    }
-
-    @GetMapping("/diversification-score")
-    public double getDiversificationScore(Authentication authentication) {
-        String username = authentication.getName();
-        User user = userService.findByUsername(username);
-        return assetService.calculateDiversificationScoreByUser(user);
-    }
-
-    @GetMapping("/risk-metrics")
-    public ResponseEntity<?> getRiskMetrics(Authentication authentication) {
-        try {
-            String username = authentication.getName();
-            User user = userService.findByUsername(username);
-            RiskMetrics metrics = assetService.getRiskMetricsByUser(user);
-            return ResponseEntity.ok(metrics);
-        } catch (IllegalStateException | ArithmeticException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
+    
+    @FunctionalInterface
+    private interface CalculationSupplier {
+        double get() throws Exception;
     }
 }

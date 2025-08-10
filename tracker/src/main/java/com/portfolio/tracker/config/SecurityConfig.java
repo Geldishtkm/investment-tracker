@@ -16,12 +16,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
     @Autowired
     private JwtFilter jwtFilter;
@@ -38,17 +42,23 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        logger.info("Configuring Spring Security filter chain...");
+        
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/**").permitAll()
                 .requestMatchers("/api/assets/test").permitAll()
+                .requestMatchers("/api/assets/debug").permitAll()
+                .requestMatchers("/api/crypto/**").permitAll()
+                .requestMatchers("/api/price-history/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll() // If using H2
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
+        logger.info("Spring Security configured with JWT filter and CORS enabled");
         return http.build();
     }
 
@@ -62,6 +72,12 @@ public class SecurityConfig {
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
+        
+        logger.info("CORS configuration set up with allowed origins: {}, methods: {}, headers: {}", 
+                   configuration.getAllowedOriginPatterns(), 
+                   configuration.getAllowedMethods(), 
+                   configuration.getAllowedHeaders());
+        
         return source;
     }
 }
