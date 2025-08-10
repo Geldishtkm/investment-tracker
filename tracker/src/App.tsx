@@ -7,6 +7,7 @@ import PortfolioSummary from './components/PortfolioSummary';
 import EmptyState from './components/EmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
+import VaRDashboard from './components/VaRDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 
@@ -47,7 +48,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'debug';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'debug';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -165,7 +166,7 @@ function App() {
   const handleAddAsset = async (asset: Omit<Asset, 'id'>) => {
     try {
       
-      const savedAsset = await assetService.addAsset(asset);
+      await assetService.addAsset(asset);
       
       await loadAssets();
       showToast('success', 'Asset added successfully!');
@@ -329,6 +330,16 @@ function App() {
                 📈 Analytics
               </button>
               <button
+                onClick={() => setCurrentPage('var')}
+                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                  currentPage === 'var'
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/30 transform scale-105' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                }`}
+              >
+                🧮 VaR
+              </button>
+              <button
                 onClick={() => setCurrentPage('debug')}
                 className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
                   currentPage === 'debug'
@@ -454,6 +465,17 @@ function App() {
                 <p className="text-gray-400">Analyze your portfolio performance and market trends</p>
               </div>
               <AnalyticsPage />
+            </div>
+          )}
+          {currentPage === 'var' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+                  🧮 VaR Dashboard
+                </h2>
+                <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
+              </div>
+              <VaRDashboard />
             </div>
           )}
 

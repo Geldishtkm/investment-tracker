@@ -35,7 +35,7 @@ const CryptoPriceUpdate: React.FC<CryptoPriceUpdateProps> = ({ assets, onPriceUp
               ...asset,
               currentPrice,
               priceChange,
-              priceChangePercentage
+              priceChangePercent: priceChangePercentage
             });
           }
         } catch (error) {
@@ -130,7 +130,7 @@ const CryptoPriceUpdate: React.FC<CryptoPriceUpdateProps> = ({ assets, onPriceUp
         {cryptoAssets.map((asset) => {
           const hasCurrentPrice = asset.currentPrice !== undefined;
           const priceChange = asset.priceChange || 0;
-          const priceChangePercent = asset.priceChangePercentage || 0;
+          const priceChangePercent = asset.priceChangePercent || 0;
 
           return (
             <div key={asset.id} className="flex items-center justify-between p-3 bg-gray-700/30 rounded-lg border border-gray-600/20">
