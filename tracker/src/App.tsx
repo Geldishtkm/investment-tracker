@@ -12,6 +12,7 @@ import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDash
 import SecurityDashboard from './components/SecurityDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
+import RealTimeMarketDashboard from './components/RealTimeMarketDashboard';
 
 // Inline Toast component for App.tsx
 const AppToast: React.FC<{
@@ -50,7 +51,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'security' | 'debug';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'security' | 'real-time' | 'debug';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -283,100 +284,107 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-green-500/30">
-                  <span className="text-2xl">💰</span>
-                </div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+              <div className="flex items-center gap-4">
+                <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 tracking-tight">
                   Portfolio Tracker
                 </h1>
               </div>
               {currentUser && (
-                <div className="ml-6 flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                <div className="ml-6 flex items-center gap-3">
+                  <div className="w-2.5 h-2.5 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50"></div>
                   <span className="text-sm text-gray-300">
-                    Welcome, <span className="font-medium text-green-400">{currentUser.username}</span>!
+                    Welcome, <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">{currentUser.username}</span>
                   </span>
                 </div>
               )}
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1">
               <button
                 onClick={() => setCurrentPage('portfolio')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'portfolio' 
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg shadow-green-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                📊 Portfolio
+                Portfolio
               </button>
               <button
                 onClick={() => setCurrentPage('coins')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'coins'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg shadow-blue-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                🪙 Top Coins
+                Top Coins
               </button>
               <button
                 onClick={() => setCurrentPage('analytics')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'analytics'
-                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-xl shadow-purple-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                📈 Analytics
+                Analytics
               </button>
               <button
                 onClick={() => setCurrentPage('var')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'var'
-                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-xl shadow-teal-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                🧮 VaR
+                VaR
               </button>
               <button
                 onClick={() => setCurrentPage('rebalancing')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'rebalancing'
-                    ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-xl shadow-orange-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                ⚖️ Rebalancing
+                Rebalancing
               </button>
               <button
                 onClick={() => setCurrentPage('security')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'security'
-                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-600/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-xl shadow-purple-600/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                🔐 Security
+                Security
               </button>
               <button
                 onClick={() => setCurrentPage('debug')}
-                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
                   currentPage === 'debug'
-                    ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg shadow-yellow-500/30 transform scale-105' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xl shadow-amber-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
                 }`}
               >
-                🛠️ Debug
+                Debug
               </button>
-              <div className="h-6 w-px bg-gray-600 mx-2"></div>
+              <button
+                onClick={() => setCurrentPage('real-time')}
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
+                  currentPage === 'real-time'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-xl shadow-cyan-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
+                }`}
+              >
+                Real-Time
+              </button>
+              <div className="h-8 w-px bg-gradient-to-b from-gray-600/50 to-transparent mx-3"></div>
               <button
                 onClick={handleLogout}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-all duration-300 hover:shadow-lg hover:shadow-red-900/30"
+                className="px-6 py-3 rounded-2xl text-sm font-semibold text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-all duration-300 hover:shadow-lg hover:shadow-red-900/30 border border-red-800/30 hover:border-red-700/50"
               >
-                🚪 Logout
+                Logout
               </button>
               <button
                 onClick={async () => {
@@ -556,58 +564,45 @@ function App() {
                       className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600/20 to-indigo-600/20 text-blue-300 hover:from-blue-600/30 hover:to-indigo-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-blue-600/20 border border-blue-600/30"
                       title="Test auth controller"
                     >
-                      🔐 Test Auth Controller
+                      Test Auth Controller
                     </button>
                     <button
                       onClick={async () => {
                         try {
                           const response = await fetch('http://localhost:8080/api/assets/test');
-                          const data = await response.json();
-                          showToast('success', `Assets Controller Response: ${JSON.stringify(data)}`);
+                          if (response.ok) {
+                            const data = await response.json();
+                            showToast('success', `Assets Test: ${JSON.stringify(data)}`);
+                          } else {
+                            showToast('error', `Assets Test Error: ${response.status} ${response.statusText}`);
+                          }
                         } catch (error) {
-                          showToast('error', `Assets Controller Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                          showToast('error', `Assets Test Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
                       }}
-                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-green-600/20 to-emerald-600/20 text-green-300 hover:from-green-600/30 hover:to-emerald-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 border border-green-600/30"
-                      title="Test assets controller (public)"
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-blue-600/20 to-indigo-600/20 text-blue-300 hover:from-blue-600/30 hover:to-indigo-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-blue-600/20 border border-blue-600/30"
+                      title="Test assets endpoint (no auth required)"
                     >
-                      📊 Test Assets Controller
+                      Get Assets (No Auth)
                     </button>
                     <button
                       onClick={async () => {
                         try {
                           const response = await fetch('http://localhost:8080/api/assets/debug');
-                          const data = await response.json();
-                          showToast('success', `Debug Endpoint Response: ${JSON.stringify(data)}`);
-                        } catch (error) {
-                          showToast('error', `Debug Endpoint Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                        }
-                      }}
-                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-purple-600/20 to-pink-600/20 text-purple-300 hover:from-purple-600/30 hover:to-pink-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-purple-600/20 border border-purple-600/30"
-                      title="Test debug endpoint (public)"
-                    >
-                      🔍 Test Debug Endpoint
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const response = await fetch('http://localhost:8080/api/assets', {
-                            headers: authService.getAuthHeader()
-                          });
                           if (response.ok) {
                             const data = await response.json();
-                            showToast('success', `Assets Response: ${JSON.stringify(data)}`);
+                            showToast('success', `Assets Debug: ${JSON.stringify(data)}`);
                           } else {
-                            showToast('error', `Assets Error: ${response.status} ${response.statusText}`);
+                            showToast('error', `Assets Debug Error: ${response.status} ${response.statusText}`);
                           }
                         } catch (error) {
-                          showToast('error', `Assets Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                          showToast('error', `Assets Debug Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
                       }}
-                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-yellow-600/20 to-orange-600/20 text-yellow-300 hover:from-yellow-600/30 hover:to-orange-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-600/20 border border-yellow-600/30"
-                      title="Get all assets (requires auth)"
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-indigo-600/20 to-purple-600/20 text-indigo-300 hover:from-indigo-600/30 hover:to-purple-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-indigo-600/20 border border-indigo-600/30"
+                      title="Debug assets endpoint (no auth required)"
                     >
-                      📊 Get Assets (Auth Required)
+                      Debug Assets
                     </button>
                     <button
                       onClick={async () => {
@@ -617,7 +612,7 @@ function App() {
                           });
                           if (response.ok) {
                             const data = await response.json();
-                            showToast('success', `Assets with Prices Response: ${JSON.stringify(data)}`);
+                            showToast('success', `Assets with Prices: ${data.length} assets loaded`);
                           } else {
                             showToast('error', `Assets with Prices Error: ${response.status} ${response.statusText}`);
                           }
@@ -628,7 +623,7 @@ function App() {
                       className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-teal-600/20 to-cyan-600/20 text-teal-300 hover:from-teal-600/30 hover:to-cyan-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-teal-600/20 border border-teal-600/30"
                       title="Get all assets with current prices (requires auth)"
                     >
-                      📈 Get Assets with Prices (Auth Required)
+                      Get Assets with Prices (Auth Required)
                     </button>
                     <button
                       onClick={async () => {
@@ -649,7 +644,7 @@ function App() {
                       className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-orange-600/20 to-red-600/20 text-orange-300 hover:from-orange-600/30 hover:to-red-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-orange-600/20 border border-orange-600/30"
                       title="Test portfolio rebalancing health endpoint"
                     >
-                      ⚖️ Test Portfolio Rebalancing Health
+                      Test Portfolio Rebalancing Health
                     </button>
                     <button
                       onClick={async () => {
@@ -670,7 +665,28 @@ function App() {
                       className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-purple-300 hover:from-purple-600/30 hover:to-blue-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-purple-600/20 border border-purple-600/30"
                       title="Test security service health endpoint"
                     >
-                      🔐 Test Security Service Health
+                      Test Security Service Health
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('http://localhost:8080/api/websocket/health', {
+                            headers: authService.getAuthHeader()
+                          });
+                          if (response.ok) {
+                            const data = await response.json();
+                            showToast('success', `WebSocket Service Health: ${JSON.stringify(data)}`);
+                          } else {
+                            showToast('error', `WebSocket Service Health Error: ${response.status} ${response.statusText}`);
+                          }
+                        } catch (error) {
+                          showToast('error', `WebSocket Service Health Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-cyan-600/20 to-blue-600/20 text-cyan-300 hover:from-cyan-600/30 hover:to-blue-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-cyan-600/20 border border-cyan-600/30"
+                      title="Test WebSocket service health endpoint"
+                    >
+                      Test WebSocket Service Health
                     </button>
                   </div>
                 </div>
@@ -678,7 +694,7 @@ function App() {
                 <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
-                      <span className="text-xl">🔐</span>
+                      <div className="w-5 h-5 bg-white rounded-full"></div>
                     </div>
                     <h3 className="text-xl font-semibold text-green-300">Authentication</h3>
                   </div>
@@ -687,7 +703,7 @@ function App() {
                       onClick={async () => {
                         try {
                           const isAuthValid = await authService.testAuth();
-                          showToast('success', `Auth Status: ${isAuthValid ? '✅ Valid' : '❌ Invalid'}`);
+                          showToast('success', `Auth Status: ${isAuthValid ? 'Valid' : 'Invalid'}`);
                         } catch (error) {
                           showToast('error', `Auth Test Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                         }
@@ -695,12 +711,23 @@ function App() {
                       className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-green-600/20 to-emerald-600/20 text-green-300 hover:from-green-600/30 hover:to-emerald-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 border border-green-600/30"
                       title="Test authentication with backend"
                     >
-                      🔍 Test Auth (Frontend)
+                      Test Auth (Frontend)
                     </button>
 
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+          {currentPage === 'real-time' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent mb-2">
+                  🔄 Real-Time Market Data
+                </h2>
+                <p className="text-gray-400">Monitor live cryptocurrency prices and market trends</p>
+              </div>
+              <RealTimeMarketDashboard />
             </div>
           )}
         </div>

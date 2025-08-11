@@ -1,0 +1,309 @@
+name: 🧪 Portfolio Tracker Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run performance tests nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_VERSION: '3.9.11'
+
+jobs:
+  # Unit Tests - Fast execution, run on every commit
+  unit-tests:
+    name: 🚀 Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+        
+    - name: 🔧 Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: 🧪 Run Unit Tests
+      run: |
+        echo "🧪 Running Unit Tests..."
+        ./mvnw test -Dtest="*ServiceTest,*ControllerTest" -DfailIfNoTests=false
+        
+    - name: 📊 Generate Test Report
+      if: always()
+      run: |
+        echo "📊 Generating Test Report..."
+        ./mvnw surefire-report:report-only
+        
+    - name: 📤 Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: unit-test-results
+        path: target/surefire-reports/
+        retention-days: 30
+
+  # Integration Tests - Medium execution, run on PRs
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: unit-tests
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+        
+    - name: 🔧 Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: 🧪 Run Integration Tests
+      run: |
+        echo "🔗 Running Integration Tests..."
+        ./mvnw test -Dtest="*IntegrationTest" -DfailIfNoTests=false
+        
+    - name: 📊 Generate Integration Test Report
+      if: always()
+      run: |
+        echo "📊 Generating Integration Test Report..."
+        ./mvnw surefire-report:report-only
+        
+    - name: 📤 Upload Integration Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-results
+        path: target/surefire-reports/
+        retention-days: 30
+
+  # Performance Tests - Slow execution, run nightly
+  performance-tests:
+    name: 📈 Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+        
+    - name: 🔧 Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: 🧪 Run Performance Tests
+      run: |
+        echo "📈 Running Performance Tests..."
+        ./mvnw test -Dtest="*PerformanceTest" -DfailIfNoTests=false
+        
+    - name: 📊 Generate Performance Test Report
+      if: always()
+      run: |
+        echo "📊 Generating Performance Test Report..."
+        ./mvnw surefire-report:report-only
+        
+    - name: 📤 Upload Performance Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: performance-test-results
+        path: target/surefire-reports/
+        retention-days: 30
+
+  # Code Coverage - Run on all test types
+  code-coverage:
+    name: 📊 Code Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [unit-tests, integration-tests]
+    if: always()
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+        
+    - name: 🔧 Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: 🧪 Run All Tests with Coverage
+      run: |
+        echo "🧪 Running All Tests with Coverage..."
+        ./mvnw clean test jacoco:report
+        
+    - name: 📊 Generate Coverage Report
+      if: always()
+      run: |
+        echo "📊 Generating Coverage Report..."
+        ./mvnw jacoco:report
+        
+    - name: 📤 Upload Coverage Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: target/site/jacoco/
+        retention-days: 30
+        
+    - name: 📈 Upload to Codecov
+      if: always()
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./target/site/jacoco/jacoco.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  # Quality Gates - Run after all tests
+  quality-gates:
+    name: 🎯 Quality Gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [unit-tests, integration-tests, code-coverage]
+    if: always()
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: 'maven'
+        
+    - name: 🔧 Cache Maven packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+        
+    - name: 📊 Check Coverage Thresholds
+      run: |
+        echo "📊 Checking Coverage Thresholds..."
+        ./mvnw jacoco:check
+        
+    - name: 🔍 Run Static Analysis
+      run: |
+        echo "🔍 Running Static Analysis..."
+        ./mvnw spotbugs:check
+        
+    - name: 📋 Generate Quality Report
+      if: always()
+      run: |
+        echo "📋 Generating Quality Report..."
+        ./mvnw site:site
+
+  # Test Summary - Final job to report results
+  test-summary:
+    name: 📋 Test Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, performance-tests, code-coverage, quality-gates]
+    if: always()
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📊 Download Test Results
+      uses: actions/download-artifact@v4
+      with:
+        name: unit-test-results
+        path: ./unit-test-results/
+        
+    - name: 📊 Download Coverage Report
+      uses: actions/download-artifact@v4
+      with:
+        name: coverage-report
+        path: ./coverage-report/
+        
+    - name: 📋 Generate Test Summary
+      run: |
+        echo "📋 Generating Test Summary..."
+        echo "## 🧪 Test Suite Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ✅ Unit Tests" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ needs.unit-tests.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Duration: ${{ needs.unit-tests.outputs.duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Integration Tests" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ needs.integration-tests.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Duration: ${{ needs.integration-tests.outputs.duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📈 Performance Tests" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ needs.performance-tests.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Duration: ${{ needs.performance-tests.outputs.duration }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Code Coverage" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ needs.code-coverage.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Coverage Report: Available in artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Quality Gates" >> $GITHUB_STEP_SUMMARY
+        echo "- Status: ${{ needs.quality-gates.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Static Analysis: Completed" >> $GITHUB_STEP_SUMMARY
+        
+    - name: 📤 Upload Test Summary
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-summary
+        path: ./coverage-report/
+        retention-days: 30
+
+# Workflow Configuration
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Environment Variables
+env:
+  MAVEN_OPTS: -Xmx2048m -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+  TEST_PARALLEL: true
+  TEST_THREAD_COUNT: 4
