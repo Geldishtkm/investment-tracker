@@ -8,6 +8,8 @@ import EmptyState from './components/EmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
 import VaRDashboard from './components/VaRDashboard';
+import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDashboard';
+import SecurityDashboard from './components/SecurityDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 
@@ -48,7 +50,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'debug';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'security' | 'debug';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -340,6 +342,26 @@ function App() {
                 🧮 VaR
               </button>
               <button
+                onClick={() => setCurrentPage('rebalancing')}
+                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                  currentPage === 'rebalancing'
+                    ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/30 transform scale-105' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                }`}
+              >
+                ⚖️ Rebalancing
+              </button>
+              <button
+                onClick={() => setCurrentPage('security')}
+                className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
+                  currentPage === 'security'
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-600/30 transform scale-105' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50 hover:shadow-lg hover:shadow-gray-700/30'
+                }`}
+              >
+                🔐 Security
+              </button>
+              <button
                 onClick={() => setCurrentPage('debug')}
                 className={`px-4 py-2 rounded-xl transition-all duration-300 font-medium ${
                   currentPage === 'debug'
@@ -479,6 +501,30 @@ function App() {
             </div>
           )}
 
+          {currentPage === 'rebalancing' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent mb-2">
+                  ⚖️ Portfolio Rebalancing
+                </h2>
+                <p className="text-gray-400">Optimize your portfolio with Mean-Variance Optimization and Black-Litterman models</p>
+              </div>
+              <PortfolioRebalancingDashboard />
+            </div>
+          )}
+
+          {currentPage === 'security' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
+                  🔐 Security & Compliance
+                </h2>
+                <p className="text-gray-400">Enterprise-grade security with MFA, audit logging, and compliance monitoring</p>
+              </div>
+              <SecurityDashboard />
+            </div>
+          )}
+
           {currentPage === 'debug' && (
             <div className="space-y-6">
               <div className="text-center mb-8">
@@ -583,6 +629,48 @@ function App() {
                       title="Get all assets with current prices (requires auth)"
                     >
                       📈 Get Assets with Prices (Auth Required)
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('http://localhost:8080/api/portfolio-rebalancing/health', {
+                            headers: authService.getAuthHeader()
+                          });
+                          if (response.ok) {
+                            const data = await response.json();
+                            showToast('success', `Portfolio Rebalancing Health: ${JSON.stringify(data)}`);
+                          } else {
+                            showToast('error', `Portfolio Rebalancing Health Error: ${response.status} ${response.statusText}`);
+                          }
+                        } catch (error) {
+                          showToast('error', `Portfolio Rebalancing Health Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-orange-600/20 to-red-600/20 text-orange-300 hover:from-orange-600/30 hover:to-red-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-orange-600/20 border border-orange-600/30"
+                      title="Test portfolio rebalancing health endpoint"
+                    >
+                      ⚖️ Test Portfolio Rebalancing Health
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('http://localhost:8080/api/security/health', {
+                            headers: authService.getAuthHeader()
+                          });
+                          if (response.ok) {
+                            const data = await response.json();
+                            showToast('success', `Security Service Health: ${JSON.stringify(data)}`);
+                          } else {
+                            showToast('error', `Security Service Health Error: ${response.status} ${response.statusText}`);
+                          }
+                        } catch (error) {
+                          showToast('error', `Security Service Health Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                        }
+                      }}
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-purple-600/20 to-blue-600/20 text-purple-300 hover:from-purple-600/30 hover:to-blue-600/30 transition-all duration-300 hover:shadow-lg hover:shadow-purple-600/20 border border-purple-600/30"
+                      title="Test security service health endpoint"
+                    >
+                      🔐 Test Security Service Health
                     </button>
                   </div>
                 </div>

@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Search, ArrowLeft, Loader2, Coins, Plus, TrendingUp, Sparkles, Star, Zap, Target } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Percent,
+  ArrowUpRight,
+  ArrowDownRight,
+  Star,
+  StarOff,
+  RefreshCw,
+  Plus,
+  Minus,
+  Info,
+  ArrowLeft,
+  Coins
+} from 'lucide-react';
 import { Coin, Asset } from '../types';
 import { assetService } from '../services/api';
 import Toast from './Toast';

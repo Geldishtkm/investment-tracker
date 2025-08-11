@@ -51,10 +51,13 @@ public class SecurityConfig {
                 .requestMatchers("/auth/**").permitAll()
                 .requestMatchers("/api/assets/test").permitAll()
                 .requestMatchers("/api/assets/debug").permitAll()
-                .requestMatchers("/api/crypto/**").permitAll()
-                .requestMatchers("/api/price-history/**").permitAll()
-                .requestMatchers("/h2-console/**").permitAll() // If using H2
-                .anyRequest().authenticated()
+                                    .requestMatchers("/api/crypto/**").permitAll()
+                    .requestMatchers("/api/price-history/**").permitAll()
+                    .requestMatchers("/api/portfolio-rebalancing/**").permitAll() // Allow portfolio rebalancing for testing
+                    .requestMatchers("/api/security/**").permitAll() // Allow security endpoints for testing
+                    .requestMatchers("/api/admin/**").permitAll() // Allow admin endpoints for testing
+                    .requestMatchers("/h2-console/**").permitAll() // If using H2
+                    .anyRequest().authenticated()
             )
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 

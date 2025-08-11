@@ -1,7 +1,16 @@
 import React from 'react';
-import { 
-  BarChart3, PieChart, Shield, Settings, Menu, X,
-  Home, TrendingUp, Activity
+import {
+  Home,
+  BarChart3,
+  Coins,
+  TrendingUp,
+  Calculator,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  Shield,
+  Activity
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -25,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, currentPage, onPage
     <>
       {/* Mobile Overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
           onClick={onToggle}
         />
@@ -61,15 +70,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle, currentPage, onPage
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
-              
+
               return (
                 <button
                   key={item.id}
                   onClick={() => onPageChange(item.id)}
                   className={`
                     w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200
-                    ${isActive 
-                      ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-green-400' 
+                    ${isActive
+                      ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/30 text-green-400'
                       : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
                     }
                   `}

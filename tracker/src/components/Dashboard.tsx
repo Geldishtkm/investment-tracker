@@ -1,8 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  DollarSign, TrendingUp, TrendingDown, Activity, Calendar, 
-  ArrowUpRight, ArrowDownRight, PieChart, BarChart3, Eye, EyeOff,
-  RefreshCw, Plus, Minus, LogOut
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Plus,
+  Minus,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  BarChart3,
+  PieChart,
+  Activity,
+  Target,
+  Zap,
+  Shield,
+  Award,
+  TrendingUpIcon,
+  LogOut
 } from 'lucide-react';
 import { Asset } from '../types';
 
@@ -170,7 +184,7 @@ const Dashboard: React.FC<DashboardProps> = ({ assets, totalValue, onRefresh }) 
               {metrics.assetDistribution.map((asset, index) => (
                 <div key={index} className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div 
+                    <div
                       className="w-4 h-4 rounded-full"
                       style={{ backgroundColor: asset.color }}
                     ></div>
@@ -197,7 +211,7 @@ const Dashboard: React.FC<DashboardProps> = ({ assets, totalValue, onRefresh }) 
                  const currentValue = asset.quantity * asset.pricePerUnit;
                  const assetGain = currentValue - (asset.initialInvestment || 0);
                  const assetGainPercent = (asset.initialInvestment || 0) > 0 ? (assetGain / (asset.initialInvestment || 0)) * 100 : 0;
-                
+
                 return (
                   <div key={asset.id} className="flex items-center justify-between p-4 bg-gray-700/30 rounded-lg border border-gray-600/20">
                     <div className="flex items-center gap-4">

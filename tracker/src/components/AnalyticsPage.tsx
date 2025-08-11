@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { assetService } from '../services/api';
-import { TrendingUp, TrendingDown, BarChart3, PieChart, Target, Zap, Shield, Activity, DollarSign, Percent, Award, TrendingUpIcon } from 'lucide-react';
+import {
+  TrendingUp,
+  BarChart3,
+  PieChart,
+  Activity,
+  DollarSign,
+  Percent,
+  ArrowUpRight,
+  ArrowDownRight,
+  Calendar,
+  Filter
+} from 'lucide-react';
 
 interface PortfolioMetrics {
   totalValue: number;
@@ -241,7 +252,7 @@ const AnalyticsPage: React.FC = () => {
             <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-blue-600/50 hover:shadow-xl hover:shadow-blue-600/20 transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-                  <Target size={24} className="text-white" />
+                  <Activity size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium">Investment</div>
               </div>
@@ -269,7 +280,7 @@ const AnalyticsPage: React.FC = () => {
             <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-purple-600/50 hover:shadow-xl hover:shadow-purple-600/20 transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-700 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-600/40">
-                  <Award size={24} className="text-white" />
+                  <Activity size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium">Sharpe Ratio</div>
               </div>
@@ -286,7 +297,7 @@ const AnalyticsPage: React.FC = () => {
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 mb-8 shadow-xl shadow-black/20">
             <div className="flex items-center gap-3 mb-8">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-                <Shield size={24} className="text-white" />
+                <Activity size={24} className="text-white" />
               </div>
               <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
                 Risk Metrics
@@ -318,7 +329,7 @@ const AnalyticsPage: React.FC = () => {
               </div>
               <div className="group text-center p-6 bg-gradient-to-r from-red-600/20 to-pink-600/20 backdrop-blur-sm rounded-2xl border border-red-600/30 hover:border-red-500/50 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="w-14 h-14 bg-gradient-to-br from-red-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-600/40">
-                  <TrendingDown size={24} className="text-white" />
+                  <ArrowDownRight size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium mb-2">Max Drawdown</div>
                 <div className="text-xl font-bold text-red-400 group-hover:text-red-300 transition-colors duration-300">
@@ -328,7 +339,7 @@ const AnalyticsPage: React.FC = () => {
               </div>
               <div className="group text-center p-6 bg-gradient-to-r from-purple-600/20 to-pink-600/20 backdrop-blur-sm rounded-2xl border border-purple-600/30 hover:border-purple-500/50 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
-                  <Target size={24} className="text-white" />
+                  <Activity size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium mb-2">Beta</div>
                 <div className="text-xl font-bold text-purple-400 group-hover:text-purple-300 transition-colors duration-300">
@@ -338,7 +349,7 @@ const AnalyticsPage: React.FC = () => {
               </div>
               <div className="group text-center p-6 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-2xl border border-green-600/30 hover:border-green-500/50 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-600/40">
-                  <Zap size={24} className="text-white" />
+                  <Activity size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium mb-2">Diversification</div>
                 <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">

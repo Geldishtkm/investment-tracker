@@ -152,4 +152,38 @@ public class UserService {
     public long getUserCount() {
         return userRepository.count();
     }
+
+    /**
+     * Authenticate a user with username and password
+     * @param username The username to authenticate
+     * @param password The plain text password to verify
+     * @return The authenticated user if credentials are valid
+     * @throws RuntimeException if authentication fails
+     */
+    public User authenticateUser(String username, String password) {
+        User user = findByUsername(username);
+        if (passwordEncoder.matches(password, user.getPassword())) {
+            return user;
+        }
+        throw new RuntimeException("Invalid credentials for user: " + username);
+    }
+
+    /**
+     * Update a user entity
+     * @param user The user to update
+     * @return The updated user
+     */
+    public User updateUser(User user) {
+        return userRepository.save(user);
+    }
+
+    /**
+     * Get a user by username (alias for findByUsername)
+     * @param username The username to search for
+     * @return The user if found
+     * @throws RuntimeException if user is not found
+     */
+    public User getUserByUsername(String username) {
+        return findByUsername(username);
+    }
 }

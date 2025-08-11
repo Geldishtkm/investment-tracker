@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import { Edit, Save, X, Trash2, TrendingUp, DollarSign, Percent, Target } from 'lucide-react';
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Edit,
+  Save,
+  X,
+  Trash2,
+  MoreVertical,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  AlertTriangle,
+  Percent
+} from 'lucide-react';
 import { Asset } from '../types';
 import { assetService } from '../services/api';
 
