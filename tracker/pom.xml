@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.1.4</version>
+        <version>3.2.12</version>
         <relativePath/>
     </parent>
 
@@ -65,7 +65,7 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- JWT dependencies (new modular setup) -->
+        <!-- JWT dependencies -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
@@ -89,7 +89,6 @@
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <version>6.0.0</version>
-            <scope>provided</scope>
         </dependency>
 
         <!-- Lombok -->
@@ -126,6 +125,12 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
+        </dependency>
+
+        <!-- Flyway Database Migrations -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
         </dependency>
 
         <!-- JUnit Platform Suite for Test Organization -->
