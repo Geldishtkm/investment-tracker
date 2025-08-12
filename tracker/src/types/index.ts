@@ -30,11 +30,35 @@ export interface AuthResponse {
   token: string;
   message?: string;
   username?: string;
+  requiresMfa?: boolean;
 }
 
 export interface User {
   username: string;
   isAuthenticated: boolean;
+  mfaEnabled?: boolean;
+  mfaSecret?: string;
+}
+
+// MFA Types
+export interface MfaSetupResponse {
+  success: boolean;
+  message: string;
+  secret?: string;
+  qrCode?: string;
+  backupCodes?: string[];
+}
+
+export interface MfaVerificationResponse {
+  success: boolean;
+  message: string;
+  token?: string;
+  requiresMfa?: boolean;
+}
+
+export interface MfaVerificationRequest {
+  username: string;
+  code: string;
 }
 
 export interface ApiResponse<T> {

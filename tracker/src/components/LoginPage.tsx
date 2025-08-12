@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, Shield, Zap } from 'lucide-react';
-import { LoginCredentials } from '../types';
+import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, Shield, Zap, Smartphone } from 'lucide-react';
+import { LoginCredentials, MfaVerificationResponse } from '../types';
 import { authService } from '../services/authService';
 
 interface LoginPageProps {
@@ -16,6 +16,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [requiresMfa, setRequiresMfa] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaUsername, setMfaUsername] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +27,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
     try {
       const authResponse = await authService.login(credentials);
+      
+      // Check if MFA is required
+      if (authResponse.requiresMfa) {
+        setRequiresMfa(true);
+        setMfaUsername(credentials.username);
+        console.log('MFA required for user:', credentials.username);
+        return;
+      }
+      
       // Token is already saved by authService.login(), no need to call saveToken again
       console.log('Login successful for user:', authResponse.username);
       onLoginSuccess();
@@ -42,6 +54,34 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       [field]: e.target.value
     }));
     if (error) setError(''); // Clear error when user starts typing
+  };
+
+  const handleMfaVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaCode.trim()) {
+      setError('Please enter your MFA code');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const mfaResponse = await authService.verifyMfa(mfaUsername, mfaCode);
+      
+      if (mfaResponse.success && mfaResponse.token) {
+        // Save the token and complete login
+        authService.saveToken(mfaResponse.token);
+        console.log('MFA verification successful, login completed');
+        onLoginSuccess();
+      } else {
+        setError(mfaResponse.message || 'MFA verification failed');
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'MFA verification failed');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -163,6 +203,83 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
               </div>
             </form>
           </div>
+
+          {/* MFA Verification Section */}
+          {requiresMfa && (
+            <div className="mt-8 glass-card p-6 border border-purple-600/30">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
+                  <Smartphone size={24} className="text-white" />
+                </div>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                  🔐 Multi-Factor Authentication
+                </h3>
+                <p className="text-gray-400">
+                  Enter the 6-digit code from your authenticator app
+                </p>
+              </div>
+
+              <form onSubmit={handleMfaVerification} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">
+                    MFA Code
+                  </label>
+                  <input
+                    type="text"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value)}
+                    className="w-full px-4 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-purple-600/40 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 text-center text-lg font-mono tracking-widest"
+                    placeholder="000000"
+                    maxLength={6}
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-4 bg-gradient-to-r from-red-600/20 to-red-500/20 backdrop-blur-sm border border-red-500/40 rounded-xl">
+                    <div className="flex items-center gap-2 text-red-400">
+                      <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                      <span className="text-sm font-medium">{error}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-purple-500/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Verifying...
+                    </>
+                  ) : (
+                    <>
+                      <span>Verify & Sign In</span>
+                      <ArrowRight size={18} />
+                    </>
+                  )}
+                </button>
+
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRequiresMfa(false);
+                      setMfaCode('');
+                      setError('');
+                    }}
+                    className="text-purple-400 hover:text-purple-300 text-sm transition-colors"
+                    disabled={isLoading}
+                  >
+                    ← Back to Login
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Features */}
           <div className="mt-8 grid grid-cols-1 gap-4">

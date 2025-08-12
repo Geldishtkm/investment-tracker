@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, UserPlus, CheckCircle } from 'lucide-react';
-import { RegisterCredentials } from '../types';
+import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, QrCode, Copy } from 'lucide-react';
+import { RegisterCredentials, MfaSetupResponse } from '../types';
 import { authService } from '../services/authService';
 
 interface RegisterPageProps {
@@ -18,6 +18,8 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null);
+  const [showMfaSetup, setShowMfaSetup] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +41,21 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
     }
 
     try {
+      // First, register the user
       await authService.register(credentials);
-      onRegisterSuccess();
+      
+      // Then automatically set up MFA for enhanced security
+      console.log('Registration successful, setting up MFA...');
+      const mfaResponse = await authService.setupMfa(credentials.username, credentials.password);
+      
+      if (mfaResponse.success) {
+        setMfaSetup(mfaResponse);
+        setShowMfaSetup(true);
+        console.log('MFA setup successful:', mfaResponse);
+      } else {
+        console.warn('MFA setup failed, but registration was successful');
+        onRegisterSuccess();
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');
     } finally {
@@ -214,6 +229,108 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
               </div>
             </form>
           </div>
+
+          {/* MFA Setup Section */}
+          {showMfaSetup && mfaSetup && (
+            <div className="mt-8 glass-card p-6 border border-purple-600/30">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
+                  <Shield size={24} className="text-white" />
+                </div>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                  🔐 Multi-Factor Authentication Setup
+                </h3>
+                <p className="text-gray-400">
+                  Your account is now protected with enterprise-grade security
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* QR Code Section */}
+                <div className="text-center">
+                  <h4 className="text-lg font-semibold text-white mb-3">Scan QR Code</h4>
+                  {mfaSetup.qrCode && (
+                    <div className="bg-white p-4 rounded-xl inline-block">
+                      <img 
+                        src={mfaSetup.qrCode} 
+                        alt="MFA QR Code" 
+                        className="w-48 h-48"
+                      />
+                    </div>
+                  )}
+                  <p className="text-sm text-gray-400 mt-3">
+                    Use Google Authenticator or any TOTP app
+                  </p>
+                </div>
+
+                {/* Secret Key Section */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-white">Manual Setup</h4>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">Secret Key</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={mfaSetup.secret || ''}
+                        readOnly
+                        className="flex-1 px-3 py-2 bg-gray-800/50 border border-gray-700/50 rounded-lg text-white text-sm font-mono"
+                      />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(mfaSetup.secret || '')}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300 hover:text-white transition-colors"
+                        title="Copy to clipboard"
+                      >
+                        <Copy size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {mfaSetup.backupCodes && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">Backup Codes</label>
+                      <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-3">
+                        <p className="text-xs text-gray-400 mb-2">
+                          Save these codes in a secure location. You can use them if you lose access to your MFA device.
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {mfaSetup.backupCodes.map((code, index) => (
+                            <div key={index} className="text-sm font-mono text-white bg-gray-700 px-2 py-1 rounded text-center">
+                              {code}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-4">
+                    <button
+                      onClick={() => {
+                        setShowMfaSetup(false);
+                        onRegisterSuccess();
+                      }}
+                      className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-300"
+                    >
+                      Continue to Login
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-gradient-to-r from-blue-600/20 to-purple-600/20 backdrop-blur-sm border border-blue-500/30 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <Shield className="w-5 h-5 text-blue-400" />
+                  <div>
+                    <h4 className="text-white font-semibold">Security Features Enabled</h4>
+                    <p className="text-gray-300 text-sm">
+                      • Multi-Factor Authentication • Account Lockout Protection • Audit Logging • Session Monitoring
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Features */}
           <div className="mt-8 grid grid-cols-1 gap-4">

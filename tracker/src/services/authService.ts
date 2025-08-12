@@ -1,4 +1,4 @@
-import { LoginCredentials, RegisterCredentials, AuthResponse, User } from '../types';
+import { LoginCredentials, RegisterCredentials, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
 
 const AUTH_BASE_URL = 'http://localhost:8080/auth';
 
@@ -179,6 +179,70 @@ export const authService = {
     } catch (error) {
       console.error('Auth test error:', error);
       return false;
+    }
+  },
+
+  // MFA Methods
+  setupMfa: async (username: string, password: string): Promise<MfaSetupResponse> => {
+    try {
+      const response = await fetch('http://localhost:8080/api/security/mfa/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `MFA setup failed with status ${response.status}`);
+      }
+
+      const result: MfaSetupResponse = await response.json();
+      return result;
+    } catch (error) {
+      console.error('MFA setup error:', error);
+      throw error;
+    }
+  },
+
+  verifyMfa: async (username: string, code: string): Promise<MfaVerificationResponse> => {
+    try {
+      const response = await fetch('http://localhost:8080/api/security/mfa/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, code })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `MFA verification failed with status ${response.status}`);
+      }
+
+      const result: MfaVerificationResponse = await response.json();
+      return result;
+    } catch (error) {
+      console.error('MFA verification error:', error);
+      throw error;
+    }
+  },
+
+  getMfaStatus: async (username: string): Promise<any> => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/security/mfa/status/${username}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to get MFA status with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Get MFA status error:', error);
+      throw error;
     }
   }
 };

@@ -29,6 +29,7 @@ A modern, ultra-fast React + TypeScript frontend for tracking investment portfol
 - 📱 **Mobile Friendly** - Works perfectly on all device sizes
 - ⚡ **Real-time Updates** - Instant updates when adding/editing assets
 - 🔄 **Refresh Data** - Manual refresh capability
+- 🚀 **Real-Time Market Data** - Live cryptocurrency prices via WebSocket (automatic streaming)
 
 ## Prerequisites
 
@@ -62,6 +63,53 @@ A modern, ultra-fast React + TypeScript frontend for tracking investment portfol
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
 - `npm run lint` - Run ESLint
+
+## 🚀 Real-Time Market Data
+
+The application now features **automatic real-time market data streaming** via WebSocket connections. This feature demonstrates advanced reactive programming concepts and provides live cryptocurrency price updates.
+
+### ✨ **Key Features:**
+
+- **🔄 Automatic Streaming** - No manual controls needed, starts streaming immediately when connected
+- **📡 WebSocket Connection** - Real-time bidirectional communication with the backend
+- **💹 Live Price Updates** - Cryptocurrency prices update every 5 seconds automatically
+- **🎯 Symbol Management** - Add/remove cryptocurrency symbols to watch
+- **📊 Visual Indicators** - Real-time connection and streaming status
+- **⚡ Performance Optimized** - Uses CompletableFuture for concurrent processing
+
+### 🔧 **How It Works:**
+
+1. **Auto-Connection** - WebSocket connects automatically when component loads
+2. **Auto-Streaming** - Market data begins streaming immediately after connection
+3. **Real-Time Updates** - Prices update continuously without user intervention
+4. **Smart Reconnection** - Automatically reconnects if connection is lost
+5. **Efficient Processing** - Backend processes multiple symbols concurrently
+
+### 📡 **Backend Endpoints:**
+
+- `GET /api/websocket/health` - WebSocket service health check
+- `GET /api/websocket/subscriptions` - Current subscription status
+- `POST /api/websocket/update/{symbol}` - Trigger immediate update for symbol
+- `WS /ws` - WebSocket endpoint for real-time data
+
+### 🎯 **Default Symbols:**
+
+The system automatically streams data for these cryptocurrencies:
+- **BTC** (Bitcoin)
+- **ETH** (Ethereum)  
+- **ADA** (Cardano)
+- **DOT** (Polkadot)
+- **LINK** (Chainlink)
+
+### 💡 **Technical Implementation:**
+
+- **Frontend**: React with TypeScript, WebSocket API
+- **Backend**: Spring Boot with WebSocket support
+- **Reactive Programming**: CompletableFuture for concurrent operations
+- **Data Flow**: Scheduled updates every 5 seconds
+- **Error Handling**: Automatic reconnection with exponential backoff
+
+---
 
 ## Backend Requirements
 

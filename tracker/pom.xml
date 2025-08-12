@@ -24,11 +24,21 @@
     </properties>
 
     <dependencies>
-        <!-- Spring Web -->
+        <!-- Spring Boot Starter Web (for existing JPA and REST endpoints) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+
+        <!-- Reactor Core for Reactive Programming (without conflicting with Spring Web) -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+
+
+
+
 
         <!-- Spring WebSocket -->
         <dependency>
