@@ -19,12 +19,13 @@ import { assetService } from '../services/api';
 
 interface AssetCardProps {
   asset: Asset;
+  livePrice?: number;
   onUpdate: (asset: Asset) => void;
   onDelete: (id: number, assetName: string) => void;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
-const AssetCard: React.FC<AssetCardProps> = ({ asset, onUpdate, onDelete, onShowToast }) => {
+const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDelete, onShowToast }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: asset.name,
@@ -74,10 +75,18 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, onUpdate, onDelete, onShow
     }
   };
 
-  const currentValue = asset.quantity * asset.pricePerUnit;
-  const initialInvestment = asset.initialInvestment || currentValue; // Fallback to current value if not set
+  // Use live price if available, otherwise fall back to stored price
+  const currentPrice = livePrice || asset.pricePerUnit;
+  const currentValue = asset.quantity * currentPrice;
+  const initialInvestment = asset.initialInvestment || (asset.quantity * asset.purchasePricePerUnit) || currentValue;
   const roi = currentValue - initialInvestment;
   const roiPercentage = initialInvestment > 0 ? (roi / initialInvestment) * 100 : 0;
+  
+  // Calculate price change from purchase price
+  const priceChange = currentPrice - (asset.purchasePricePerUnit || asset.pricePerUnit);
+  const priceChangePercent = (asset.purchasePricePerUnit || asset.pricePerUnit) > 0 
+    ? (priceChange / (asset.purchasePricePerUnit || asset.pricePerUnit)) * 100 
+    : 0;
 
   return (
     <div className="bg-gradient-to-br from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:shadow-xl hover:shadow-gray-900/50 transition-all duration-300 group">
@@ -177,8 +186,23 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, onUpdate, onDelete, onShow
                 <div className="text-lg font-bold text-white">{asset.quantity.toLocaleString()}</div>
               </div>
               <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                <div className="text-sm text-gray-400 mb-1">Current Price</div>
-                <div className="text-lg font-bold text-white">${asset.pricePerUnit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</div>
+                <div className="text-sm text-gray-400 mb-1">
+                  Current Price
+                  {livePrice && (
+                    <span className="ml-2 text-xs text-green-400">🟢 Live</span>
+                  )}
+                </div>
+                <div className="text-lg font-bold text-white">
+                  ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                </div>
+                {livePrice && priceChange !== 0 && (
+                  <div className={`text-xs flex items-center gap-1 mt-1 ${
+                    priceChange >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    {priceChange >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                    {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(6)} ({priceChangePercent >= 0 ? '+' : ''}{priceChangePercent.toFixed(2)}%)
+                  </div>
+                )}
               </div>
             </div>
 

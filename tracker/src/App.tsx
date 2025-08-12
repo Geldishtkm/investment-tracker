@@ -11,7 +11,7 @@ import VaRDashboard from './components/VaRDashboard';
 import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
-import RealTimeMarketDashboard from './components/RealTimeMarketDashboard';
+
 
 // Inline Toast component for App.tsx
 const AppToast: React.FC<{
@@ -50,7 +50,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'real-time';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -346,16 +346,7 @@ function App() {
               >
                 Rebalancing
               </button>
-              <button
-                onClick={() => setCurrentPage('real-time')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'real-time'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-xl shadow-cyan-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Real-Time
-              </button>
+
               <div className="h-8 w-px bg-gradient-to-b from-gray-600/50 to-transparent mx-3"></div>
               <button
                 onClick={handleLogout}
@@ -380,6 +371,28 @@ function App() {
                 <p className="text-gray-400">Track your cryptocurrency investments and performance</p>
               </div>
               <PortfolioSummary assets={assetsWithPrices} />
+              
+              {/* Real-Time Market Data Widget */}
+              {assets.length > 0 && (
+                <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center">
+                        <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                      </div>
+                      🔄 Live Market Data
+                    </h3>
+                    <div className="text-sm text-gray-400">
+                      Auto-updating portfolio values
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-300">
+                    💡 Your portfolio values are automatically updated with real-time market prices via WebSocket connection. 
+                    No manual refresh needed - prices update continuously in the background.
+                  </div>
+                </div>
+              )}
+              
               {assets.length === 0 ? (
                 <EmptyState onAddAsset={() => setCurrentPage('coins')} />
               ) : (
@@ -388,6 +401,7 @@ function App() {
                     <AssetCard
                       key={asset.id}
                       asset={asset}
+                      livePrice={asset.currentPrice}
                       onUpdate={(updatedAsset) => handleUpdateAsset(asset.id, {
                         name: updatedAsset.name,
                         quantity: updatedAsset.quantity,
@@ -461,17 +475,7 @@ function App() {
             </div>
           )}
 
-          {currentPage === 'real-time' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent mb-2">
-                  🔄 Real-Time Market Data
-                </h2>
-                <p className="text-gray-400">Monitor live cryptocurrency prices and market trends</p>
-              </div>
-              <RealTimeMarketDashboard />
-            </div>
-          )}
+
         </div>
       </main>
 

@@ -1,5 +1,6 @@
 package com.portfolio.tracker.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -17,6 +18,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.handler.HandlerMappingIntrospector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.portfolio.tracker.security.JwtFilter;
 
 import java.util.Arrays;
 
@@ -25,6 +27,9 @@ import java.util.Arrays;
 public class SecurityConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
+    
+    @Autowired
+    private JwtFilter jwtFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -46,6 +51,7 @@ public class SecurityConfig {
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(jwtFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/assets/test")).permitAll()
@@ -66,10 +72,10 @@ public class SecurityConfig {
                 .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
-                .anyRequest().permitAll() // Temporarily allow all requests for testing
+                .anyRequest().authenticated() // Require authentication for all other requests
             );
 
-        logger.info("Spring Security configured with CORS enabled (JWT filter temporarily disabled)");
+        logger.info("Spring Security configured with CORS enabled and JWT filter enabled");
         return http.build();
     }
 
