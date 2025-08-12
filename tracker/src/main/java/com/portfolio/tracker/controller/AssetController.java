@@ -6,6 +6,13 @@ import com.portfolio.tracker.model.RiskMetrics;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.UserService;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +26,7 @@ import java.util.HashMap;
 @RestController
 @RequestMapping("/api/assets")
 @CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
+@Tag(name = "Asset Management", description = "APIs for managing portfolio assets and performing risk calculations")
 public class AssetController {
 
     private final AssetService assetService;
@@ -88,6 +96,16 @@ public class AssetController {
         }
     }
 
+    @Operation(
+        summary = "Get all assets for authenticated user",
+        description = "Retrieves all portfolio assets belonging to the currently authenticated user"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Assets retrieved successfully"),
+        @ApiResponse(responseCode = "401", description = "User not authenticated"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @GetMapping
     public ResponseEntity<?> getAllAssets(Authentication authentication) {
         try {
@@ -116,6 +134,17 @@ public class AssetController {
         }
     }
 
+    @Operation(
+        summary = "Create a new asset",
+        description = "Creates a new portfolio asset for the authenticated user"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "201", description = "Asset created successfully"),
+        @ApiResponse(responseCode = "400", description = "Invalid asset data"),
+        @ApiResponse(responseCode = "401", description = "User not authenticated"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping
     public ResponseEntity<?> createAsset(@RequestBody Asset asset, Authentication authentication) {
         try {

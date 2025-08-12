@@ -4,6 +4,15 @@ import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.PortfolioSummary;
 import com.portfolio.tracker.model.RiskMetrics;
 import com.portfolio.tracker.service.ReactivePortfolioService;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -24,15 +33,22 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/reactive/portfolio")
 @CrossOrigin(origins = "*")
+@Tag(name = "Reactive Portfolio Operations", description = "High-performance reactive endpoints for portfolio calculations and real-time market data")
 public class ReactivePortfolioController {
 
     @Autowired
     private ReactivePortfolioService reactivePortfolioService;
 
-    /**
-     * Calculate portfolio summary reactively
-     * This endpoint processes assets concurrently without blocking
-     */
+    @Operation(
+        summary = "Calculate portfolio summary reactively",
+        description = "Processes portfolio assets concurrently using reactive programming for high performance"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Portfolio summary calculated successfully",
+                    content = @Content(schema = @Schema(implementation = PortfolioSummary.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid asset data"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @PostMapping("/summary")
     public CompletableFuture<PortfolioSummary> calculatePortfolioSummary(@RequestBody List<Asset> assets) {
         return reactivePortfolioService.calculatePortfolioSummaryReactive(assets);
@@ -47,10 +63,16 @@ public class ReactivePortfolioController {
         return reactivePortfolioService.processMultiplePortfoliosReactive(portfolios);
     }
 
-    /**
-     * Calculate risk metrics reactively
-     * Demonstrates parallel processing of complex financial calculations
-     */
+    @Operation(
+        summary = "Calculate risk metrics reactively",
+        description = "Computes VaR, volatility, and other risk metrics using parallel processing"
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Risk metrics calculated successfully",
+                    content = @Content(schema = @Schema(implementation = RiskMetrics.class))),
+        @ApiResponse(responseCode = "400", description = "Invalid asset data"),
+        @ApiResponse(responseCode = "500", description = "Internal server error")
+    })
     @PostMapping("/risk-metrics")
     public CompletableFuture<RiskMetrics> calculateRiskMetrics(@RequestBody List<Asset> assets) {
         return reactivePortfolioService.calculateRiskMetricsReactive(assets);
