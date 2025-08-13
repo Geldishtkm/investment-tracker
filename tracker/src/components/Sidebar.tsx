@@ -2,12 +2,8 @@ import React from 'react';
 import {
   Home,
   BarChart3,
-  Coins,
   TrendingUp,
-  Calculator,
   Settings,
-  LogOut,
-  Menu,
   X,
   Shield,
   Activity

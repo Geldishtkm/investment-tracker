@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * Service for fetching cryptocurrency prices and details from external APIs
@@ -55,17 +57,43 @@ public class CryptoPriceService {
             logger.debug("Refreshing top coins cache...");
             
             String url = buildTopCoinsUrl();
+            logger.info("Fetching from CoinGecko URL: {}", url);
+            
             ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    null,
-                    new ParameterizedTypeReference<>() {}
+                url,
+                HttpMethod.GET,
+                null,
+                new ParameterizedTypeReference<>() {}
             );
 
             if (response.getBody() != null) {
-                cachedTopCoins = response.getBody();
+                List<Map<String, Object>> coins = response.getBody();
+                logger.info("Received {} coins from CoinGecko", coins.size());
+                
+                // Log first few coins for debugging
+                if (!coins.isEmpty()) {
+                    Map<String, Object> firstCoin = coins.get(0);
+                    logger.info("First coin data: id={}, name={}, current_price={}, price_change_24h={}", 
+                        firstCoin.get("id"), 
+                        firstCoin.get("name"), 
+                        firstCoin.get("current_price"),
+                        firstCoin.get("price_change_24h"));
+                    
+                    // Validate price data
+                    Object priceObj = firstCoin.get("current_price");
+                    if (priceObj != null) {
+                        double price = ((Number) priceObj).doubleValue();
+                        if (price > 100000) {
+                            logger.warn("Suspiciously high price detected: {} for coin {}", price, firstCoin.get("name"));
+                        }
+                    }
+                }
+                
+                // Validate and fix prices before caching
+                List<Map<String, Object>> validatedCoins = validateAndFixPrices(coins);
+                cachedTopCoins = validatedCoins;
                 lastCacheTime = System.currentTimeMillis();
-                logger.info("Successfully refreshed cache with {} coins", cachedTopCoins.size());
+                logger.info("Successfully refreshed cache with {} validated coins", cachedTopCoins.size());
             } else {
                 logger.warn("Received empty response when refreshing cache");
             }
@@ -185,6 +213,45 @@ public class CryptoPriceService {
     }
 
     /**
+     * Validate and fix crypto price data
+     * @param coins list of coins to validate
+     * @return validated list of coins
+     */
+    private List<Map<String, Object>> validateAndFixPrices(List<Map<String, Object>> coins) {
+        List<Map<String, Object>> validatedCoins = new ArrayList<>();
+        
+        for (Map<String, Object> coin : coins) {
+            Map<String, Object> validatedCoin = new HashMap<>(coin);
+            
+            // Check if price is suspiciously high (likely wrong currency)
+            Object priceObj = coin.get("current_price");
+            if (priceObj instanceof Number) {
+                double price = ((Number) priceObj).doubleValue();
+                
+                // If price is over $100,000, it's likely wrong currency
+                if (price > 100000) {
+                    logger.warn("Suspiciously high price detected: {} for coin {}. Attempting to fix...", price, coin.get("name"));
+                    
+                    // Try to get the correct USD price using the simple price endpoint
+                    try {
+                        String coinId = (String) coin.get("id");
+                        double correctPrice = getCryptoPriceInUSD(coinId);
+                        validatedCoin.put("current_price", correctPrice);
+                        logger.info("Fixed price for {}: {} -> {}", coin.get("name"), price, correctPrice);
+                    } catch (Exception e) {
+                        logger.error("Failed to fix price for {}: {}", coin.get("name"), e.getMessage());
+                        // Keep original price if we can't fix it
+                    }
+                }
+            }
+            
+            validatedCoins.add(validatedCoin);
+        }
+        
+        return validatedCoins;
+    }
+
+    /**
      * Check if the cache is still valid
      * @param currentTime current timestamp
      * @return true if cache is valid, false otherwise
@@ -200,7 +267,7 @@ public class CryptoPriceService {
      * @return complete URL with query parameters
      */
     private String buildTopCoinsUrl() {
-        return String.format("%s?vs_currency=%s&order=%s&per_page=%d&page=1&sparkline=%s",
+        return String.format("%s?vs_currency=%s&order=%s&per_page=%d&page=1&sparkline=%s&locale=en",
                 TOP_COINS_URL, CURRENCY_USD, ORDER_MARKET_CAP, TOP_COINS_LIMIT, SPARKLINE_FALSE);
     }
 

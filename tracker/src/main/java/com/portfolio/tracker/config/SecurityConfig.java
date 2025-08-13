@@ -52,30 +52,36 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .addFilterBefore(jwtFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.deny()) // Prevent clickjacking
+                .contentTypeOptions(contentType -> {}) // Prevent MIME type sniffing
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .maxAgeInSeconds(31536000) // 1 year
+                )
+            )
             .authorizeHttpRequests(auth -> auth
+                // Public endpoints (no authentication required)
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/assets/test")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/assets/debug")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/portfolio-rebalancing/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/security/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/admin/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/websocket/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/ws/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/h2-console/**")).permitAll()
+                
+                // Documentation endpoints (public for development, can be restricted in production)
                 .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui.html")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api-docs/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/v3/api-docs/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/webjars/**")).permitAll()
+                
+                // Static resources
                 .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
-                .anyRequest().authenticated() // Require authentication for all other requests
+                
+                // All other endpoints require authentication
+                .anyRequest().authenticated()
             );
 
-        logger.info("Spring Security configured with CORS enabled and JWT filter enabled");
+        logger.info("Spring Security configured with proper authentication requirements and security headers");
         return http.build();
     }
 

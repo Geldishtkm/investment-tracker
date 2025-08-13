@@ -15,18 +15,13 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 public class PortfolioTrackerApplication {
 
     public static void main(String[] args) {
-        System.out.println("🚀 Starting Portfolio Tracker Application...");
-        System.out.println("📊 Initializing portfolio management system...");
-        
+        System.out.println("Starting Portfolio Tracker Application...");
         SpringApplication.run(PortfolioTrackerApplication.class, args);
-        
-        System.out.println("✅ Portfolio Tracker Application started successfully!");
-        System.out.println("🌐 Ready to track your investments!");
+        System.out.println("Portfolio Tracker Application started successfully!");
     }
 
     @Bean
     public RestTemplate restTemplate() {
-        // Configure RestTemplate for making HTTP requests to external APIs
         return new RestTemplate();
     }
 } 

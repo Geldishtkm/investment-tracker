@@ -61,6 +61,8 @@ const PortfolioRebalancingDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [portfolioAssets, setPortfolioAssets] = useState<AssetWithPrice[]>([]);
   const [portfolioValue, setPortfolioValue] = useState(0);
+  const [userViews, setUserViews] = useState<{ [key: string]: number }>({});
+  const [showViewsInput, setShowViewsInput] = useState(false);
 
   // Load real portfolio data on component mount
   useEffect(() => {
@@ -162,7 +164,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
         body: JSON.stringify({
           username: 'current_user',
           riskTolerance,
-          userViews: {}
+          userViews: userViews  // Send actual user views instead of empty object
         })
       });
 
@@ -303,6 +305,14 @@ const PortfolioRebalancingDashboard: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setShowViewsInput(!showViewsInput)}
+              className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-600 transition-all duration-300 flex items-center gap-2"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Set Views
+            </button>
+
+            <button
               onClick={handleBlackLitterman}
               disabled={loading}
               className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -311,6 +321,149 @@ const PortfolioRebalancingDashboard: React.FC = () => {
               Black-Litterman
             </button>
           </div>
+
+          {/* User Views Input System */}
+          {showViewsInput && (
+            <div className="mt-8 p-8 bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl">
+              <h3 className="text-2xl font-bold text-white mb-8 flex items-center gap-3">
+                <BarChart3 className="w-7 h-7 text-green-400" />
+                Your Market Views (Black-Litterman)
+              </h3>
+              
+              <p className="text-gray-300 text-lg mb-10 leading-relaxed">
+                Express your confidence in each asset. Higher values = more bullish, lower values = more bearish.
+              </p>
+              
+              <div className="mb-10">
+                {/* Coin Selector */}
+                <div className="flex justify-center mb-8">
+                  <div className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl p-6">
+                    <label className="block text-white font-semibold text-lg mb-4 text-center">
+                      Select Asset to Set Views
+                    </label>
+                    <select
+                      value={Object.keys(userViews).length > 0 ? Object.keys(userViews)[0] : ''}
+                      onChange={(e) => {
+                        const selectedCoin = e.target.value;
+                        if (selectedCoin) {
+                          // If this coin doesn't have a view yet, add it with neutral (0.5)
+                          if (!userViews[selectedCoin]) {
+                            setUserViews(prev => ({ ...prev, [selectedCoin]: 0.5 }));
+                          } else {
+                            // If coin already has a view, just switch to it (keep all existing views)
+                            const currentViews = { ...userViews };
+                            // Reorder so selected coin is first
+                            const { [selectedCoin]: selectedValue, ...otherViews } = currentViews;
+                            setUserViews({ [selectedCoin]: selectedValue, ...otherViews });
+                          }
+                        }
+                      }}
+                      className="w-64 px-4 py-3 bg-gray-600 border border-gray-500 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    >
+                      <option value="">Choose an asset...</option>
+                      {portfolioAssets.map((asset) => (
+                        <option key={asset.name} value={asset.name}>
+                          {asset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Single Coin Box */}
+                {Object.keys(userViews).length > 0 && (
+                  <div className="flex justify-center">
+                    <div className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl p-10 hover:border-gray-500/50 transition-all duration-200 min-h-[350px] min-w-[400px] max-w-[500px]">
+                      <div className="text-center mb-8">
+                        <span className="text-white font-bold text-2xl break-words">
+                          {Object.keys(userViews)[0]}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-8">
+                        <div className="flex items-center gap-4">
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={userViews[Object.keys(userViews)[0]] || 0.5}
+                            onChange={(e) => {
+                              const selectedCoin = Object.keys(userViews)[0];
+                              setUserViews(prev => ({
+                                ...prev,
+                                [selectedCoin]: parseFloat(e.target.value)
+                              }));
+                            }}
+                            className="flex-1 h-5 bg-gray-600 rounded-lg appearance-none cursor-pointer slider min-w-[200px]"
+                            style={{
+                              background: `linear-gradient(to right, #ef4444 0%, #f59e0b 50%, #10b981 100%)`
+                            }}
+                          />
+                        </div>
+                        
+                        <div className="flex justify-center">
+                          <div className="bg-gradient-to-br from-gray-600/40 to-gray-700/40 border border-gray-500/30 rounded-lg p-3 min-w-[80px] text-center">
+                            <div className="text-white font-bold text-2xl">
+                              {Math.round((userViews[Object.keys(userViews)[0]] || 0.5) * 100)}%
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Set and Save Button */}
+                {Object.keys(userViews).length > 0 && (
+                  <div className="flex justify-center mt-8">
+                    <button
+                      onClick={() => {
+                        setShowViewsInput(false);
+                        // Here you could also save the views to backend if needed
+                      }}
+                      className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-lg font-semibold hover:shadow-lg border border-green-500/30"
+                    >
+                      Set and Save Views
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Single Legend for All Assets */}
+              <div className="flex justify-center mb-8">
+                <div className="flex items-center gap-8 text-base text-gray-300 font-semibold">
+                  <span className="flex items-center gap-2">
+                    <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+                    Bearish
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="w-3 h-3 bg-yellow-500 rounded-full"></span>
+                    Neutral
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                    Bullish
+                  </span>
+                </div>
+              </div>
+              
+              <div className="flex gap-6 justify-center">
+                <button
+                  onClick={() => setUserViews({})}
+                  className="px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-gray-500/30"
+                >
+                  Reset Views
+                </button>
+                <button
+                  onClick={() => setShowViewsInput(false)}
+                  className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-green-500/30"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { TrendingUp, TrendingDown, Wifi, WifiOff } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 import websocketService from '../services/websocketService';
 
 interface MarketDataUpdate {

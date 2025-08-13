@@ -52,10 +52,10 @@ public class User {
     @Column(name = "is_active")
     private boolean isActive = true;
     
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private Set<Asset> assets = new HashSet<>();
     
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private Set<AuditLog> auditLogs = new HashSet<>();
 
     public enum UserRole {

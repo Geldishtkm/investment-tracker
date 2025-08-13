@@ -1,19 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Search,
-  Filter,
   TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Percent,
-  ArrowUpRight,
-  ArrowDownRight,
-  Star,
-  StarOff,
-  RefreshCw,
   Plus,
-  Minus,
-  Info,
   ArrowLeft,
   Coins
 } from 'lucide-react';
@@ -46,10 +35,27 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
     isVisible: false
   });
   const [selectedCoinForChart, setSelectedCoinForChart] = useState<Coin | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
+  const CACHE_DURATION = 30000; // 30 seconds cache
 
   // Fetch top 300 coins from backend
   const fetchCoins = async () => {
+    // Prevent multiple simultaneous requests
+    if (isFetching) {
+      console.log('Already fetching coins, skipping duplicate request');
+      return;
+    }
+    
+    // Check cache duration
+    const now = Date.now();
+    if (now - lastFetchTime < CACHE_DURATION && coins.length > 0) {
+      console.log('Using cached coins data, skipping API call');
+      return;
+    }
+    
     try {
+      setIsFetching(true);
       setLoading(true);
       setError('');
       const coinsData = await assetService.getTopCoins();
@@ -62,6 +68,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
       }
       setCoins(coinsData);
       setFilteredCoins(coinsData);
+      setLastFetchTime(now);
       if (!Array.isArray(coinsData)) {
         console.error('Expected array but got:', typeof coinsData, coinsData);
         setError('Invalid data format received from server');
@@ -71,6 +78,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
       console.error('Error fetching top coins:', err);
     } finally {
       setLoading(false);
+      setIsFetching(false);
     }
   };
 
@@ -105,17 +113,8 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
   const endIndex = startIndex + coinsPerPage;
   const currentCoins = Array.isArray(filteredCoins) ? filteredCoins.slice(startIndex, endIndex) : [];
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const closeToast = () => {
     setToast(prev => ({ ...prev, isVisible: false }));
-  };
-
-  const handleViewPriceHistory = (coin: Coin) => {
-    setSelectedCoinForChart(coin);
   };
 
   const handleClosePriceHistory = () => {
@@ -174,17 +173,17 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
         {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
         
         <div className="relative z-10 max-w-7xl mx-auto p-6">
           {/* Header */}
           <div className="flex items-center gap-4 mb-8">
             <button
               onClick={onBack}
-              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-gray-600/50 hover:shadow-lg hover:shadow-gray-900/50 hover:scale-105"
+              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
             >
               <div className="flex items-center gap-2">
                 <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
@@ -192,14 +191,14 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
               </div>
             </button>
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
+              <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
                 <Coins size={28} className="text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
                   Top Cryptocurrencies
                 </h1>
-                <p className="text-blue-300/70 text-sm font-medium">Loading market data...</p>
+                <p className="text-green-300/70 text-sm font-medium">Loading market data...</p>
               </div>
             </div>
           </div>
@@ -207,9 +206,9 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
           {/* Enhanced Loading Spinner */}
           <div className="flex flex-col justify-center items-center py-20">
             <div className="relative mb-8">
-              <div className="w-20 h-20 border-4 border-blue-600/30 rounded-full animate-spin"></div>
-              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-t-blue-400 rounded-full animate-spin"></div>
-              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-r-indigo-400 rounded-full animate-spin" style={{animationDelay: '-0.5s'}}></div>
+              <div className="w-20 h-20 border-4 border-green-600/30 rounded-full animate-spin"></div>
+              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-t-green-400 rounded-full animate-spin"></div>
+              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-r-emerald-400 rounded-full animate-spin" style={{animationDelay: '-0.5s'}}></div>
             </div>
             <div className="text-center">
               <h3 className="text-xl font-semibold text-white mb-2">Loading Cryptocurrency Data</h3>
@@ -223,7 +222,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-purple-600/20 to-blue-600/20 animate-pulse"></div>
         
         <div className="relative z-10 max-w-7xl mx-auto p-6">
@@ -231,7 +230,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
           <div className="flex items-center gap-4 mb-8">
             <button
               onClick={onBack}
-              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-gray-600/50 hover:shadow-lg hover:shadow-gray-900/50 hover:scale-105"
+              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
             >
               <div className="flex items-center gap-2">
                 <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
@@ -278,17 +277,17 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
       {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
+      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
       
       <div className="relative z-10 max-w-7xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={onBack}
-            className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-gray-600/50 hover:shadow-lg hover:shadow-gray-900/50 hover:scale-105"
+            className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
           >
             <div className="flex items-center gap-2">
               <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
@@ -296,14 +295,14 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
             </div>
           </button>
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
+            <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
               <Coins size={28} className="text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
                 Top Cryptocurrencies
               </h1>
-              <p className="text-blue-300/70 text-sm font-medium">Explore the latest market data & trends</p>
+              <p className="text-green-300/70 text-sm font-medium">Explore the latest market data & trends</p>
             </div>
           </div>
         </div>
@@ -317,7 +316,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
               placeholder="Search coins by name, symbol, or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-6 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-300 shadow-lg shadow-gray-900/50 text-lg"
+              className="w-full pl-12 pr-6 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 shadow-lg shadow-gray-900/50 text-lg"
             />
             <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">
               {filteredCoins.length} results
@@ -327,43 +326,43 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
 
         {/* Enhanced Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="group p-6 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 backdrop-blur-sm border border-blue-600/40 rounded-2xl hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-600/20 transition-all duration-300 transform hover:-translate-y-1">
+          <div className="group p-6 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-600/40 rounded-2xl hover:border-green-500/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-green-600 to-emerald-600 rounded-xl flex items-center justify-center">
                 <Coins size={20} className="text-white" />
               </div>
-              <div className="text-sm text-blue-300 font-medium">Total Coins</div>
+              <div className="text-sm text-green-300 font-medium">Total Coins</div>
             </div>
-            <div className="text-3xl font-bold text-white group-hover:text-blue-300 transition-colors duration-300">
+            <div className="text-3xl font-bold text-white group-hover:text-green-300 transition-colors duration-300">
               {coins.length.toLocaleString()}
             </div>
-            <div className="text-xs text-blue-400/70 mt-2">Available cryptocurrencies</div>
+            <div className="text-xs text-green-400/70 mt-2">Available cryptocurrencies</div>
           </div>
           
-          <div className="group p-6 bg-gradient-to-r from-indigo-600/20 to-purple-600/20 backdrop-blur-sm border border-indigo-600/40 rounded-2xl hover:border-indigo-500/50 hover:shadow-xl hover:shadow-indigo-600/20 transition-all duration-300 transform hover:-translate-y-1">
+          <div className="group p-6 bg-gradient-to-r from-emerald-600/20 to-teal-600/20 backdrop-blur-sm border border-emerald-600/40 rounded-2xl hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-600/20 transition-all duration-300 transform hover:-translate-y-1">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center">
                 <Search size={20} className="text-white" />
               </div>
-              <div className="text-sm text-indigo-300 font-medium">Filtered</div>
+              <div className="text-sm text-emerald-300 font-medium">Filtered</div>
             </div>
-            <div className="text-3xl font-bold text-white group-hover:text-indigo-300 transition-colors duration-300">
+            <div className="text-3xl font-bold text-white group-hover:text-emerald-300 transition-colors duration-300">
               {filteredCoins.length.toLocaleString()}
             </div>
-            <div className="text-xs text-indigo-400/70 mt-2">Matching your search</div>
+            <div className="text-xs text-emerald-400/70 mt-2">Matching your search</div>
           </div>
           
-          <div className="group p-6 bg-gradient-to-r from-purple-600/20 to-pink-600/20 backdrop-blur-sm border border-purple-600/40 rounded-2xl hover:border-purple-500/50 hover:shadow-xl hover:shadow-purple-600/20 transition-all duration-300 transform hover:-translate-y-1">
+          <div className="group p-6 bg-gradient-to-r from-teal-600/20 to-green-600/20 backdrop-blur-sm border border-teal-600/40 rounded-2xl hover:border-teal-500/50 hover:shadow-xl hover:shadow-teal-600/20 transition-all duration-300 transform hover:-translate-y-1">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-teal-600 to-green-600 rounded-xl flex items-center justify-center">
                 <TrendingUp size={20} className="text-white" />
               </div>
-              <div className="text-sm text-purple-300 font-medium">Page</div>
+              <div className="text-sm text-teal-300 font-medium">Page</div>
             </div>
-            <div className="text-3xl font-bold text-white group-hover:text-purple-300 transition-colors duration-300">
+            <div className="text-3xl font-bold text-white group-hover:text-teal-300 transition-colors duration-300">
               {currentPage}
             </div>
-            <div className="text-xs text-purple-400/70 mt-2">of {totalPages} total</div>
+            <div className="text-xs text-teal-400/70 mt-2">of {totalPages} total</div>
           </div>
         </div>
 
@@ -387,12 +386,12 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
           {currentCoins.map((coin) => (
             <div
               key={coin.id}
-              className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-blue-600/50 hover:shadow-xl hover:shadow-blue-600/20 transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.02]"
+              className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-green-600/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.02]"
             >
               {/* Coin Header */}
               <div className="flex items-start justify-between mb-6">
                 <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40 overflow-hidden flex-shrink-0">
+                  <div className="w-16 h-16 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40 overflow-hidden flex-shrink-0">
                     {coin.image ? (
                       <img 
                         src={coin.image} 
@@ -411,7 +410,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-semibold text-white group-hover:text-blue-300 transition-colors duration-300 truncate">
+                    <h3 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors duration-300 truncate">
                       {coin.name}
                     </h3>
                     <p className="text-sm text-gray-400 font-mono">{coin.symbol.toUpperCase()}</p>
@@ -419,7 +418,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                 </div>
                 <div className="text-right flex-shrink-0 ml-4">
                   <div className="text-xs text-gray-500 font-medium">Current Price</div>
-                  <div className="text-xl font-bold text-blue-400 group-hover:text-blue-300 transition-colors duration-300">
+                  <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
                     ${coin.current_price?.toLocaleString() || 'N/A'}
                   </div>
                 </div>
@@ -443,6 +442,19 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                 </div>
               </div>
 
+              {/* Chart Button */}
+              <div className="mb-6">
+                <button
+                  onClick={() => setSelectedCoinForChart(coin)}
+                  className="w-full group/btn relative px-6 py-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 hover:from-green-600/30 hover:to-emerald-600/30 backdrop-blur-sm border border-green-600/40 rounded-xl text-green-300 hover:text-green-200 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 font-medium text-lg"
+                >
+                  <div className="flex items-center justify-center gap-3">
+                    <TrendingUp size={18} className="group-hover/btn:scale-110 transition-transform duration-200" />
+                    <span>View Price Chart</span>
+                  </div>
+                </button>
+              </div>
+
               {/* Market Cap with Enhanced Design */}
               <div className="mb-8 p-4 bg-gradient-to-r from-indigo-600/10 to-purple-600/10 rounded-xl border border-indigo-600/20">
                 <div className="text-sm text-gray-400 mb-2 font-medium">Market Cap</div>
@@ -463,7 +475,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                       ...prev,
                       [coin.id]: e.target.value
                     }))}
-                    className="w-full px-5 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-300 text-center font-mono text-lg"
+                    className="w-full px-5 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 text-center font-mono text-lg"
                     step="0.000001"
                     min="0"
                     style={{
@@ -486,7 +498,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
               <button
                 onClick={() => handleAddToPortfolio(coin)}
                 disabled={!quantities[coin.id] || parseFloat(quantities[coin.id]) <= 0}
-                className="w-full group/btn relative px-6 py-4 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 backdrop-blur-sm border border-blue-600/40 rounded-xl text-blue-300 hover:text-blue-200 transition-all duration-300 hover:shadow-lg hover:shadow-blue-600/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-blue-600/20 disabled:hover:to-indigo-600/20 text-lg"
+                className="w-full group/btn relative px-6 py-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 hover:from-green-600/30 hover:to-emerald-600/30 backdrop-blur-sm border border-green-600/40 rounded-xl text-green-300 hover:text-green-200 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-green-600/20 disabled:hover:to-emerald-600/20 text-lg"
               >
                 <div className="flex items-center justify-center gap-3">
                   <Plus size={18} className="group-hover/btn:scale-110 transition-transform duration-200" />
@@ -503,7 +515,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
             <button
               onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
               disabled={currentPage === 1}
-              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-gray-500/50 hover:from-gray-600/50 hover:to-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-gray-900/50 hover:scale-105"
+              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-green-500/50 hover:from-green-600/50 hover:to-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
             >
               <div className="flex items-center gap-2">
                 <span className="group-hover:-translate-x-1 transition-transform duration-300">←</span>
@@ -514,7 +526,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
             <button
               onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage === totalPages}
-              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-gray-500/50 hover:from-gray-600/50 hover:to-gray-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-gray-900/50 hover:scale-105"
+              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-green-500/50 hover:from-green-600/50 hover:to-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
             >
               <div className="flex items-center gap-2">
                 <span>Next</span>

@@ -213,7 +213,7 @@ const VaRDashboard: React.FC = () => {
               <select
                 value={confidenceLevel}
                 onChange={(e) => setConfidenceLevel(parseFloat(e.target.value))}
-                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
+                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-black focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
               >
                 <option value={0.80}>80%</option>
                 <option value={0.85}>85%</option>
@@ -229,7 +229,7 @@ const VaRDashboard: React.FC = () => {
               <select
                 value={timeHorizon}
                 onChange={(e) => setTimeHorizon(parseInt(e.target.value))}
-                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
+                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-black focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
               >
                 <option value={1}>1 Day</option>
                 <option value={7}>1 Week</option>

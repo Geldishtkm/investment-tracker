@@ -7,11 +7,6 @@ import {
   Save,
   X,
   Trash2,
-  MoreVertical,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  AlertTriangle,
   Percent
 } from 'lucide-react';
 import { Asset } from '../types';
@@ -150,7 +145,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
               />
             </div>
             <div>
@@ -159,7 +154,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
                 type="number"
                 value={formData.quantity}
                 onChange={(e) => setFormData(prev => ({ ...prev, quantity: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 step="0.000001"
                 min="0"
               />
@@ -170,7 +165,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
                 type="number"
                 value={formData.pricePerUnit}
                 onChange={(e) => setFormData(prev => ({ ...prev, pricePerUnit: e.target.value }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 step="0.01"
                 min="0"
               />

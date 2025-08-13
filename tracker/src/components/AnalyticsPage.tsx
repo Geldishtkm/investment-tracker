@@ -6,11 +6,7 @@ import {
   PieChart,
   Activity,
   DollarSign,
-  Percent,
-  ArrowUpRight,
-  ArrowDownRight,
-  Calendar,
-  Filter
+  ArrowDownRight
 } from 'lucide-react';
 
 interface PortfolioMetrics {
@@ -65,7 +61,6 @@ const AnalyticsPage: React.FC = () => {
         totalValue = 0,
         totalInitialInvestment = 0,
         totalAssets = 0,
-        roi = 0,
         sharpeRatio = 0,
         volatility = 0,
         maxDrawdown = 0,
@@ -384,7 +379,7 @@ const AnalyticsPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {performance.map((asset, index) => (
+                  {performance.map((asset) => (
                     <tr key={asset.id} className="border-b border-indigo-600/20 hover:bg-indigo-600/10 transition-colors duration-300 group">
                       <td className="py-4 px-6 font-medium text-white group-hover:text-indigo-200 transition-colors">
                         {asset.name}

@@ -1,21 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   TrendingUp,
   TrendingDown,
   DollarSign,
-  Plus,
-  Minus,
   RefreshCw,
   Eye,
   EyeOff,
-  BarChart3,
   PieChart,
   Activity,
-  Target,
-  Zap,
-  Shield,
-  Award,
-  TrendingUpIcon,
   LogOut
 } from 'lucide-react';
 import { Asset } from '../types';

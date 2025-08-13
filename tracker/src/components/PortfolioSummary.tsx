@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, Package, BarChart3, Target, Activity, Wifi, WifiOff } from 'lucide-react';
-import { Asset, AssetWithPrice } from '../types';
+import { DollarSign, Package, BarChart3, Target, Activity } from 'lucide-react';
+import { AssetWithPrice } from '../types';
 import websocketService from '../services/websocketService';
 
 interface PortfolioSummaryProps {

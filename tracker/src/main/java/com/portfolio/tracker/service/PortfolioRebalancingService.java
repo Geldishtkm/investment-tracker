@@ -183,26 +183,43 @@ public class PortfolioRebalancingService {
                                                               double riskTolerance) {
         Map<String, Double> adjustedWeights = new HashMap<>(baseWeights);
         
-        // Simple Black-Litterman implementation
-        // In production, you'd use the full mathematical model
+        // If no user views, return base weights (MVO result)
+        if (userViews == null || userViews.isEmpty()) {
+            return baseWeights;
+        }
         
+        // Calculate total adjustment capacity based on risk tolerance
+        double maxAdjustment = 0.15; // Max 15% adjustment for high risk tolerance
+        if (riskTolerance < 0.3) maxAdjustment = 0.05; // Conservative: max 5%
+        else if (riskTolerance < 0.7) maxAdjustment = 0.10; // Moderate: max 10%
+        
+        // Apply user views to adjust weights
         for (Map.Entry<String, Double> view : userViews.entrySet()) {
             String assetName = view.getKey();
             double confidence = view.getValue(); // 0.0 to 1.0
             
             if (adjustedWeights.containsKey(assetName)) {
                 double baseWeight = adjustedWeights.get(assetName);
-                double adjustment = confidence * 0.1; // Max 10% adjustment
                 
-                // Increase weight if user is bullish, decrease if bearish
+                // Calculate adjustment based on user confidence
+                // 0.0 = very bearish, 0.5 = neutral, 1.0 = very bullish
+                double confidenceAdjustment = (confidence - 0.5) * 2; // Convert to -1.0 to 1.0
+                double adjustment = confidenceAdjustment * maxAdjustment;
+                
+                // Apply adjustment to weight
                 double newWeight = baseWeight + adjustment;
-                newWeight = Math.max(0.0, Math.min(0.5, newWeight)); // Clamp between 0% and 50%
+                
+                // Clamp weights to reasonable bounds (0% to 50%)
+                newWeight = Math.max(0.0, Math.min(0.5, newWeight));
                 
                 adjustedWeights.put(assetName, newWeight);
+                
+                // logger.info("Black-Litterman adjustment for {}: base={:.3f}, confidence={:.3f}, adjustment={:.3f}, new={:.3f}", 
+                //            assetName, baseWeight, confidence, adjustment, newWeight);
             }
         }
         
-        // Renormalize weights
+        // Renormalize weights to sum to 1.0
         double totalWeight = adjustedWeights.values().stream().mapToDouble(Double::doubleValue).sum();
         if (totalWeight > 0) {
             for (String assetName : adjustedWeights.keySet()) {

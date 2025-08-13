@@ -152,7 +152,7 @@ class WebSocketService {
     /**
      * Subscribe to subscription status updates
      */
-    subscribeToStatusUpdates(callback: (status: any) => void): void {
+    subscribeToStatusUpdates(_callback: (status: any) => void): void {
         // For now, we'll handle status updates through the main message handler
         // This can be enhanced later
         console.log('Status update subscription not yet implemented');

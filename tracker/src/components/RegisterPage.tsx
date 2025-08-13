@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, QrCode, Copy } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, Copy } from 'lucide-react';
 import { RegisterCredentials, MfaSetupResponse } from '../types';
 import { authService } from '../services/authService';
 
@@ -115,7 +115,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                     type="text"
                     value={credentials.username}
                     onChange={handleInputChange('username')}
-                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
                     placeholder="Choose a username"
                     required
                     disabled={isLoading}
@@ -136,7 +136,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                     type={showPassword ? 'text' : 'password'}
                     value={credentials.password}
                     onChange={handleInputChange('password')}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
                     placeholder="Create a password"
                     required
                     disabled={isLoading}
@@ -168,7 +168,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={handleConfirmPasswordChange}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
                     placeholder="Confirm your password"
                     required
                     disabled={isLoading}

@@ -67,10 +67,33 @@ public class CryptoController {
     public ResponseEntity<?> getTopCoins() {
         try {
             List<Map<String, Object>> topCoins = cryptoPriceService.getTopCoins();
+            
+            // Log the first coin for debugging
+            if (!topCoins.isEmpty()) {
+                Map<String, Object> firstCoin = topCoins.get(0);
+                System.out.println("DEBUG - First coin in response: " + firstCoin);
+            }
+            
             return ResponseEntity.ok(Map.of("coins", topCoins, "count", topCoins.size()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Failed to get top coins: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Manually refresh the crypto cache (for debugging)
+     * @return Success message
+     */
+    @PostMapping("/refresh-cache")
+    public ResponseEntity<?> refreshCache() {
+        try {
+            // Force refresh the cache
+            cryptoPriceService.refreshCache();
+            return ResponseEntity.ok(Map.of("message", "Cache refreshed successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to refresh cache: " + e.getMessage()));
         }
     }
 }

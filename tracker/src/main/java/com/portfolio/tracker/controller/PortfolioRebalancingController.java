@@ -3,8 +3,10 @@ package com.portfolio.tracker.controller;
 import com.portfolio.tracker.model.PortfolioRebalancing;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.PortfolioRebalancingService;
+import com.portfolio.tracker.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -21,24 +23,34 @@ public class PortfolioRebalancingController {
     @Autowired
     private PortfolioRebalancingService rebalancingService;
 
+    @Autowired
+    private UserService userService;
+
     /**
      * Calculate optimal portfolio allocation using Mean-Variance Optimization
      */
     @PostMapping("/optimize")
     public ResponseEntity<PortfolioRebalancing> optimizePortfolio(
-            @RequestBody Map<String, Object> request) {
+            @RequestBody Map<String, Object> request,
+            Authentication authentication) {
         
         try {
-            String username = (String) request.get("username");
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(401).build();
+            }
+            
+            String username = authentication.getName();
             Double riskTolerance = (Double) request.get("riskTolerance");
             
-            if (username == null || riskTolerance == null) {
+            if (riskTolerance == null) {
                 return ResponseEntity.badRequest().build();
             }
             
-            // Create a mock user for now (in production, get from authentication)
-            User user = new User();
-            user.setUsername(username);
+            // Get the authenticated user from the database
+            User user = userService.findByUsername(username);
+            if (user == null) {
+                return ResponseEntity.status(404).build();
+            }
             
             PortfolioRebalancing result = rebalancingService.calculateOptimalAllocation(user, riskTolerance);
             return ResponseEntity.ok(result);
@@ -53,21 +65,28 @@ public class PortfolioRebalancingController {
      */
     @PostMapping("/black-litterman")
     public ResponseEntity<PortfolioRebalancing> blackLittermanOptimization(
-            @RequestBody Map<String, Object> request) {
+            @RequestBody Map<String, Object> request,
+            Authentication authentication) {
         
         try {
-            String username = (String) request.get("username");
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(401).build();
+            }
+            
+            String username = authentication.getName();
             Double riskTolerance = (Double) request.get("riskTolerance");
             @SuppressWarnings("unchecked")
             Map<String, Double> userViews = (Map<String, Double>) request.get("userViews");
             
-            if (username == null || riskTolerance == null || userViews == null) {
+            if (riskTolerance == null || userViews == null) {
                 return ResponseEntity.badRequest().build();
             }
             
-            // Create a mock user for now (in production, get from authentication)
-            User user = new User();
-            user.setUsername(username);
+            // Get the authenticated user from the database
+            User user = userService.findByUsername(username);
+            if (user == null) {
+                return ResponseEntity.status(404).build();
+            }
             
             PortfolioRebalancing result = rebalancingService.calculateBlackLittermanAllocation(
                 user, riskTolerance, userViews);
@@ -84,12 +103,25 @@ public class PortfolioRebalancingController {
     @GetMapping("/needs-rebalancing/{username}")
     public ResponseEntity<Map<String, Object>> checkRebalancingNeeded(
             @PathVariable String username,
-            @RequestParam(defaultValue = "0.05") double threshold) {
+            @RequestParam(defaultValue = "0.05") double threshold,
+            Authentication authentication) {
         
         try {
-            // Create a mock user for now (in production, get from authentication)
-            User user = new User();
-            user.setUsername(username);
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(401).build();
+            }
+            
+            // Verify the authenticated user is requesting their own data
+            String authenticatedUsername = authentication.getName();
+            if (!authenticatedUsername.equals(username)) {
+                return ResponseEntity.status(403).build(); // Forbidden - can't access other user's data
+            }
+            
+            // Get the authenticated user from the database
+            User user = userService.findByUsername(username);
+            if (user == null) {
+                return ResponseEntity.status(404).build();
+            }
             
             boolean needsRebalancing = rebalancingService.needsRebalancing(user, threshold);
             

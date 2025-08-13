@@ -39,54 +39,15 @@ public class AssetController {
     }
 
     /**
-     * Test endpoint to verify the API is accessible without authentication
-     * @return simple test message
+     * Health check endpoint (requires authentication)
      */
-    @GetMapping("/test")
-    public ResponseEntity<?> testEndpoint() {
-        return ResponseEntity.ok(Map.of(
-            "message", "Asset API is accessible",
-            "timestamp", System.currentTimeMillis(),
-            "status", "OK"
-        ));
-    }
-
-    /**
-     * Debug endpoint to show authentication status
-     * @return authentication information
-     */
-    @GetMapping("/debug")
-    public ResponseEntity<?> debugAuth() {
-        try {
-            // Get current authentication context
-            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-            
-            if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getName())) {
-                return ResponseEntity.ok(Map.of(
-                    "message", "User is authenticated",
-                    "username", auth.getName(),
-                    "authorities", auth.getAuthorities().toString(),
-                    "timestamp", System.currentTimeMillis()
-                ));
-            } else {
-                return ResponseEntity.ok(Map.of(
-                    "message", "User is NOT authenticated",
-                    "authentication", auth != null ? auth.getName() : "null",
-                    "timestamp", System.currentTimeMillis()
-                ));
-            }
-        } catch (Exception e) {
-            return ResponseEntity.ok(Map.of(
-                "message", "Error checking authentication",
-                "error", e.getMessage(),
-                "timestamp", System.currentTimeMillis()
-            ));
-        }
-    }
-
     @GetMapping("/health")
-    public ResponseEntity<String> healthCheck() {
+    public ResponseEntity<String> healthCheck(Authentication authentication) {
         try {
+            if (authentication == null || !authentication.isAuthenticated()) {
+                return ResponseEntity.status(401).body("Authentication required");
+            }
+            
             List<Asset> assets = assetService.getAllAssets();
             return ResponseEntity.ok("Database connection OK. Total assets: " + assets.size());
         } catch (Exception e) {

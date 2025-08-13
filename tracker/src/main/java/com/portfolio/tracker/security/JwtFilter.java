@@ -148,6 +148,16 @@ public class JwtFilter extends OncePerRequestFilter {
      */
     private void setupAuthentication(String token, String username, HttpServletRequest request) {
         try {
+            // Check if we already have authentication for this user in this request
+            if (SecurityContextHolder.getContext().getAuthentication() != null) {
+                String currentUser = SecurityContextHolder.getContext().getAuthentication().getName();
+                if (currentUser.equals(username)) {
+                    logger.debug("Authentication already set for user: {} on request: {}", 
+                               username, request.getRequestURI());
+                    return;
+                }
+            }
+            
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
             if (jwtUtil.validateToken(token, userDetails)) {
