@@ -6,3 +6,6 @@ cmds = ["mvn clean package -DskipTests"]
 
 [start]
 cmd = "java -jar target/tracker-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod"
+
+[variables]
+JAVA_HOME = "/nix/var/nix/profiles/default"

@@ -27,8 +27,10 @@ git push -u origin main
 ### **1.2 Verify Files**
 Make sure you have these files in your project:
 - ✅ `railway.json` ✅
+- ✅ `railway.toml` ✅
 - ✅ `nixpacks.toml` ✅
 - ✅ `Dockerfile` ✅
+- ✅ `.railwayignore` ✅
 - ✅ `pom.xml` ✅
 - ✅ `src/` folder ✅
 
@@ -42,11 +44,13 @@ Make sure you have these files in your project:
 3. Choose **"Deploy from GitHub repo"**
 4. Select your portfolio tracker repository
 
-### **2.2 Configure Your App**
+### **2.2 Configure Your App (IMPORTANT!)**
 1. **Project Name**: `portfolio-tracker` (or any name you want)
 2. **Branch**: `main`
-3. **Root Directory**: `/` (leave empty)
-4. Click **"Deploy Now"**
+3. **Root Directory**: `/` (leave empty - this is crucial!)
+4. **Build Command**: `mvn clean package -DskipTests`
+5. **Start Command**: `java -jar target/tracker-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod`
+6. Click **"Deploy Now"**
 
 ### **2.3 Add PostgreSQL Database**
 1. In your Railway project, click **"New"**
@@ -76,6 +80,9 @@ ALLOWED_ORIGINS=https://your-app-name.railway.app
 
 # Port (Railway sets this automatically)
 PORT=8080
+
+# Java configuration
+JAVA_HOME=/nix/var/nix/profiles/default
 ```
 
 ### **3.2 Generate JWT Secret:**
@@ -106,10 +113,16 @@ openssl rand -base64 64
 
 ### **Common Issues:**
 
+#### **Monorepo Error:**
+- **Problem**: "This usually happens when using a monorepo without the correct root directory set"
+- **Solution**: Make sure Root Directory is set to `/` (empty) in Railway
+- **Alternative**: Use the `railway.toml` file we created
+
 #### **Build Fails:**
 - Check that all files are committed to GitHub
 - Verify `pom.xml` has correct dependencies
 - Check Railway build logs for specific errors
+- Ensure `railway.toml` and `nixpacks.toml` are present
 
 #### **Database Connection Fails:**
 - Verify environment variables are correct
@@ -118,7 +131,7 @@ openssl rand -base64 64
 
 #### **App Won't Start:**
 - Check environment variables are set
-- Verify the start command in `railway.json`
+- Verify the start command in Railway dashboard
 - Check app logs in Railway dashboard
 
 ---
@@ -191,6 +204,21 @@ openssl rand -base64 64
 - ✅ **Security**: Hardened
 - ✅ **Database**: Configured
 - ✅ **Deployment**: Automated
+- ✅ **Railway Config**: Fixed for monorepo
+
+---
+
+## 🚨 **IMPORTANT: MONOREPO FIX**
+
+### **If you still get the monorepo error:**
+
+1. **Delete the project** from Railway
+2. **Recreate it** with these exact settings:
+   - Root Directory: `/` (leave completely empty)
+   - Build Command: `mvn clean package -DskipTests`
+   - Start Command: `java -jar target/tracker-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod`
+
+3. **Alternative**: Use the `railway.toml` file we created
 
 ---
 
