@@ -99,7 +99,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
             </div>
           </div>
           <div className="mt-2 text-xs text-gray-400">
-            💡 Real-time prices automatically update your portfolio value
+                            Real-time prices automatically update your portfolio value
           </div>
         </div>
       )}

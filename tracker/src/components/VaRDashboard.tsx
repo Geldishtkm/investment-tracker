@@ -198,7 +198,7 @@ const VaRDashboard: React.FC = () => {
                 <BarChart3 size={16} className="text-green-400" />
               </div>
               <div className="text-center">
-                <p className="text-green-300 font-medium">📊 Real Market Data Active</p>
+                <p className="text-green-300 font-medium">Real Market Data Active</p>
                 <p className="text-green-200/70 text-sm">VaR calculations use actual historical prices from CoinGecko API</p>
               </div>
             </div>

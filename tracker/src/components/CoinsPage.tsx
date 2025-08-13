@@ -265,7 +265,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                 className="group px-8 py-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-red-500/30 hover:border-red-400/50"
               >
                 <div className="flex items-center gap-2">
-                  <span className="group-hover:rotate-180 transition-transform duration-300">🔄</span>
+                  <span className="group-hover:rotate-180 transition-transform duration-300">↻</span>
                   <span>Try Again</span>
                 </div>
               </button>
@@ -371,7 +371,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
           <div className="mb-8 p-6 bg-gradient-to-r from-red-600/20 to-red-700/20 backdrop-blur-sm border border-red-600/40 rounded-2xl text-red-300 shadow-xl shadow-red-600/20">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-700 rounded-xl flex items-center justify-center">
-                <span className="text-lg">⚠️</span>
+                <span className="text-lg">!</span>
               </div>
               <div>
                 <h4 className="font-semibold text-red-200 mb-1">Error Loading Data</h4>

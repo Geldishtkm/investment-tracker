@@ -202,11 +202,11 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
   if (loading && !rebalancing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="min-h-screen bg-black p-6">
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-purple-400 mx-auto mb-4" />
-            <p className="text-purple-200 text-lg">Loading portfolio data...</p>
+            <Loader2 className="w-12 h-12 animate-spin text-white mx-auto mb-4" />
+            <p className="text-gray-300 text-lg">Loading portfolio data...</p>
           </div>
         </div>
       </div>
@@ -215,16 +215,16 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
   if (!rebalancing || portfolioAssets.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+      <div className="min-h-screen bg-black p-6">
         <div className="text-center">
-          <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
             <Target className="w-12 h-12 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-4">No Portfolio Data</h2>
           <p className="text-gray-300 mb-6">Add some assets to your portfolio to start rebalancing.</p>
           <button
             onClick={loadPortfolioData}
-            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:from-orange-600 hover:to-red-600 transition-all duration-300"
+            className="px-6 py-3 bg-gray-800 text-white rounded-xl font-medium hover:bg-gray-700 transition-all duration-300"
           >
             <RefreshCw className="w-5 h-5 inline mr-2" />
             Refresh Data
@@ -235,10 +235,10 @@ const PortfolioRebalancingDashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-black p-6">
       {/* Header */}
       <div className="text-center mb-8">
-        <div className="w-20 h-20 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
           <Target className="w-10 h-10 text-white" />
         </div>
         <h1 className="text-4xl font-bold text-white mb-2">Portfolio Rebalancing</h1>

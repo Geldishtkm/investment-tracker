@@ -366,7 +366,7 @@ function App() {
             <div className="space-y-6">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent mb-2">
-                  📊 Portfolio Overview
+                  Portfolio Overview
                 </h2>
                 <p className="text-gray-400">Track your cryptocurrency investments and performance</p>
               </div>
@@ -380,14 +380,14 @@ function App() {
                       <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center">
                         <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                       </div>
-                      🔄 Live Market Data
+                      Live Market Data
                     </h3>
                     <div className="text-sm text-gray-400">
                       Auto-updating portfolio values
                     </div>
                   </div>
                   <div className="text-sm text-gray-300">
-                    💡 Your portfolio values are automatically updated with real-time market prices via WebSocket connection. 
+                    Your portfolio values are automatically updated with real-time market prices via WebSocket connection. 
                     No manual refresh needed - prices update continuously in the background.
                   </div>
                 </div>
@@ -422,7 +422,7 @@ function App() {
             <div className="space-y-6">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent mb-2">
-                  🪙 Top Cryptocurrencies
+                  Top Cryptocurrencies
                 </h2>
                 <p className="text-gray-400">Explore the latest market data and add coins to your portfolio</p>
               </div>
@@ -443,7 +443,7 @@ function App() {
             <div className="space-y-6">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-                  📈 Analytics & Insights
+                  Analytics & Insights
                 </h2>
                 <p className="text-gray-400">Analyze your portfolio performance and market trends</p>
               </div>
@@ -455,7 +455,7 @@ function App() {
             <div className="space-y-6">
               <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-                  🧮 VaR Dashboard
+                  VaR Dashboard
                 </h2>
                 <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
               </div>
@@ -466,8 +466,8 @@ function App() {
           {currentPage === 'rebalancing' && (
             <div className="space-y-6">
               <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent mb-2">
-                  ⚖️ Portfolio Rebalancing
+                <h2 className="text-3xl font-bold text-white mb-2">
+                  Portfolio Rebalancing
                 </h2>
                 <p className="text-gray-400">Optimize your portfolio with Mean-Variance Optimization and Black-Litterman models</p>
               </div>

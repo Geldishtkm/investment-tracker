@@ -150,7 +150,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                 {/* Header */}
                 <div className="text-center">
                     <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
-                        🔄 Real-Time Market Data
+                        Real-Time Market Data
                     </h1>
                     <p className="text-gray-400 text-lg">
                         Monitor live cryptocurrency prices and market trends
@@ -191,7 +191,7 @@ const RealTimeMarketDashboard: React.FC = () => {
 
                 {/* Auto-Streaming Status */}
                 <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl">
-                    <h3 className="text-xl font-semibold text-gray-200 mb-4">🚀 Auto-Streaming Status</h3>
+                    <h3 className="text-xl font-semibold text-gray-200 mb-4">Auto-Streaming Status</h3>
                     
                     <div className="flex items-center gap-4 mb-4">
                         <div className="flex items-center gap-2">
@@ -228,7 +228,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                     </div>
                     
                     <p className="text-sm text-gray-400 mt-3">
-                        💡 Market data streams automatically when connected. No manual controls needed!
+                        Market data streams automatically when connected. No manual controls needed!
                     </p>
                 </div>
 
@@ -238,7 +238,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                     
                     {liveData.size === 0 ? (
                         <div className="text-center py-8 text-gray-400">
-                            {isStreaming ? '🔄 Waiting for live market data...' : '🚀 Connecting to WebSocket...'}
+                            {isStreaming ? 'Waiting for live market data...' : 'Connecting to WebSocket...'}
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

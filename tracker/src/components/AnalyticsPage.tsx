@@ -202,7 +202,7 @@ const AnalyticsPage: React.FC = () => {
               className="group relative px-8 py-4 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 backdrop-blur-sm border border-blue-600/40 rounded-2xl text-blue-300 hover:text-blue-200 transition-all duration-300 hover:shadow-lg hover:shadow-blue-600/20 font-medium"
             >
               <div className="flex items-center gap-2">
-                <span>🔄</span>
+                <span>↻</span>
                 <span>Retry</span>
               </div>
             </button>
