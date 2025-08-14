@@ -1,5 +1,5 @@
 # Multi-stage build for better reliability
-FROM maven:3.9.6-openjdk-17 AS build
+FROM maven:3.9.6 AS build
 
 # Set working directory
 WORKDIR /app
@@ -17,7 +17,7 @@ COPY src src
 RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM openjdk:17-jre-slim
+FROM openjdk:17-slim
 
 # Install curl for health check
 RUN apt-get update && \
