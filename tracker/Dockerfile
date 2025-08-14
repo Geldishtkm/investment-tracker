@@ -1,34 +1,34 @@
-# Use OpenJDK 21
-FROM openjdk:21-jdk-slim
+# Multi-stage build for better reliability
+FROM maven:3.9.6-openjdk-21 AS build
 
 # Set working directory
 WORKDIR /app
 
-# Install necessary packages
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy Maven wrapper and pom.xml
-COPY mvnw .
-COPY .mvn .mvn
+# Copy pom.xml first for better caching
 COPY pom.xml .
 
-# Make Maven wrapper executable and verify
-RUN chmod +x mvnw && \
-    ./mvnw --version
+# Download dependencies (this layer will be cached)
+RUN mvn dependency:go-offline -B
 
 # Copy source code
 COPY src src
 
-# Build the application with better error handling
-RUN ./mvnw clean package -DskipTests -X || \
-    (echo "Maven build failed, trying alternative approach..." && \
-     ./mvnw clean package -DskipTests --batch-mode --quiet || \
-     (echo "Build still failed, checking Maven wrapper..." && \
-      ls -la && \
-      cat mvnw | head -5 && \
-      exit 1))
+# Build the application
+RUN mvn clean package -DskipTests
+
+# Runtime stage
+FROM openjdk:21-jdk-slim
+
+# Install curl for health check
+RUN apt-get update && \
+    apt-get install -y curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy built JAR from build stage
+COPY --from=build /app/target/tracker-0.0.1-SNAPSHOT.jar app.jar
 
 # Expose port
 EXPOSE 8080
@@ -38,4 +38,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application
-CMD ["java", "-jar", "target/tracker-0.0.1-SNAPSHOT.jar"]
+CMD ["java", "-jar", "app.jar"]
