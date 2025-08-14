@@ -1,5 +1,5 @@
 # Multi-stage build for better reliability
-FROM maven:3.9.6-openjdk-21 AS build
+FROM maven:3.9.6-eclipse-temurin-21 AS build
 
 # Set working directory
 WORKDIR /app
@@ -17,12 +17,10 @@ COPY src src
 RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM openjdk:21-jdk-slim
+FROM eclipse-temurin:21-jdk-jre-alpine
 
 # Install curl for health check
-RUN apt-get update && \
-    apt-get install -y curl && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
 
 # Set working directory
 WORKDIR /app
