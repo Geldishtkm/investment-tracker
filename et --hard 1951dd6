@@ -1,0 +1,36 @@
+[33mcommit 886f144813108c49648eee39c27230a491794a28[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Geldi <orazovgeldymurad@gmail.com>
+Date:   Wed Aug 13 22:33:04 2025 +0200
+
+    Fix healthcheck issues for Railway deployment
+
+ tracker/Dockerfile                                 |   8 [32m+[m[31m-[m
+ tracker/pom.xml                                    |  83 [32m+[m[31m----[m
+ tracker/railway.json                               |   5 [32m+[m[31m-[m
+ tracker/setup-database.bat                         |  63 [32m++++[m
+ .../tracker/PortfolioTrackerApplication.java       |   5 [32m+[m[31m-[m
+ .../main/java/com/portfolio/tracker/SimpleApp.java |  30 [31m--[m
+ .../tracker/config/RestTemplateConfig.java         |  18 [32m+[m
+ .../portfolio/tracker/config/SecurityConfig.java   |  87 [32m++[m[31m---[m
+ .../portfolio/tracker/config/WebSocketConfig.java  |  15 [32m+[m[31m-[m
+ .../portfolio/tracker/config/WebSocketHandler.java |  10 [32m+[m[31m-[m
+ .../tracker/controller/AssetController.java        | 371 [32m+++[m[31m------------------[m
+ .../tracker/controller/AuthController.java         | 134 [32m++[m[31m------[m
+ .../tracker/controller/HealthController.java       |  36 [32m+[m[31m-[m
+ .../controller/PortfolioRebalancingController.java | 223 [32m++++[m[31m---------[m
+ .../tracker/controller/SecurityController.java     | 235 [32m+++[m[31m----------[m
+ .../tracker/controller/VaRController.java          | 258 [32m++[m[31m------------[m
+ .../tracker/repository/UserRepository.java         |  14 [32m+[m
+ .../com/portfolio/tracker/security/JwtFilter.java  | 161 [32m+[m[31m--------[m
+ .../com/portfolio/tracker/security/JwtUtil.java    | 213 [32m++[m[31m----------[m
+ .../portfolio/tracker/service/AuditService.java    |   8 [32m+[m[31m-[m
+ .../com/portfolio/tracker/service/MfaService.java  | 162 [31m---------[m
+ .../service/PortfolioRebalancingService.java       |  20 [32m+[m[31m-[m
+ .../tracker/service/RealTimeMarketDataService.java |   8 [32m+[m[31m-[m
+ .../tracker/service/UserDetailsServiceImpl.java    |  69 [32m++[m[31m--[m
+ .../com/portfolio/tracker/service/UserService.java | 188 [32m+++[m[31m--------[m
+ .../tracker/service/VaRCalculationService.java     |  13 [32m+[m[31m-[m
+ .../src/main/resources/application-prod.properties |  18 [32m+[m[31m-[m
+ tracker/src/main/resources/application.properties  |  46 [32m++[m[31m-[m
+ tracker/test-db-connection.bat                     |  43 [32m+++[m
+ 29 files changed, 631 insertions(+), 1913 deletions(-)

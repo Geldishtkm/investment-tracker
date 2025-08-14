@@ -21,5 +21,9 @@ RUN ./mvnw clean package -DskipTests
 # Expose port
 EXPOSE 8080
 
+# Simple health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
 # Run the application
-CMD ["java", "-jar", "target/tracker-0.0.1-SNAPSHOT.jar", "--spring.profiles.active=prod"]
+CMD ["java", "-jar", "target/tracker-0.0.1-SNAPSHOT.jar"]

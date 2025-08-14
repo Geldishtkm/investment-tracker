@@ -1,0 +1,30 @@
+# Maven
+target/
+!target/*.jar
+!target/*.war
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+
+# Node modules (if any)
+node_modules/
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
