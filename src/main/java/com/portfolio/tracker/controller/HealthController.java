@@ -18,13 +18,13 @@ public class HealthController {
     @GetMapping(value = "/", produces = "text/html")
     public ResponseEntity<String> home() {
         try {
-            // Try to serve the REAL React app
+            // Serve the REAL React app
             Resource resource = new ClassPathResource("dist/index.html");
             
             if (resource.exists()) {
                 String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
                 
-                // Fix the asset paths to work with our setup
+                // Fix the asset paths to work with our StaticFileController
                 content = content.replace("/assets/", "/dist/assets/");
                 content = content.replace("/vite.svg", "/dist/favicon.ico");
                 
@@ -50,6 +50,21 @@ public class HealthController {
         return ResponseEntity.ok()
                 .contentType(MediaType.valueOf("image/x-icon"))
                 .body("🎯");
+    }
+
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+        Map<String, Object> health = new HashMap<>();
+        health.put("status", "UP");
+        health.put("timestamp", LocalDateTime.now().toString());
+        health.put("service", "Portfolio Tracker");
+        health.put("version", "1.0.0");
+        return ResponseEntity.ok(health);
+    }
+
+    @GetMapping("/ping")
+    public String ping() {
+        return "pong";
     }
 
     private String getTestPageHtml() {
@@ -79,20 +94,5 @@ public class HealthController {
                "</div>" +
                "</body>" +
                "</html>";
-    }
-
-    @GetMapping("/health")
-    public ResponseEntity<Map<String, Object>> health() {
-        Map<String, Object> health = new HashMap<>();
-        health.put("status", "UP");
-        health.put("timestamp", LocalDateTime.now().toString());
-        health.put("service", "Portfolio Tracker");
-        health.put("version", "1.0.0");
-        return ResponseEntity.ok(health);
-    }
-
-    @GetMapping("/ping")
-    public String ping() {
-        return "pong";
     }
 }
