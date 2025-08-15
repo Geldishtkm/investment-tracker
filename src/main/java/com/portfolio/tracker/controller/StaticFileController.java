@@ -7,37 +7,28 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
 
 @RestController
 @CrossOrigin(origins = "*")
 public class StaticFileController {
 
-    private final Map<String, String> mimeTypes = new HashMap<>();
-
-    public StaticFileController() {
-        // Initialize MIME types
-        mimeTypes.put("css", "text/css");
-        mimeTypes.put("js", "application/javascript");
-        mimeTypes.put("ico", "image/x-icon");
-        mimeTypes.put("html", "text/html");
-        mimeTypes.put("png", "image/png");
-        mimeTypes.put("jpg", "image/jpeg");
-        mimeTypes.put("jpeg", "image/jpeg");
-        mimeTypes.put("svg", "image/svg+xml");
+    @GetMapping("/dist/assets/index-ff80a9a3.css")
+    public ResponseEntity<String> serveCss() {
+        return serveFile("dist/assets/index-ff80a9a3.css", "text/css");
     }
-
-    @GetMapping("/dist/**")
-    public ResponseEntity<String> serveStaticFile(@RequestParam String path) {
+    
+    @GetMapping("/dist/assets/index-3ea4737f.js")
+    public ResponseEntity<String> serveJs() {
+        return serveFile("dist/assets/index-3ea4737f.js", "application/javascript");
+    }
+    
+    @GetMapping("/favicon.ico")
+    public ResponseEntity<String> serveFavicon() {
+        return serveFile("dist/favicon.ico", "image/x-icon");
+    }
+    
+    private ResponseEntity<String> serveFile(String filePath, String contentType) {
         try {
-            // Extract the file path from the request
-            String filePath = "dist/" + path;
-            
-            // Determine MIME type from file extension
-            String extension = getFileExtension(path);
-            String mimeType = mimeTypes.getOrDefault(extension, "text/plain");
-            
             Resource resource = new ClassPathResource(filePath);
             
             if (!resource.exists()) {
@@ -47,39 +38,11 @@ public class StaticFileController {
             String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             
             return ResponseEntity.ok()
-                    .contentType(MediaType.valueOf(mimeType))
+                    .contentType(MediaType.valueOf(contentType))
                     .body(content);
                     
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Error reading file: " + e.getMessage());
         }
-    }
-
-    @GetMapping("/favicon.ico")
-    public ResponseEntity<String> serveFavicon() {
-        try {
-            Resource resource = new ClassPathResource("dist/favicon.ico");
-            
-            if (!resource.exists()) {
-                return ResponseEntity.notFound().build();
-            }
-            
-            String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            
-            return ResponseEntity.ok()
-                    .contentType(MediaType.valueOf("image/x-icon"))
-                    .body(content);
-                    
-        } catch (IOException e) {
-            return ResponseEntity.internalServerError().body("Error reading favicon: " + e.getMessage());
-        }
-    }
-
-    private String getFileExtension(String path) {
-        int lastDot = path.lastIndexOf('.');
-        if (lastDot > 0 && lastDot < path.length() - 1) {
-            return path.substring(lastDot + 1).toLowerCase();
-        }
-        return "";
     }
 }
