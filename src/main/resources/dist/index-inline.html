@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Tracker - Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #111827 0%, #1f2937 50%, #111827 100%);
+            color: #f9fafb;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(31, 41, 55, 0.5);
+            padding: 30px;
+            border-radius: 16px;
+            border: 1px solid rgba(75, 85, 99, 0.3);
+            backdrop-filter: blur(12px);
+        }
+        h1 {
+            color: #10b981;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-button {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 18px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+        }
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Portfolio Tracker - Test Page</h1>
+        <p>This is a test page to verify that static resources are working correctly.</p>
+        
+        <div style="text-align: center;">
+            <button class="test-button" onclick="testFunction()">Test JavaScript</button>
+            <button class="test-button" onclick="changeColor()">Change Color</button>
+        </div>
+        
+        <div class="status" id="status">
+            ✅ Page loaded successfully! CSS and JavaScript are working.
+        </div>
+    </div>
+
+    <script>
+        function testFunction() {
+            document.getElementById('status').innerHTML = '🎉 JavaScript is working! Button clicked at: ' + new Date().toLocaleTimeString();
+            document.getElementById('status').style.background = 'rgba(59, 130, 246, 0.1)';
+            document.getElementById('status').style.borderColor = 'rgba(59, 130, 246, 0.3)';
+        }
+        
+        function changeColor() {
+            const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            document.body.style.background = `linear-gradient(135deg, ${randomColor}20 0%, ${randomColor}40 50%, ${randomColor}20 100%)`;
+        }
+        
+        // Test that the page loaded
+        console.log('Portfolio Tracker test page loaded successfully!');
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM fully loaded and parsed');
+        });
+    </script>
+</body>
+</html>
