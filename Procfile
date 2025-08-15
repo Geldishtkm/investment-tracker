@@ -1,1 +1,1 @@
-web: java -jar target/tracker-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+web: java -jar target/tracker-0.0.1-SNAPSHOT.jar

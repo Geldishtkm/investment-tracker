@@ -1,0 +1,27 @@
+{
+  "name": "portfolio-tracker",
+  "description": "Portfolio Tracker Spring Boot Application",
+  "repository": "https://github.com/yourusername/your-repo-name",
+  "logo": "https://node-js-sample.herokuapp.com/node.png",
+  "keywords": ["java", "spring-boot", "portfolio", "crypto"],
+  "buildpacks": [
+    {
+      "url": "heroku/java"
+    }
+  ],
+  "env": {
+    "JWT_SECRET": {
+      "description": "Secret key for JWT tokens",
+      "value": "my-secret-key-123"
+    },
+    "SPRING_PROFILES_ACTIVE": {
+      "description": "Spring profile to use",
+      "value": "prod"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-postgresql:mini"
+    }
+  ]
+}
