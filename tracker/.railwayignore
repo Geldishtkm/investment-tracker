@@ -1,0 +1,30 @@
+# Development files
+node_modules/
+.git/
+.github/
+*.log
+*.tmp
+
+# Build artifacts (will be rebuilt)
+target/
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+src/test/
+
+# Documentation
+*.md
+!README.md
+
+# Local configuration
+.env
+.env.local
