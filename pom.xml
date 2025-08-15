@@ -150,6 +150,11 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <profiles>
+                        <profile>prod</profile>
+                    </profiles>
+                </configuration>
             </plugin>
 
             <!-- Maven Compiler Plugin with Lombok support -->
