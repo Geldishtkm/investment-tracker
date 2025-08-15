@@ -61,6 +61,9 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints (no authentication required)
+                .requestMatchers(mvcMatcherBuilder.pattern("/")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/health")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/ping")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
@@ -75,7 +78,7 @@ public class SecurityConfig {
                 // Static resources
                 .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
+                .requestMatcherBuilder.pattern(mvcMatcherBuilder.pattern("/images/**")).permitAll()
                 
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
