@@ -6,10 +6,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+// import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication(scanBasePackages = "com.portfolio.tracker")
-@EnableJpaRepositories(basePackages = "com.portfolio.tracker.repository")
+// @EnableJpaRepositories  // Temporarily disabled for Railway deployment
 @EnableScheduling
 @EnableCaching
 public class PortfolioTrackerApplication {
