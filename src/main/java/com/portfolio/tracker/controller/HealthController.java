@@ -40,6 +40,13 @@ public class HealthController {
         }
     }
 
+    @GetMapping("/favicon.ico")
+    public ResponseEntity<String> favicon() {
+        return ResponseEntity.ok()
+                .contentType(MediaType.valueOf("image/x-icon"))
+                .body("🎯");
+    }
+
     private String getFallbackHtml() {
         return "<!DOCTYPE html>" +
                "<html lang=\"en\">" +
