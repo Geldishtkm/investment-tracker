@@ -36,6 +36,25 @@ public class JwtFilter extends OncePerRequestFilter {
     private UserDetailsServiceImpl userDetailsService;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String requestUri = request.getRequestURI();
+        
+        // Skip JWT filtering for public endpoints and static resources
+        return requestUri.startsWith("/") ||
+               requestUri.startsWith("/health") ||
+               requestUri.startsWith("/ping") ||
+               requestUri.startsWith("/auth/") ||
+               requestUri.startsWith("/api/crypto/") ||
+               requestUri.startsWith("/api/price-history/") ||
+               requestUri.startsWith("/dist/") ||
+               requestUri.startsWith("/favicon.ico") ||
+               requestUri.startsWith("/swagger-ui/") ||
+               requestUri.startsWith("/api-docs/") ||
+               requestUri.startsWith("/v3/api-docs/") ||
+               requestUri.startsWith("/webjars/");
+    }
+
+    @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain)
