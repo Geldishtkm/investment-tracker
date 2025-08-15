@@ -13,24 +13,16 @@ public class HealthController {
     @GetMapping(value = "/", produces = "text/html")
     public String home() {
         return "<!DOCTYPE html>" +
-               "<html>" +
+               "<html lang=\"en\">" +
                "<head>" +
+               "<meta charset=\"UTF-8\">" +
+               "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">" +
                "<title>Portfolio Tracker</title>" +
-               "<style>" +
-               "body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }" +
-               ".success { color: green; font-size: 24px; }" +
-               ".info { color: blue; font-size: 18px; }" +
-               "</style>" +
+               "<link rel=\"stylesheet\" href=\"/dist/assets/index-ff80a9a3.css\">" +
                "</head>" +
                "<body>" +
-               "<h1 class=\"success\">🎉 Portfolio Tracker is Running! 🎉</h1>" +
-               "<p class=\"info\">Your Spring Boot application is successfully deployed on Heroku!</p>" +
-               "<p>Check these endpoints:</p>" +
-               "<ul style=\"list-style: none; padding: 0;\">" +
-               "<li><a href=\"/health\">/health</a> - Application health status</li>" +
-               "<li><a href=\"/ping\">/ping</a> - Simple ping test</li>" +
-               "</ul>" +
-               "<p><small>Deployed at: " + LocalDateTime.now() + "</small></p>" +
+               "<div id=\"root\"></div>" +
+               "<script type=\"module\" src=\"/dist/assets/index-3ea4737f.js\"></script>" +
                "</body>" +
                "</html>";
     }
