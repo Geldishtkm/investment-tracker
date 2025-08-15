@@ -78,7 +78,7 @@ public class SecurityConfig {
                 // Static resources
                 .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
-                .requestMatcherBuilder.pattern(mvcMatcherBuilder.pattern("/images/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
                 
                 // All other endpoints require authentication
                 .anyRequest().authenticated()
