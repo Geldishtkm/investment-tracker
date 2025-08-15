@@ -1,0 +1,9 @@
+# Ignore unnecessary files for Render deployment
+node_modules/
+.git/
+.vscode/
+target/
+*.log
+*.tmp
+*.bat
+*.exe
