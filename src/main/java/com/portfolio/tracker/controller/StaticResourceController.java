@@ -13,48 +13,37 @@ import java.nio.charset.StandardCharsets;
 @CrossOrigin(origins = "*")
 public class StaticResourceController {
 
-    @GetMapping("/dist/**")
-    public ResponseEntity<String> serveStaticFile(@RequestParam String path) {
+    @GetMapping("/dist/assets/index-ff80a9a3.css")
+    public ResponseEntity<String> serveCss() {
+        return serveFile("dist/assets/index-ff80a9a3.css", "text/css");
+    }
+    
+    @GetMapping("/dist/assets/index-3ea4737f.js")
+    public ResponseEntity<String> serveJs() {
+        return serveFile("dist/assets/index-3ea4737f.js", "application/javascript");
+    }
+    
+    @GetMapping("/favicon.ico")
+    public ResponseEntity<String> serveFavicon() {
+        return serveFile("dist/favicon.ico", "image/x-icon");
+    }
+    
+    private ResponseEntity<String> serveFile(String filePath, String contentType) {
         try {
-            // Remove /dist prefix and get the file path
-            String filePath = path.replace("/dist/", "");
-            if (filePath.isEmpty()) {
-                filePath = "index.html";
-            }
-            
-            // Load file from classpath resources
-            Resource resource = new ClassPathResource("dist/" + filePath);
+            Resource resource = new ClassPathResource(filePath);
             
             if (!resource.exists()) {
                 return ResponseEntity.notFound().build();
             }
             
-            // Read file content
             String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             
-            // Determine content type based on file extension
-            MediaType mediaType = getMediaType(filePath);
-            
             return ResponseEntity.ok()
-                    .contentType(mediaType)
+                    .contentType(MediaType.valueOf(contentType))
                     .body(content);
                     
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Error reading file: " + e.getMessage());
-        }
-    }
-    
-    private MediaType getMediaType(String fileName) {
-        if (fileName.endsWith(".css")) {
-            return MediaType.valueOf("text/css");
-        } else if (fileName.endsWith(".js")) {
-            return MediaType.valueOf("application/javascript");
-        } else if (fileName.endsWith(".html")) {
-            return MediaType.valueOf("text/html");
-        } else if (fileName.endsWith(".ico")) {
-            return MediaType.valueOf("image/x-icon");
-        } else {
-            return MediaType.APPLICATION_OCTET_STREAM;
         }
     }
 }
