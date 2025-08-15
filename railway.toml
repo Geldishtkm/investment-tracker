@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+buildCommand = "mvn clean package -DskipTests"
+
+[deploy]
+startCommand = "java -jar target/tracker-0.0.1-SNAPSHOT.jar"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[deploy.envs]
+SPRING_PROFILES_ACTIVE = "prod"
+JWT_SECRET = "railway-secret-key-123"
+PORT = "8080"
