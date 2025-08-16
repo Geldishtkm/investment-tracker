@@ -381,7 +381,7 @@ public class AssetService {
             double assetValue = asset.getQuantity() * asset.getPricePerUnit();
             double weight = assetValue / totalValue;
             
-            double assetMaxDrawdown = estimateMaxDrawdownByAssetType(asset.getName());
+            double assetMaxDrawdown = calculateMaxDrawdown(asset.getName());
             weightedMaxDrawdown += assetMaxDrawdown * weight;
             totalWeight += weight;
         }
@@ -389,24 +389,23 @@ public class AssetService {
         return totalWeight > 0 ? weightedMaxDrawdown : 0.20; // Default to 20% if no assets
     }
 
-    private double estimateMaxDrawdownByAssetType(String assetName) {
-        String name = assetName.toLowerCase();
-        
-        // Estimate max drawdown based on asset type
-        if (name.contains("bitcoin") || name.contains("btc") || name.contains("crypto")) {
-            return 0.60; // Crypto can have massive drawdowns
-        } else if (name.contains("ethereum") || name.contains("eth")) {
-            return 0.55; // Similar to Bitcoin
-        } else if (name.contains("stock") || name.contains("equity")) {
-            return 0.30; // Stocks can drop significantly
-        } else if (name.contains("bond") || name.contains("treasury")) {
-            return 0.05; // Bonds are very stable
-        } else if (name.contains("gold") || name.contains("commodity")) {
-            return 0.20; // Commodities moderate drawdowns
-        } else {
-            return 0.25; // Default for unknown types
+    public double calculateMaxDrawdown(List<Double> prices) {
+    double maxDrawdown = 0.0;
+    double peak = prices.get(0);
+
+    for (double price : prices) {
+        if (price > peak) {
+            peak = price; // new peak
+        }
+        double drawdown = (peak - price) / peak;
+        if (drawdown > maxDrawdown) {
+            maxDrawdown = drawdown;
         }
     }
+    return maxDrawdown;
+}
+
+    
 
     public double calculateBetaByUser(User user) {
         List<Asset> userAssets = getAssetsByUser(user);
