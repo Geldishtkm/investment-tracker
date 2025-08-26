@@ -22,6 +22,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted with credentials:', credentials);
+    console.log('Username length:', credentials.username.length);
+    console.log('Password length:', credentials.password.length);
+
     setIsLoading(true);
     setError('');
 

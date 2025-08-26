@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import com.portfolio.tracker.security.JwtFilter;
 
 import java.util.Arrays;
+import org.springframework.http.HttpMethod;
 
 @Configuration
 @EnableWebSecurity
@@ -76,6 +77,9 @@ public class SecurityConfig {
                 .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
+                
+                // Explicitly allow OPTIONS requests for CORS preflight
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
                 // All other endpoints require authentication
                 .anyRequest().authenticated()

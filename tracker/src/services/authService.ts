@@ -34,20 +34,28 @@ export const authService = {
 
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', credentials.username);
-      formData.append('password', credentials.password);
+      console.log('Login attempt with credentials:', credentials);
+      const requestBody = JSON.stringify({
+        username: credentials.username,
+        password: credentials.password
+      });
+      console.log('Request body:', requestBody);
+      console.log('Request body length:', requestBody.length);
 
       const response = await fetch(`${AUTH_BASE_URL}/login`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
-        body: formData.toString(),
+        body: requestBody,
       });
+
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Login failed with response:', errorText);
         throw new Error(errorText || `Login failed with status ${response.status}`);
       }
 

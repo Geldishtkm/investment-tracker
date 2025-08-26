@@ -271,20 +271,38 @@ public class PriceHistoryService {
      * @return base price
      */
     private double getBasePrice(String assetName) {
-        String lowerName = assetName.toLowerCase();
-        switch (lowerName) {
-            case "btc": return 45000.0;
-            case "eth": return 3000.0;
-            case "sol": return 100.0;
-            case "ada": return 0.5;
-            case "dot": return 7.0;
-            case "link": return 15.0;
-            case "matic": return 0.8;
-            case "buidl": return 1.0; // Stable coin
-            case "usdc": return 1.0;
-            case "usdt": return 1.0;
-            default: return 100.0;
+        if (assetName == null || assetName.isEmpty()) {
+            return 100.0;
         }
+        String prefix = assetName.toLowerCase() + CACHE_KEY_SEPARATOR;
+        // Prefer the most recent cached series if present
+        double lastObserved = Double.NaN;
+        int bestDays = -1;
+        for (Map.Entry<String, List<double[]>> entry : priceHistoryCache.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith(prefix)) {
+                // Parse days from key suffix when possible
+                int days = -1;
+                try {
+                    String[] parts = key.split(CACHE_KEY_SEPARATOR);
+                    days = Integer.parseInt(parts[parts.length - 1]);
+                } catch (Exception ignored) {}
+                List<double[]> series = entry.getValue();
+                if (series != null && !series.isEmpty()) {
+                    double[] last = series.get(series.size() - 1);
+                    double price = last.length > 1 ? last[1] : Double.NaN;
+                    if (!Double.isNaN(price) && days > bestDays) {
+                        bestDays = days;
+                        lastObserved = price;
+                    }
+                }
+            }
+        }
+        if (!Double.isNaN(lastObserved)) {
+            return lastObserved;
+        }
+        // Neutral default when nothing is cached
+        return 100.0;
     }
 
     /**

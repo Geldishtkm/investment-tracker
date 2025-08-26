@@ -79,14 +79,6 @@ public class CryptoPriceService {
                         firstCoin.get("current_price"),
                         firstCoin.get("price_change_24h"));
                     
-                    // Validate price data
-                    Object priceObj = firstCoin.get("current_price");
-                    if (priceObj != null) {
-                        double price = ((Number) priceObj).doubleValue();
-                        if (price > 100000) {
-                            logger.warn("Suspiciously high price detected: {} for coin {}", price, firstCoin.get("name"));
-                        }
-                    }
                 }
                 
                 // Validate and fix prices before caching
@@ -223,25 +215,15 @@ public class CryptoPriceService {
         for (Map<String, Object> coin : coins) {
             Map<String, Object> validatedCoin = new HashMap<>(coin);
             
-            // Check if price is suspiciously high (likely wrong currency)
+            // Only validate for truly erroneous data, not legitimate high prices
             Object priceObj = coin.get("current_price");
             if (priceObj instanceof Number) {
                 double price = ((Number) priceObj).doubleValue();
                 
-                // If price is over $100,000, it's likely wrong currency
-                if (price > 100000) {
-                    logger.warn("Suspiciously high price detected: {} for coin {}. Attempting to fix...", price, coin.get("name"));
-                    
-                    // Try to get the correct USD price using the simple price endpoint
-                    try {
-                        String coinId = (String) coin.get("id");
-                        double correctPrice = getCryptoPriceInUSD(coinId);
-                        validatedCoin.put("current_price", correctPrice);
-                        logger.info("Fixed price for {}: {} -> {}", coin.get("name"), price, correctPrice);
-                    } catch (Exception e) {
-                        logger.error("Failed to fix price for {}: {}", coin.get("name"), e.getMessage());
-                        // Keep original price if we can't fix it
-                    }
+                // Only flag negative prices or extreme outliers (likely data errors)
+                if (price < 0 || price > 1000000) { // Allow prices up to $1M (realistic for some tokens)
+                    logger.warn("Invalid price detected: {} for coin {}. Skipping validation fix.", price, coin.get("name"));
+                    // Don't attempt to "fix" - just log and keep original
                 }
             }
             

@@ -15,10 +15,12 @@ import java.util.*;
 public class AssetService {
 
     private final AssetRepository assetRepository;
+    private final PriceHistoryService priceHistoryService;
 
     @Autowired
-    public AssetService(AssetRepository assetRepository) {
+    public AssetService(AssetRepository assetRepository, PriceHistoryService priceHistoryService) {
         this.assetRepository = assetRepository;
+        this.priceHistoryService = priceHistoryService;
     }
 
     public List<Asset> getAllAssets() {
@@ -293,7 +295,7 @@ public class AssetService {
             double assetValue = asset.getQuantity() * asset.getPricePerUnit();
             double weight = assetValue / totalValue;
             
-            double assetSharpe = estimateSharpeByAssetType(asset.getName());
+            double assetSharpe = estimateSharpeByAsset(asset);
             weightedSharpe += assetSharpe * weight;
             totalWeight += weight;
         }
@@ -301,23 +303,43 @@ public class AssetService {
         return totalWeight > 0 ? weightedSharpe / totalWeight : 1.0;
     }
 
-    private double estimateSharpeByAssetType(String assetName) {
-        String name = assetName.toLowerCase();
-        
-        // Estimate Sharpe ratios based on asset type characteristics
-        if (name.contains("bitcoin") || name.contains("btc") || name.contains("crypto")) {
-            return 1.2; // Higher risk-adjusted returns for crypto
-        } else if (name.contains("ethereum") || name.contains("eth")) {
-            return 1.1; // Slightly lower than Bitcoin
-        } else if (name.contains("stock") || name.contains("equity")) {
-            return 0.8; // Typical stock market returns
-        } else if (name.contains("bond") || name.contains("treasury")) {
-            return 0.5; // Lower returns, lower risk
-        } else if (name.contains("gold") || name.contains("commodity")) {
-            return 0.3; // Commodities typically have lower Sharpe ratios
-        } else {
-            return 0.7; // Default for unknown asset types
+    private double estimateSharpeByAsset(Asset asset) {
+        List<Double> prices = priceHistoryService.getHistoricalPrices(asset.getName(), 252);
+        if (prices == null || prices.size() < 3) {
+            // Not enough data to compute meaningful Sharpe
+            return 0.0;
         }
+
+        List<Double> returns = computeDailyReturns(prices);
+        if (returns.isEmpty()) {
+            return 0.0;
+        }
+
+        double riskFreeDaily = 0.04 / 252.0; // align with class-level Sharpe calc risk-free rate (4% annual)
+        return computeSharpe(returns, riskFreeDaily);
+    }
+
+    private List<Double> computeDailyReturns(List<Double> prices) {
+        List<Double> returns = new ArrayList<>();
+        for (int i = 1; i < prices.size(); i++) {
+            double prev = prices.get(i - 1);
+            double curr = prices.get(i);
+            if (prev != 0) {
+                returns.add((curr - prev) / prev);
+            }
+        }
+        return returns;
+    }
+
+    private double computeSharpe(List<Double> returns, double riskFreeDaily) {
+        if (returns.size() < 2) return 0.0;
+        double avg = returns.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double variance = returns.stream().mapToDouble(r -> {
+            return Math.pow(r - avg, 2);
+        }).average().orElse(0.0);
+        double stdDev = Math.sqrt(variance);
+        if (stdDev == 0) return 0.0;
+        return (avg - riskFreeDaily) / stdDev;
     }
 
     public double calculateVolatilityByUser(User user) {
@@ -337,7 +359,7 @@ public class AssetService {
             double assetValue = asset.getQuantity() * asset.getPricePerUnit();
             double weight = assetValue / totalValue;
             
-            double assetVolatility = estimateVolatilityByAssetType(asset.getName());
+            double assetVolatility = estimateVolatilityFromHistory(asset.getName());
             weightedVolatility += assetVolatility * weight;
             totalWeight += weight;
         }
@@ -345,23 +367,14 @@ public class AssetService {
         return totalWeight > 0 ? weightedVolatility : 0.15; // Default to 15% if no assets
     }
 
-    private double estimateVolatilityByAssetType(String assetName) {
-        String name = assetName.toLowerCase();
-        
-        // Estimate volatility based on asset type characteristics
-        if (name.contains("bitcoin") || name.contains("btc") || name.contains("crypto")) {
-            return 0.80; // Crypto is highly volatile
-        } else if (name.contains("ethereum") || name.contains("eth")) {
-            return 0.75; // Also very volatile
-        } else if (name.contains("stock") || name.contains("equity")) {
-            return 0.20; // Typical stock volatility
-        } else if (name.contains("bond") || name.contains("treasury")) {
-            return 0.05; // Bonds are very stable
-        } else if (name.contains("gold") || name.contains("commodity")) {
-            return 0.15; // Commodities moderate volatility
-        } else {
-            return 0.25; // Default for unknown types
-        }
+    private double estimateVolatilityFromHistory(String assetName) {
+        List<Double> prices = priceHistoryService.getHistoricalPrices(assetName, 252);
+        if (prices.size() < 2) return 0.0;
+        List<Double> returns = computeDailyReturns(prices);
+        if (returns.isEmpty()) return 0.0;
+        double mean = returns.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double variance = returns.stream().mapToDouble(r -> Math.pow(r - mean, 2)).average().orElse(0.0);
+        return Math.sqrt(variance); // daily volatility
     }
 
     public double calculateMaxDrawdownByUser(User user) {
@@ -380,8 +393,9 @@ public class AssetService {
         for (Asset asset : userAssets) {
             double assetValue = asset.getQuantity() * asset.getPricePerUnit();
             double weight = assetValue / totalValue;
-            
-            double assetMaxDrawdown = calculateMaxDrawdown(asset.getName());
+
+            List<Double> prices = priceHistoryService.getHistoricalPrices(asset.getName(), 252);
+            double assetMaxDrawdown = prices.isEmpty() ? 0.0 : calculateMaxDrawdown(prices);
             weightedMaxDrawdown += assetMaxDrawdown * weight;
             totalWeight += weight;
         }
@@ -417,6 +431,11 @@ public class AssetService {
                 .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
                 .sum();
         
+        // Use portfolio combined historical returns as benchmark
+        List<String> assetNames = new ArrayList<>();
+        for (Asset a : userAssets) assetNames.add(a.getName());
+        List<Double> benchmarkReturns = priceHistoryService.getPortfolioHistoricalReturns(assetNames, 252);
+        
         double weightedBeta = 0.0;
         double totalWeight = 0.0;
         
@@ -424,31 +443,31 @@ public class AssetService {
             double assetValue = asset.getQuantity() * asset.getPricePerUnit();
             double weight = assetValue / totalValue;
             
-            double assetBeta = estimateBetaByAssetType(asset.getName());
+            List<Double> assetReturns = priceHistoryService.calculateHistoricalReturns(asset.getName(), 252);
+            double assetBeta = computeBeta(assetReturns, benchmarkReturns);
             weightedBeta += assetBeta * weight;
             totalWeight += weight;
         }
         
-        return totalWeight > 0 ? weightedBeta : 1.0; // Default to market beta if no assets
+        return totalWeight > 0 ? weightedBeta : 1.0; // Fallback to 1.0 if no assets
     }
 
-    private double estimateBetaByAssetType(String assetName) {
-        String name = assetName.toLowerCase();
-        
-        // Estimate beta based on asset type correlation with market
-        if (name.contains("bitcoin") || name.contains("btc") || name.contains("crypto")) {
-            return 0.3; // Crypto has low correlation with traditional markets
-        } else if (name.contains("ethereum") || name.contains("eth")) {
-            return 0.4; // Slightly higher correlation than Bitcoin
-        } else if (name.contains("stock") || name.contains("equity")) {
-            return 1.0; // Stocks typically move with the market
-        } else if (name.contains("bond") || name.contains("treasury")) {
-            return 0.1; // Bonds often move opposite to stocks
-        } else if (name.contains("gold") || name.contains("commodity")) {
-            return -0.1; // Gold can be a hedge against market downturns
-        } else {
-            return 0.8; // Default for unknown types
+    private double computeBeta(List<Double> assetReturns, List<Double> benchmarkReturns) {
+        if (assetReturns == null || benchmarkReturns == null) return 1.0;
+        int n = Math.min(assetReturns.size(), benchmarkReturns.size());
+        if (n < 2) return 1.0;
+        double assetMean = assetReturns.subList(0, n).stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double benchMean = benchmarkReturns.subList(0, n).stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double cov = 0.0;
+        double var = 0.0;
+        for (int i = 0; i < n; i++) {
+            double a = assetReturns.get(i) - assetMean;
+            double b = benchmarkReturns.get(i) - benchMean;
+            cov += a * b;
+            var += b * b;
         }
+        if (var == 0.0) return 1.0;
+        return cov / var;
     }
 
     public double calculateDiversificationScoreByUser(User user) {
