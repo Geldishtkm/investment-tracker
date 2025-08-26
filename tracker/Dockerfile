@@ -1,5 +1,5 @@
 # ==== DIGITALOCEAN OPTIMIZED DOCKERFILE (JAVA BACKEND ONLY) ====
-FROM openjdk:17-jdk-slim AS builder
+FROM eclipse-temurin:17-jdk AS builder
 
 # Set working directory
 WORKDIR /app
@@ -22,7 +22,7 @@ RUN chmod +x mvnw
 RUN ./mvnw clean package -DskipTests
 
 # Create runtime image
-FROM openjdk:17-jre-slim
+FROM eclipse-temurin:17-jre
 
 # Set working directory
 WORKDIR /app
