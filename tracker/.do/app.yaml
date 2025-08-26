@@ -1,0 +1,40 @@
+name: portfolio-tracker
+services:
+- name: backend
+  source_dir: /
+  github:
+    repo: YOUR_USERNAME/YOUR_REPO_NAME
+    branch: main
+  run_command: java -jar target/tracker-0.0.1-SNAPSHOT.jar --spring.profiles.active=digitalocean
+  build_command: mvn clean package -DskipTests
+  environment_slug: java
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  routes:
+  - path: /
+  envs:
+  - key: SPRING_PROFILES_ACTIVE
+    value: digitalocean
+  - key: SERVER_PORT
+    value: 8080
+  - key: JWT_SECRET
+    value: ${JWT_SECRET}
+  - key: DATABASE_URL
+    value: ${DATABASE_URL}
+  - key: DATABASE_USERNAME
+    value: ${DATABASE_USERNAME}
+  - key: DATABASE_PASSWORD
+    value: ${DATABASE_PASSWORD}
+  - key: ALLOWED_ORIGINS
+    value: ${ALLOWED_ORIGINS}
+  - key: JAVA_VERSION
+    value: "17"
+  - key: MAVEN_VERSION
+    value: "3.9.6"
+
+databases:
+- name: portfolio-tracker-db
+  engine: PG
+  version: "15"
+  size: db-s-1vcpu-1gb
+  private_network_uuid: ${PRIVATE_NETWORK_UUID}

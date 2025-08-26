@@ -1,0 +1,41 @@
+# Frontend files - exclude from DigitalOcean backend build
+src/
+public/
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+tsconfig.node.json
+vite.config.ts
+tailwind.config.js
+postcss.config.js
+.eslintrc.cjs
+index.html
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Logs
+*.log
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Keep only backend files
+!src/main/
+!pom.xml
+!mvnw
+!mvnw.cmd
+!.mvn/
+!target/

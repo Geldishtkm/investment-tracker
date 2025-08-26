@@ -1,0 +1,5 @@
+# DigitalOcean Buildpack Configuration
+# Forces Java buildpack usage
+buildpacks:
+  - name: heroku/java
+    version: latest
