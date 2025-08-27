@@ -1,7 +1,7 @@
 import { Asset, CryptoPrice, AssetWithPrice, Coin, PriceHistoryPoint } from '../types';
 import { authService } from './authService';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 export const assetService = {
   getAllAssets: async (): Promise<Asset[]> => {
@@ -366,8 +366,7 @@ export const priceHistoryService = {
         
         const alternativeId = alternativeIds[coinId.toLowerCase() as keyof typeof alternativeIds];
         if (alternativeId) {
-          console.log('🔄 Trying alternative coin ID:', alternativeId);
-          return priceHistoryService.getPriceHistoryWithRange(alternativeId, days);
+          console.log('🔄 Trying alternative coin ID:', alternativeId);          return priceHistoryService.getPriceHistoryWithRange(alternativeId, days);
         }
         
         return [];

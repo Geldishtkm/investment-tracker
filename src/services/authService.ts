@@ -1,6 +1,6 @@
 import { LoginCredentials, RegisterCredentials, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
 
-const AUTH_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const AUTH_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 export const authService = {
   register: async (credentials: RegisterCredentials): Promise<string> => {

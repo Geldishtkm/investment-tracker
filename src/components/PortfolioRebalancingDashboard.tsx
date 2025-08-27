@@ -54,7 +54,7 @@ interface PortfolioRebalancing {
   portfolioStatus: string;
 }
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 const PortfolioRebalancingDashboard: React.FC = () => {
   const [rebalancing, setRebalancing] = useState<PortfolioRebalancing | null>(null);

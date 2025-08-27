@@ -1,6 +1,6 @@
 import { LoginCredentials, RegisterCredentials, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
 
-const AUTH_BASE_URL = 'http://localhost:8080/auth';
+const AUTH_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 export const authService = {
   register: async (credentials: RegisterCredentials): Promise<string> => {
@@ -9,7 +9,7 @@ export const authService = {
       formData.append('username', credentials.username);
       formData.append('password', credentials.password);
 
-      const fullUrl = `${AUTH_BASE_URL}/register`;
+      const fullUrl = `${AUTH_BASE_URL}/auth/register`;
 
       const response = await fetch(fullUrl, {
         method: 'POST',
@@ -42,7 +42,7 @@ export const authService = {
       console.log('Request body:', requestBody);
       console.log('Request body length:', requestBody.length);
 
-      const response = await fetch(`${AUTH_BASE_URL}/login`, {
+      const response = await fetch(`${AUTH_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,7 +170,7 @@ export const authService = {
       const token = authService.getToken();
       if (!token) return false;
 
-      const response = await fetch('http://localhost:8080/api/assets/debug', {
+      const response = await fetch(`${AUTH_BASE_URL}/api/assets/debug`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -193,7 +193,7 @@ export const authService = {
   // MFA Methods
   setupMfa: async (username: string, password: string): Promise<MfaSetupResponse> => {
     try {
-      const response = await fetch('http://localhost:8080/api/security/mfa/setup', {
+      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -216,7 +216,7 @@ export const authService = {
 
   verifyMfa: async (username: string, code: string): Promise<MfaVerificationResponse> => {
     try {
-      const response = await fetch('http://localhost:8080/api/security/mfa/verify', {
+      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -239,7 +239,7 @@ export const authService = {
 
   getMfaStatus: async (username: string): Promise<any> => {
     try {
-      const response = await fetch(`http://localhost:8080/api/security/mfa/status/${username}`);
+      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/status/${username}`);
       
       if (!response.ok) {
         const errorText = await response.text();
