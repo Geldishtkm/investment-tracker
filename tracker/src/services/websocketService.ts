@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 
-const WS_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace('https://', 'wss://')?.replace('http://', 'ws://') || 'ws://localhost:8080';
+// For production, always use secure WebSocket (wss://)
+const WS_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace('https://', 'wss://')?.replace('http://', 'ws://') || 'wss://invtracker-s5ain.ondigitalocean.app';
 
 /**
  * WebSocket service for real-time market data
