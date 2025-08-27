@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Package, BarChart3, Target, Activity } from 'lucide-react';
+import { DollarSign, Package, BarChart3, Target, Activity, RefreshCw } from 'lucide-react';
 import { AssetWithPrice } from '../types';
-import websocketService from '../services/websocketService';
 
 interface PortfolioSummaryProps {
   assets: AssetWithPrice[];
 }
 
 const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [livePrices, setLivePrices] = useState<Map<string, number>>(new Map());
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const assetCount = assets.length;
   const totalValue = assets.reduce((sum, asset) => {
-    const currentPrice = livePrices.get(asset.name) || asset.currentPrice || asset.pricePerUnit;
+    const currentPrice = asset.currentPrice || asset.pricePerUnit;
     return sum + (asset.quantity * currentPrice);
   }, 0);
   const averageValue = assetCount > 0 ? totalValue / assetCount : 0;
@@ -28,59 +26,44 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
   // Find highest and lowest value assets
   const highestValueAsset = assets.length > 0 
     ? assets.reduce((max, asset) => {
-        const currentPrice = livePrices.get(asset.name) || asset.currentPrice || asset.pricePerUnit;
-        const maxPrice = livePrices.get(max.name) || max.currentPrice || max.pricePerUnit;
+        const currentPrice = asset.currentPrice || asset.pricePerUnit;
+        const maxPrice = max.currentPrice || max.pricePerUnit;
         return (asset.quantity * currentPrice) > (max.quantity * maxPrice) ? asset : max;
       }) 
     : null;
   
   const lowestValueAsset = assets.length > 0 
     ? assets.reduce((min, asset) => {
-        const currentPrice = livePrices.get(min.name) || min.currentPrice || min.pricePerUnit;
-        const minPrice = livePrices.get(min.name) || min.currentPrice || min.pricePerUnit;
+        const currentPrice = asset.currentPrice || asset.pricePerUnit;
+        const minPrice = min.currentPrice || min.pricePerUnit;
         return (asset.quantity * currentPrice) < (min.quantity * minPrice) ? asset : min;
       }) 
     : null;
 
-  // Initialize WebSocket connection and start streaming automatically
-  useEffect(() => {
-    const initializeConnection = async () => {
-      try {
-        console.log('PortfolioSummary: Initializing WebSocket connection...');
-        await websocketService.connect();
-        setIsConnected(true);
-        
-        // Subscribe to market data for all user assets automatically
-        assets.forEach(asset => {
-          websocketService.subscribeToMarketData(asset.name, (data: any) => {
-            if (data.type === 'market-data' && data.symbol === asset.name) {
-              setLivePrices(prev => {
-                const newMap = new Map(prev);
-                newMap.set(asset.name, data.price);
-                return newMap;
-              });
-              setLastUpdate(new Date());
-            }
-          });
-        });
-        
-      } catch (error) {
-        console.error('PortfolioSummary: Failed to connect to WebSocket:', error);
-        setIsConnected(false);
-      }
-    };
-
-    if (assets.length > 0) {
-      initializeConnection();
+  // Manual refresh function
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      // Simulate refresh delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setLastUpdate(new Date());
+      // Trigger parent component refresh if needed
+      window.location.reload();
+    } catch (error) {
+      console.error('Refresh failed:', error);
+    } finally {
+      setIsRefreshing(false);
     }
+  };
 
-    // Cleanup on unmount
-    return () => {
-      if (assets.length > 0) {
-        websocketService.disconnect();
-      }
-    };
-  }, [assets]);
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLastUpdate(new Date());
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -89,9 +72,9 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-xl shadow-black/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <div className={`w-3 h-3 rounded-full ${isRefreshing ? 'bg-yellow-400' : 'bg-green-400'}`}></div>
               <span className="text-gray-300 text-sm">
-                {isConnected ? '🟢 Live Market Data' : '🔴 Market Data Offline'}
+                {isRefreshing ? '�� Refreshing...' : '🟢 Live Market Data'}
               </span>
             </div>
             <div className="text-xs text-gray-500">
