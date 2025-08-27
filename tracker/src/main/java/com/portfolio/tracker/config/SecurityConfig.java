@@ -62,9 +62,12 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints (no authentication required)
+                .requestMatchers(mvcMatcherBuilder.pattern("/")) .permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/index.html")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/actuator/health")).permitAll()
                 
                 // Documentation endpoints (public for development, can be restricted in production)
                 .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui/**")).permitAll()
