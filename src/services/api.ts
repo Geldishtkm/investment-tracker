@@ -1,7 +1,7 @@
 import { Asset, CryptoPrice, AssetWithPrice, Coin, PriceHistoryPoint } from '../types';
 import { authService } from './authService';
 
-const API_BASE_URL = 'http://localhost:8080/api/assets';
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
 
 export const assetService = {
   getAllAssets: async (): Promise<Asset[]> => {
@@ -9,7 +9,7 @@ export const assetService = {
       const authHeader = authService.getAuthHeader();
       console.log('Sending request to getAllAssets with auth header:', authHeader);
       
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(`${API_BASE_URL}/api/assets`, {
         headers: {
           'Content-Type': 'application/json',
           ...authHeader
@@ -32,7 +32,7 @@ export const assetService = {
 
   addAsset: async (asset: Omit<Asset, 'id'>): Promise<Asset> => {
     try {
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(`${API_BASE_URL}/api/assets`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -55,7 +55,7 @@ export const assetService = {
 
   updateAsset: async (id: number, asset: Omit<Asset, 'id'>): Promise<Asset> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/assets/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +78,7 @@ export const assetService = {
 
   deleteAsset: async (id: number): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/assets/${id}`, {
         method: 'DELETE',
         headers: {
           ...authService.getAuthHeader()
@@ -97,7 +97,7 @@ export const assetService = {
 
   getAllAssetsWithPrices: async (): Promise<AssetWithPrice[]> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/with-prices`, {
+      const response = await fetch(`${API_BASE_URL}/api/assets/with-prices`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -124,7 +124,7 @@ export const assetService = {
 
   getCryptoPrices: async (): Promise<CryptoPrice[]> => {
     try {
-      const response = await fetch('http://localhost:8080/api/crypto/prices', {
+      const response = await fetch(`${API_BASE_URL}/api/crypto/prices`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -143,7 +143,7 @@ export const assetService = {
 
   getCryptoPrice: async (coinId: string): Promise<number> => {
     try {
-      const response = await fetch(`http://localhost:8080/api/crypto/price/${coinId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/crypto/price/${coinId}`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -163,7 +163,7 @@ export const assetService = {
 
   getTopCoins: async (): Promise<Coin[]> => {
     try {
-      const response = await fetch('http://localhost:8080/api/crypto/top', {
+      const response = await fetch(`${API_BASE_URL}/api/crypto/top`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -184,7 +184,7 @@ export const assetService = {
 
   getPriceHistory: async (coinId: string): Promise<PriceHistoryPoint[]> => {
     try {
-      const response = await fetch(`http://localhost:8080/api/price-history/${coinId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/${coinId}`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -203,7 +203,7 @@ export const assetService = {
 
   getRiskMetrics: async (): Promise<any> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/risk-metrics`, {
+      const response = await fetch(`${API_BASE_URL}/api/assets/risk-metrics`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -223,7 +223,7 @@ export const assetService = {
   // Get all analytics data in one call
   getAllAnalytics: async (): Promise<any> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/analytics`, {
+      const response = await fetch(`${API_BASE_URL}/api/assets/analytics`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -243,7 +243,7 @@ export const assetService = {
   getCurrentPrice: async (assetName: string): Promise<number> => {
     try {
       // Try to get price from crypto API first
-      const response = await fetch(`http://localhost:8080/api/crypto/price/${assetName.toLowerCase()}`, {
+      const response = await fetch(`${API_BASE_URL}/api/crypto/price/${assetName.toLowerCase()}`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -271,10 +271,10 @@ export const analyticsService = {
 // Price History API - Connects to your Spring Boot backend
 export const priceHistoryService = {
   // Fetch historical price data for a specific coin
-  async getPriceHistory(coinId: string): Promise<PriceHistoryPoint[]> {
+  getPriceHistory: async (coinId: string): Promise<PriceHistoryPoint[]> => {
     try {
       console.log('🔍 Fetching price history for:', coinId);
-      const response = await fetch(`http://localhost:8080/api/price-history/${coinId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/${coinId}`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -317,7 +317,7 @@ export const priceHistoryService = {
   },
 
   // Get price history with time range (uses your backend's cached data)
-  async getPriceHistoryWithRange(coinId: string, days: number = 30): Promise<PriceHistoryPoint[]> {
+  getPriceHistoryWithRange: async (coinId: string, days: number = 30): Promise<PriceHistoryPoint[]> => {
     try {
       console.log('🔍 Fetching price history with range for:', coinId, 'days:', days);
       
@@ -334,7 +334,7 @@ export const priceHistoryService = {
       });
       
       // Use your backend's days parameter
-      const response = await fetch(`http://localhost:8080/api/price-history/${coinId}?days=${days}`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/${coinId}?days=${days}`, {
         headers: {
           'Content-Type': 'application/json',
           ...authHeader
@@ -367,7 +367,7 @@ export const priceHistoryService = {
         const alternativeId = alternativeIds[coinId.toLowerCase() as keyof typeof alternativeIds];
         if (alternativeId) {
           console.log('🔄 Trying alternative coin ID:', alternativeId);
-          return this.getPriceHistoryWithRange(alternativeId, days);
+          return priceHistoryService.getPriceHistoryWithRange(alternativeId, days);
         }
         
         return [];
@@ -395,11 +395,11 @@ export const priceHistoryService = {
   },
 
   // Force refresh cache for a specific coin
-  async refreshPriceHistory(coinId: string, days: number = 90): Promise<void> {
+  refreshPriceHistory: async (coinId: string, days: number = 90): Promise<void> => {
     try {
       console.log('🔄 Refreshing price history cache for:', coinId, 'days:', days);
       
-      const response = await fetch(`http://localhost:8080/api/price-history/refresh/${coinId}?days=${days}`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/refresh/${coinId}?days=${days}`, {
         method: 'POST',
         headers: {
           ...authService.getAuthHeader()
@@ -418,11 +418,11 @@ export const priceHistoryService = {
   },
 
   // Get cache status for a specific coin
-  async getCacheStatus(coinId: string): Promise<any> {
+  getCacheStatus: async (coinId: string): Promise<any> => {
     try {
       console.log('📊 Getting cache status for:', coinId);
       
-      const response = await fetch(`http://localhost:8080/api/price-history/status/${coinId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/status/${coinId}`, {
         headers: {
           ...authService.getAuthHeader()
         }
@@ -442,11 +442,11 @@ export const priceHistoryService = {
   },
 
   // Get full service cache summary
-  async getServiceStatus(): Promise<any> {
+  getServiceStatus: async (): Promise<any> => {
     try {
       console.log('📊 Getting service status');
       
-      const response = await fetch(`http://localhost:8080/api/price-history/status`, {
+      const response = await fetch(`${API_BASE_URL}/api/price-history/status`, {
         headers: {
           ...authService.getAuthHeader()
         }
