@@ -1,3 +1,7 @@
+import { EventEmitter } from 'events';
+
+const WS_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL?.replace('https://', 'wss://')?.replace('http://', 'ws://') || 'ws://localhost:8080';
+
 /**
  * WebSocket service for real-time market data
  * Uses native WebSocket instead of sockjs-client for better browser compatibility
@@ -18,7 +22,7 @@ class WebSocketService {
         return new Promise((resolve, reject) => {
             try {
                 // Use native WebSocket instead of sockjs-client
-                this.socket = new WebSocket('ws://localhost:8080/ws');
+                this.socket = new WebSocket(WS_BASE_URL + '/ws');
                 
                 // Connection success handler
                 this.socket.onopen = () => {

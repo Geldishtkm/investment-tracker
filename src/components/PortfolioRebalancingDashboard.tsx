@@ -54,6 +54,8 @@ interface PortfolioRebalancing {
   portfolioStatus: string;
 }
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8080';
+
 const PortfolioRebalancingDashboard: React.FC = () => {
   const [rebalancing, setRebalancing] = useState<PortfolioRebalancing | null>(null);
   const [riskTolerance, setRiskTolerance] = useState(0.5);
@@ -122,7 +124,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:8080/api/portfolio-rebalancing/optimize', {
+      const response = await fetch(`${API_BASE_URL}/api/portfolio-rebalancing/optimize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -155,7 +157,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('http://localhost:8080/api/portfolio-rebalancing/black-litterman', {
+      const response = await fetch(`${API_BASE_URL}/api/portfolio-rebalancing/black-litterman`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
