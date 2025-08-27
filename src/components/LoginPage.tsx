@@ -19,6 +19,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
   const [requiresMfa, setRequiresMfa] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaUsername, setMfaUsername] = useState('');
+  const [showMfaSetup, setShowMfaSetup] = useState(false);
+  const [mfaSetup, setMfaSetup] = useState<any>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +40,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       
       // Token is already saved by authService.login(), no need to call saveToken again
       console.log('Login successful for user:', authResponse.username);
+      
+      // Show MFA setup option after successful login
+      setShowMfaSetup(true);
+      
       onLoginSuccess();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Login failed');
@@ -278,6 +284,67 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                   </button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* MFA Setup Section - Only shown after successful login */}
+          {showMfaSetup && (
+            <div className="mt-8 glass-card p-6 border border-purple-600/30">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
+                  <Shield size={24} className="text-white" />
+                </div>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                  🔐 Setup Multi-Factor Authentication
+                </h3>
+                <p className="text-gray-400">
+                  Enhance your account security with MFA (optional)
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <button
+                  onClick={async () => {
+                    try {
+                      const response = await authService.setupMfa(credentials.username, credentials.password);
+                      if (response.success) {
+                        setMfaSetup(response);
+                        console.log('MFA setup successful:', response);
+                      }
+                    } catch (error) {
+                      console.error('MFA setup failed:', error);
+                    }
+                  }}
+                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-300"
+                >
+                  Setup MFA
+                </button>
+                
+                <button
+                  onClick={() => setShowMfaSetup(false)}
+                  className="w-full py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all duration-300"
+                >
+                  Skip for Now
+                </button>
+              </div>
+
+              {/* MFA Setup Result */}
+              {mfaSetup && (
+                <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
+                  <div className="text-center">
+                    <h4 className="text-white font-semibold mb-2">MFA Setup Complete! 🎉</h4>
+                    <p className="text-gray-300 text-sm mb-4">
+                      Your account is now protected with multi-factor authentication.
+                    </p>
+                    <button
+                      onClick={() => setShowMfaSetup(false)}
+                      className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
