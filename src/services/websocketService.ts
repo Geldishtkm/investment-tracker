@@ -19,11 +19,21 @@ class WebSocketService {
     /**
      * Initialize WebSocket connection
      */
-    connect(): Promise<void> {
+    async connect(): Promise<void> {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            console.log('WebSocket already connected');
+            return;
+        }
+
         return new Promise((resolve, reject) => {
             try {
                 // Use native WebSocket instead of sockjs-client
-                this.socket = new WebSocket(WS_BASE_URL + '/ws');
+                const wsUrl = WS_BASE_URL + '/ws';
+                console.log('🔌 Attempting to connect to WebSocket URL:', wsUrl);
+                console.log('🔌 WS_BASE_URL value:', WS_BASE_URL);
+                console.log('🔌 Environment variable VITE_API_BASE_URL:', (import.meta as any).env?.VITE_API_BASE_URL);
+                
+                this.socket = new WebSocket(wsUrl);
                 
                 // Connection success handler
                 this.socket.onopen = () => {
