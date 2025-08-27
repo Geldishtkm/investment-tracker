@@ -136,9 +136,9 @@ const RealTimeMarketDashboard: React.FC = () => {
                     
                     <div className="flex items-center gap-4 mb-4">
                         <div className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded-full ${isStreaming ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                            <div className={`w-3 h-3 rounded-full ${true ? 'bg-green-400' : 'bg-red-400'}`}></div>
                             <span className="text-gray-300">
-                                {isStreaming ? 'Streaming Active' : 'Initializing...'}
+                                Manual Refresh System
                             </span>
                         </div>
                     </div>

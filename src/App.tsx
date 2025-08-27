@@ -387,8 +387,7 @@ function App() {
                     </div>
                   </div>
                   <div className="text-sm text-gray-300">
-                    Your portfolio values are automatically updated with real-time market prices via WebSocket connection. 
-                    No manual refresh needed - prices update continuously in the background.
+                    Your portfolio values are automatically updated with real-time market prices via manual refresh and polling.
                   </div>
                 </div>
               )}
