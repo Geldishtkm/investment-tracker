@@ -18,11 +18,13 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setRegistrationSuccess(false); // Reset success state on new submission
 
     // Validate passwords match
     if (credentials.password !== confirmPassword) {
@@ -44,6 +46,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
       
       // Show success message and redirect to login
       console.log('Registration successful!');
+      setRegistrationSuccess(true);
       onRegisterSuccess();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');
@@ -220,7 +223,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
           </div>
 
           {/* Success Message */}
-          {!isLoading && !error && credentials.username && (
+          {!isLoading && !error && registrationSuccess && (
             <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
               <div className="flex items-center gap-3">
                 <CheckCircle className="w-5 h-5 text-green-400" />

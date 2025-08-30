@@ -1,17 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingDown, 
-  AlertTriangle, 
-  BarChart3, 
-  Calculator, 
-  Target,
-  Shield,
-  Activity,
-  PieChart,
-  LineChart,
-  Zap,
-  Info
-} from 'lucide-react';
+import { AlertTriangle, TrendingUp, TrendingDown, BarChart3, Shield, Target, Activity, DollarSign, Package, RefreshCw } from 'lucide-react';
+
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 interface VaRCalculation {
   id?: number;
@@ -79,7 +69,7 @@ const VaRDashboard: React.FC = () => {
         return;
       }
 
-      const response = await fetch(`/api/var/calculate?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
+      const response = await fetch(`${API_BASE_URL}/api/var/calculate?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -95,7 +85,7 @@ const VaRDashboard: React.FC = () => {
       setVarSummary(data);
       
       // Also fetch detailed calculation
-      const detailedResponse = await fetch(`/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
+      const detailedResponse = await fetch(`${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -244,7 +234,7 @@ const VaRDashboard: React.FC = () => {
                 onClick={calculateVaR}
                 className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 rounded-xl text-white font-medium transition-all duration-300 flex items-center justify-center gap-2"
               >
-                <Calculator size={20} />
+                <RefreshCw size={20} />
                 Recalculate VaR
               </button>
             </div>
@@ -255,9 +245,9 @@ const VaRDashboard: React.FC = () => {
         <div className="flex space-x-1 mb-8 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-2">
           {[
             { id: 'overview', label: 'Overview', icon: BarChart3 },
-            { id: 'methodologies', label: 'VaR Methods', icon: Calculator },
+            { id: 'methodologies', label: 'VaR Methods', icon: Package },
             { id: 'risk-metrics', label: 'Risk Metrics', icon: Activity },
-            { id: 'portfolio', label: 'Portfolio', icon: PieChart }
+            { id: 'portfolio', label: 'Portfolio', icon: DollarSign }
           ].map((tab) => (
             <button
               key={tab.id}
@@ -329,7 +319,7 @@ const VaRDashboard: React.FC = () => {
                   title: 'Parametric VaR',
                   value: varSummary.varResults.parametricVaR,
                   percentage: varSummary.varResults.parametricVaRPercentage,
-                  icon: Calculator,
+                  icon: Package,
                   color: 'from-green-600/20 to-green-700/20',
                   borderColor: 'border-green-600/40'
                 },
@@ -337,7 +327,7 @@ const VaRDashboard: React.FC = () => {
                   title: 'Monte Carlo VaR',
                   value: varSummary.varResults.monteCarloVaR,
                   percentage: varSummary.varResults.monteCarloVaRPercentage,
-                  icon: Zap,
+                  icon: RefreshCw,
                   color: 'from-purple-600/20 to-purple-700/20',
                   borderColor: 'border-purple-600/40'
                 },
@@ -450,7 +440,7 @@ const VaRDashboard: React.FC = () => {
                   title: 'Kurtosis',
                   value: varCalculation.kurtosis,
                   description: 'Distribution peakedness',
-                  icon: LineChart,
+                  icon: RefreshCw,
                   color: 'from-purple-600/20 to-purple-700/20',
                   borderColor: 'border-purple-600/40',
                   format: (val: number) => val.toFixed(2)
@@ -459,7 +449,7 @@ const VaRDashboard: React.FC = () => {
                   title: 'Expected Return',
                   value: varCalculation.expectedReturn,
                   description: 'Annualized return expectation',
-                  icon: TrendingDown,
+                  icon: TrendingUp,
                   color: 'from-orange-600/20 to-orange-700/20',
                   borderColor: 'border-orange-600/40',
                   format: (val: number) => `${(val * 100).toFixed(2)}%`
@@ -531,7 +521,7 @@ const VaRDashboard: React.FC = () => {
         <div className="mt-12 bg-gradient-to-r from-blue-600/10 to-indigo-600/10 backdrop-blur-sm border border-blue-600/20 rounded-2xl p-6">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Info size={20} className="text-white" />
+              <RefreshCw size={20} className="text-white" />
             </div>
             <div>
               <h4 className="text-lg font-semibold text-blue-300 mb-2">About Value at Risk (VaR)</h4>

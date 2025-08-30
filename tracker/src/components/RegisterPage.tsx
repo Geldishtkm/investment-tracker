@@ -18,11 +18,13 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+    setRegistrationSuccess(false); // Reset success state
 
     // Validate passwords match
     if (credentials.password !== confirmPassword) {
@@ -44,6 +46,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
       
       // Show success message and redirect to login
       console.log('Registration successful!');
+      setRegistrationSuccess(true);
       onRegisterSuccess();
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');
@@ -179,6 +182,21 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                   <div className="flex items-center gap-2 text-red-400">
                     <div className="w-2 h-2 bg-red-400 rounded-full"></div>
                     <span className="text-sm font-medium">{error}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Success Message */}
+              {!isLoading && !error && registrationSuccess && (
+                <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-400" />
+                    <div>
+                      <h4 className="text-white font-semibold">Registration Successful! 🎉</h4>
+                      <p className="text-gray-300 text-sm">
+                        Your account has been created. Please login to access your portfolio tracker and optionally setup MFA for enhanced security.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
