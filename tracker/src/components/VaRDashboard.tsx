@@ -108,7 +108,7 @@ const VaRDashboard: React.FC = () => {
     switch (riskLevel?.toUpperCase()) {
       case 'HIGH': return 'text-red-400 bg-red-600/20 border-red-600/30';
       case 'MEDIUM': return 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30';
-      case 'LOW': return 'text-green-400 bg-green-600/20 border-green-600/30';
+      case 'LOW': return 'text-green-700 bg-green-800/20 border-green-800/30';
       default: return 'text-gray-400 bg-gray-600/20 border-gray-600/30';
     }
   };
@@ -182,14 +182,14 @@ const VaRDashboard: React.FC = () => {
           </p>
           
           {/* Data Source Indicator */}
-          <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 rounded-xl max-w-2xl mx-auto">
+          <div className="mt-6 p-4 bg-gradient-to-r from-green-800/20 to-emerald-900/20 border border-green-700/30 rounded-xl max-w-2xl mx-auto">
             <div className="flex items-center gap-3 justify-center">
-              <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
-                <BarChart3 size={16} className="text-green-400" />
+                <div className="w-8 h-8 bg-green-800/20 rounded-full flex items-center justify-center">
+                <BarChart3 size={16} className="text-green-700" />
               </div>
               <div className="text-center">
-                <p className="text-green-300 font-medium">Real Market Data Active</p>
-                <p className="text-green-200/70 text-sm">VaR calculations use actual historical prices from CoinGecko API</p>
+                <p className="text-green-600 font-medium">Real Market Data Active</p>
+                <p className="text-green-500/70 text-sm">VaR calculations use actual historical prices from CoinGecko API</p>
               </div>
             </div>
           </div>
@@ -320,8 +320,8 @@ const VaRDashboard: React.FC = () => {
                   value: varSummary.varResults.parametricVaR,
                   percentage: varSummary.varResults.parametricVaRPercentage,
                   icon: Package,
-                  color: 'from-green-600/20 to-green-700/20',
-                  borderColor: 'border-green-600/40'
+                  color: 'from-green-800/20 to-green-900/20',
+                  borderColor: 'border-green-800/40'
                 },
                 {
                   title: 'Monte Carlo VaR',
@@ -381,11 +381,11 @@ const VaRDashboard: React.FC = () => {
                 </div>
                 
                 <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-green-300">Parametric VaR</h4>
+                  <h4 className="text-lg font-medium text-green-600">Parametric VaR</h4>
                   <p className="text-gray-400 text-sm">
                     Assumes normal distribution of returns. Fast calculation but may underestimate tail risk.
                   </p>
-                  <div className="text-2xl font-bold text-green-400">
+                  <div className="text-2xl font-bold text-green-700">
                     ${varCalculation.parametricVaR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 </div>
@@ -432,8 +432,8 @@ const VaRDashboard: React.FC = () => {
                   value: varCalculation.skewness,
                   description: 'Distribution asymmetry',
                   icon: BarChart3,
-                  color: 'from-green-600/20 to-green-700/20',
-                  borderColor: 'border-green-600/40',
+                  color: 'from-green-800/20 to-green-900/20',
+                  borderColor: 'border-green-800/40',
                   format: (val: number) => val.toFixed(3)
                 },
                 {
@@ -494,19 +494,19 @@ const VaRDashboard: React.FC = () => {
                 </div>
                 
                 <div>
-                  <h4 className="text-lg font-medium text-green-300 mb-4">Calculation Details</h4>
+                  <h4 className="text-lg font-medium text-green-600 mb-4">Calculation Details</h4>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
                       <span className="text-gray-300">Confidence Level</span>
-                      <span className="text-green-400 font-mono">{getConfidenceLevelLabel(varCalculation.confidenceLevel)}</span>
+                      <span className="text-green-700 font-mono">{getConfidenceLevelLabel(varCalculation.confidenceLevel)}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
                       <span className="text-gray-300">Time Horizon</span>
-                      <span className="text-green-400 font-mono">{getTimeHorizonLabel(varCalculation.timeHorizon)}</span>
+                      <span className="text-green-700 font-mono">{getTimeHorizonLabel(varCalculation.timeHorizon)}</span>
                     </div>
                     <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
                       <span className="text-gray-300">Calculation Date</span>
-                      <span className="text-green-400 font-mono">
+                      <span className="text-green-700 font-mono">
                         {new Date(varCalculation.calculationDate).toLocaleDateString()}
                       </span>
                     </div>

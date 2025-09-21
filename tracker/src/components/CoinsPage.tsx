@@ -173,10 +173,10 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-black via-gray-950 to-black relative overflow-hidden">
         {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-gray-800/20 via-gray-700/20 to-gray-600/20 animate-pulse"></div>
+        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(75,85,99,0.3),transparent_50%)]"></div>
         
         <div className="relative z-10 max-w-7xl mx-auto p-6">
           {/* Header */}
@@ -222,7 +222,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-black via-gray-950 to-black relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-purple-600/20 to-blue-600/20 animate-pulse"></div>
         
         <div className="relative z-10 max-w-7xl mx-auto p-6">
@@ -277,10 +277,10 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-950 to-black relative overflow-hidden">
       {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
+      <div className="absolute inset-0 bg-gradient-to-r from-gray-800/20 via-gray-700/20 to-gray-600/20 animate-pulse"></div>
+      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(75,85,99,0.3),transparent_50%)]"></div>
       
       <div className="relative z-10 max-w-7xl mx-auto p-6">
         {/* Header */}

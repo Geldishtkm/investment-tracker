@@ -72,7 +72,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-xl shadow-black/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${isRefreshing ? 'bg-yellow-400' : 'bg-green-400'}`}></div>
+              <div className={`w-3 h-3 rounded-full ${isRefreshing ? 'bg-yellow-400' : 'bg-green-700'}`}></div>
               <span className="text-gray-300 text-sm">
                 {isRefreshing ? '�� Refreshing...' : '🟢 Live Market Data'}
               </span>
@@ -90,17 +90,17 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Total Portfolio Value */}
-        <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-green-600/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1">
+        <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-green-800/50 hover:shadow-xl hover:shadow-green-800/20 transition-all duration-300 transform hover:-translate-y-1">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
+            <div className="w-12 h-12 bg-gradient-to-br from-green-800 to-emerald-900 rounded-2xl flex items-center justify-center shadow-lg shadow-green-800/40">
               <DollarSign size={24} className="text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors">Total Value</h3>
+              <h3 className="text-lg font-semibold text-white group-hover:text-green-600 transition-colors">Total Value</h3>
               <p className="text-sm text-gray-400">Portfolio worth</p>
             </div>
           </div>
-          <div className="text-3xl font-bold text-green-400 group-hover:text-green-300 transition-colors">
+          <div className="text-3xl font-bold text-green-700 group-hover:text-green-600 transition-colors">
             ${totalValue.toLocaleString('en-US', { 
               minimumFractionDigits: 2, 
               maximumFractionDigits: 2 
@@ -186,7 +186,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
           {/* Top Holdings */}
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-green-600 to-emerald-600 rounded-xl flex items-center justify-center">
+              <div className="w-8 h-8 bg-gradient-to-br from-green-800 to-emerald-900 rounded-xl flex items-center justify-center">
                 <Target size={16} className="text-white" />
               </div>
               Top Holdings
@@ -198,7 +198,7 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
                     <span className="text-gray-400">Highest Value</span>
                     <div className="text-sm text-gray-500">{highestValueAsset.name}</div>
                   </div>
-                  <span className="font-semibold text-green-400">
+                  <span className="font-semibold text-green-700">
                     ${(highestValueAsset.quantity * highestValueAsset.pricePerUnit).toLocaleString('en-US', { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 

@@ -231,14 +231,14 @@ const AnalyticsPage: React.FC = () => {
         {/* Portfolio Overview Cards */}
         {metrics && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-green-600/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1">
+            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-green-800/50 hover:shadow-xl hover:shadow-green-800/20 transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-800 to-emerald-900 rounded-2xl flex items-center justify-center shadow-lg shadow-green-800/40">
                   <DollarSign size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium">Portfolio Value</div>
               </div>
-              <div className="text-3xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
+              <div className="text-3xl font-bold text-green-700 group-hover:text-green-600 transition-colors duration-300">
                 {formatCurrency(metrics.totalValue)}
               </div>
               <div className="text-xs text-gray-500 mt-2">Current total value</div>
@@ -265,7 +265,7 @@ const AnalyticsPage: React.FC = () => {
                 <div className="text-gray-400 text-sm font-medium">ROI</div>
               </div>
               <div className={`text-3xl font-bold group-hover:scale-105 transition-transform duration-300 ${
-                metrics.roiPercentage >= 0 ? 'text-green-400 group-hover:text-green-300' : 'text-red-400 group-hover:text-red-300'
+                metrics.roiPercentage >= 0 ? 'text-green-700 group-hover:text-green-600' : 'text-red-400 group-hover:text-red-300'
               }`}>
                 {formatPercentage(metrics.roiPercentage)}
               </div>
@@ -342,12 +342,12 @@ const AnalyticsPage: React.FC = () => {
                 </div>
                 <div className="text-xs text-gray-500 mt-2">Market correlation</div>
               </div>
-              <div className="group text-center p-6 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-2xl border border-green-600/30 hover:border-green-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-600/40">
+              <div className="group text-center p-6 bg-gradient-to-r from-green-800/20 to-emerald-900/20 backdrop-blur-sm rounded-2xl border border-green-800/30 hover:border-green-700/50 transition-all duration-300 transform hover:-translate-y-1">
+                <div className="w-14 h-14 bg-gradient-to-br from-green-800 to-emerald-900 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-800/40">
                   <Activity size={24} className="text-white" />
                 </div>
                 <div className="text-gray-400 text-sm font-medium mb-2">Diversification</div>
-                <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
+                <div className="text-xl font-bold text-green-700 group-hover:text-green-600 transition-colors duration-300">
                   {riskMetrics.diversificationScore.toFixed(1)}/10
                 </div>
                 <div className="text-xs text-gray-500 mt-2">Portfolio spread</div>
@@ -384,14 +384,14 @@ const AnalyticsPage: React.FC = () => {
                       <td className="py-4 px-6 font-medium text-white group-hover:text-indigo-200 transition-colors">
                         {asset.name}
                       </td>
-                      <td className="text-right py-4 px-6 text-green-400 font-semibold group-hover:text-green-300 transition-colors">
+                      <td className="text-right py-4 px-6 text-green-700 font-semibold group-hover:text-green-600 transition-colors">
                         {formatCurrency(asset.currentValue)}
                       </td>
                       <td className="text-right py-4 px-6 text-gray-300 group-hover:text-gray-200 transition-colors">
                         {formatCurrency(asset.initialInvestment)}
                       </td>
                       <td className={`text-right py-4 px-6 font-bold ${
-                        asset.roiPercentage >= 0 ? 'text-green-400 group-hover:text-green-300' : 'text-red-400 group-hover:text-red-300'
+                        asset.roiPercentage >= 0 ? 'text-green-700 group-hover:text-green-600' : 'text-red-400 group-hover:text-red-300'
                       } transition-colors`}>
                         {formatPercentage(asset.roiPercentage)}
                       </td>

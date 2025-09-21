@@ -20,13 +20,13 @@ const AppToast: React.FC<{
   onClose: () => void;
 }> = ({ type, message, onClose }) => {
   const bgColor = type === 'success' 
-    ? 'bg-gradient-to-r from-green-500/90 to-emerald-600/90' 
+    ? 'bg-gradient-to-r from-green-800/90 to-emerald-900/90' 
     : type === 'error'
     ? 'bg-gradient-to-r from-red-500/90 to-red-600/90'
     : 'bg-gradient-to-r from-blue-500/90 to-blue-600/90';
   
   const borderColor = type === 'success' 
-    ? 'border-green-400/30' 
+    ? 'border-green-700/30' 
     : type === 'error'
     ? 'border-red-400/30'
     : 'border-blue-400/30';
@@ -269,7 +269,7 @@ function App() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-800"></div>
       </div>
     );
   }
@@ -365,7 +365,7 @@ function App() {
           {currentPage === 'portfolio' && (
             <div className="space-y-6">
               <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent mb-2">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-green-700 to-emerald-800 bg-clip-text text-transparent mb-2">
                   Portfolio Overview
                 </h2>
                 <p className="text-gray-400">Track your cryptocurrency investments and performance</p>
@@ -378,7 +378,7 @@ function App() {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-bold text-white flex items-center gap-3">
                       <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center">
-                        <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                        <div className="w-3 h-3 bg-green-700 rounded-full animate-pulse"></div>
                       </div>
                       Live Market Data
                     </h3>

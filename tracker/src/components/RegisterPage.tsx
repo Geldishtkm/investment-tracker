@@ -80,10 +80,10 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-600/40">
+            <div className="w-20 h-20 bg-gradient-to-br from-green-800 to-emerald-900 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-800/40">
               <UserPlus size={32} className="text-white" />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-green-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent mb-2">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-green-700 via-emerald-800 to-blue-400 bg-clip-text text-transparent mb-2">
               Create Account
             </h1>
             <p className="text-gray-400 text-lg">
@@ -92,7 +92,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
           </div>
 
           {/* Register Form */}
-          <div className="glass-card p-8 border border-green-600/30">
+          <div className="glass-card p-8 border border-green-800/30">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username Field */}
               <div className="space-y-2">
@@ -101,13 +101,13 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                 </label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <User size={20} className="text-green-400" />
+                    <User size={20} className="text-green-700" />
                   </div>
                   <input
                     type="text"
                     value={credentials.username}
                     onChange={handleInputChange('username')}
-                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-800/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-800 focus:border-green-800 transition-all duration-300"
                     placeholder="Choose a username"
                     required
                     disabled={isLoading}
@@ -122,13 +122,13 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                 </label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Lock size={20} className="text-green-400" />
+                    <Lock size={20} className="text-green-700" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={credentials.password}
                     onChange={handleInputChange('password')}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-800/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-800 focus:border-green-800 transition-all duration-300"
                     placeholder="Create a password"
                     required
                     disabled={isLoading}
@@ -154,13 +154,13 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                 </label>
                 <div className="relative">
                   <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Lock size={20} className="text-green-400" />
+                    <Lock size={20} className="text-green-700" />
                   </div>
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={handleConfirmPasswordChange}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-800/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-800 focus:border-green-800 transition-all duration-300"
                     placeholder="Confirm your password"
                     required
                     disabled={isLoading}
@@ -188,9 +188,9 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
               {/* Success Message */}
               {!isLoading && !error && registrationSuccess && (
-                <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
+                <div className="mt-6 p-4 bg-gradient-to-r from-green-800/20 to-emerald-900/20 backdrop-blur-sm border border-green-800/30 rounded-xl">
                   <div className="flex items-center gap-3">
-                    <CheckCircle className="w-5 h-5 text-green-400" />
+                    <CheckCircle className="w-5 h-5 text-green-700" />
                     <div>
                       <h4 className="text-white font-semibold">Registration Successful! 🎉</h4>
                       <p className="text-gray-300 text-sm">
@@ -205,7 +205,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-green-500/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-4 bg-gradient-to-r from-green-800 to-emerald-900 hover:from-green-900 hover:to-emerald-950 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-green-800/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isLoading ? (
                   <>
@@ -227,7 +227,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                   <button
                     type="button"
                     onClick={onSwitchToLogin}
-                    className="text-green-400 hover:text-green-300 font-medium transition-colors"
+                    className="text-green-700 hover:text-green-600 font-medium transition-colors"
                     disabled={isLoading}
                   >
                     Sign in here
@@ -242,7 +242,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
           {/* Features */}
           <div className="mt-8 grid grid-cols-1 gap-4">
-            <div className="glass-card p-4 border border-green-600/20">
+            <div className="glass-card p-4 border border-green-800/20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
                   <CheckCircle size={20} className="text-white" />
@@ -254,7 +254,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
               </div>
             </div>
             
-            <div className="glass-card p-4 border border-green-600/20">
+            <div className="glass-card p-4 border border-green-800/20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center">
                   <Sparkles size={20} className="text-white" />

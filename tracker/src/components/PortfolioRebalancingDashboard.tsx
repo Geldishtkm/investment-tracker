@@ -188,7 +188,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'BALANCED': return 'text-green-400';
+      case 'BALANCED': return 'text-green-700';
       case 'NEEDS_REBALANCING': return 'text-yellow-400';
       case 'CRITICAL': return 'text-red-400';
       default: return 'text-gray-400';
@@ -261,7 +261,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center">
-            <div className="text-3xl font-bold text-green-400">${portfolioValue.toLocaleString()}</div>
+            <div className="text-3xl font-bold text-green-700">${portfolioValue.toLocaleString()}</div>
             <div className="text-gray-400">Total Value</div>
           </div>
           <div className="text-center">
@@ -310,7 +310,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
             <button
               onClick={() => setShowViewsInput(!showViewsInput)}
-              className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-600 transition-all duration-300 flex items-center gap-2"
+              className="px-6 py-3 bg-gradient-to-r from-green-800 to-emerald-900 text-white rounded-xl font-medium hover:from-green-900 hover:to-emerald-950 transition-all duration-300 flex items-center gap-2"
             >
               <BarChart3 className="w-4 h-4" />
               Set Views
@@ -330,7 +330,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
           {showViewsInput && (
             <div className="mt-8 p-8 bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl">
               <h3 className="text-2xl font-bold text-white mb-8 flex items-center gap-3">
-                <BarChart3 className="w-7 h-7 text-green-400" />
+                <BarChart3 className="w-7 h-7 text-green-700" />
                 Your Market Views (Black-Litterman)
               </h3>
               
@@ -362,7 +362,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                           }
                         }
                       }}
-                      className="w-64 px-4 py-3 bg-gray-600 border border-gray-500 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      className="w-64 px-4 py-3 bg-gray-600 border border-gray-500 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-800 focus:border-transparent"
                     >
                       <option value="">Choose an asset...</option>
                       {portfolioAssets.map((asset) => (
@@ -426,7 +426,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                         setShowViewsInput(false);
                         // Here you could also save the views to backend if needed
                       }}
-                      className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-lg font-semibold hover:shadow-lg border border-green-500/30"
+                      className="px-8 py-4 bg-green-800 hover:bg-green-900 text-white rounded-xl transition-colors text-lg font-semibold hover:shadow-lg border border-green-700/30"
                     >
                       Set and Save Views
                     </button>
@@ -446,7 +446,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                     Neutral
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                    <span className="w-3 h-3 bg-green-800 rounded-full"></span>
                     Bullish
                   </span>
                 </div>
@@ -461,7 +461,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setShowViewsInput(false)}
-                  className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-green-500/30"
+                  className="px-8 py-4 bg-green-800 hover:bg-green-900 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-green-700/30"
                 >
                   Done
                 </button>
@@ -508,7 +508,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
 
         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
           <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-green-400" />
+            <Target className="w-5 h-5 text-green-700" />
             Target Allocation
           </h3>
           <div className="space-y-3">
@@ -518,7 +518,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <div className="w-24 bg-gray-700 rounded-full h-2">
                     <div
-                      className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                      className="bg-green-800 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${allocation * 100}%` }}
                     ></div>
                   </div>
@@ -544,7 +544,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
                   <span className="font-medium text-white">{action.assetName}</span>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     action.actionType === 'BUY'
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                      ? 'bg-green-800/20 text-green-700 border border-green-800/30'
                       : 'bg-red-500/20 text-red-400 border border-red-500/30'
                   }`}>
                     {action.actionType}
@@ -580,7 +580,7 @@ const PortfolioRebalancingDashboard: React.FC = () => {
         </div>
 
         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 text-center shadow-xl shadow-black/20">
-          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-3">
+          <div className="w-12 h-12 bg-gradient-to-br from-green-800 to-emerald-900 rounded-xl flex items-center justify-center mx-auto mb-3">
             <Zap className="w-6 h-6 text-white" />
           </div>
           <div className="text-2xl font-bold text-white mb-1">{(rebalancing.riskReduction * 100).toFixed(2)}%</div>

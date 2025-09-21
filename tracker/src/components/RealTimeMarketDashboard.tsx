@@ -108,7 +108,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                 {/* Connection Status */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="bg-gray-800/50 rounded-xl p-4">
-                        <div className="text-2xl font-bold text-green-400">
+                        <div className="text-2xl font-bold text-green-700">
                             {/* isConnected ? '🟢' : '🔴' */}
                             <RefreshCw className="w-8 h-8" />
                         </div>
@@ -123,7 +123,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                     </div>
                     
                     <div className="bg-gray-800/50 rounded-xl p-4">
-                        <div className="text-2xl font-bold text-green-400">
+                        <div className="text-2xl font-bold text-green-700">
                             {marketData.length}
                         </div>
                         <div className="text-sm text-gray-400">Live Symbols</div>
@@ -136,7 +136,7 @@ const RealTimeMarketDashboard: React.FC = () => {
                     
                     <div className="flex items-center gap-4 mb-4">
                         <div className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded-full ${true ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                            <div className={`w-3 h-3 rounded-full ${true ? 'bg-green-700' : 'bg-red-400'}`}></div>
                             <span className="text-gray-300">
                                 Manual Refresh System
                             </span>
@@ -186,12 +186,12 @@ const RealTimeMarketDashboard: React.FC = () => {
                                     
                                     <div className="flex items-center gap-2 mb-2">
                                         {data.change >= 0 ? (
-                                            <TrendingUp className="w-4 h-4 text-green-400" />
+                                            <TrendingUp className="w-4 h-4 text-green-700" />
                                         ) : (
                                             <TrendingDown className="w-4 h-4 text-red-400" />
                                         )}
                                         <span className={`text-sm font-medium ${
-                                            data.change >= 0 ? 'text-green-400' : 'text-red-400'
+                                            data.change >= 0 ? 'text-green-700' : 'text-red-400'
                                         }`}>
                                             {data.change >= 0 ? '+' : ''}{formatPrice(data.change)} 
                                             ({data.changePercent >= 0 ? '+' : ''}{data.changePercent.toFixed(2)}%)
