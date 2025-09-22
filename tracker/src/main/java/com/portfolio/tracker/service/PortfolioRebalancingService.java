@@ -20,8 +20,7 @@ public class PortfolioRebalancingService {
     @Autowired
     private PriceHistoryService priceHistoryService;
     
-    @Autowired
-    private VaRCalculationService varCalculationService;
+    // Removed VaRCalculationService dependency after removing VaR feature
 
     /**
      * Calculate optimal portfolio allocation using Mean-Variance Optimization

@@ -7,7 +7,6 @@ import PortfolioSummary from './components/PortfolioSummary';
 import EmptyState from './components/EmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
-import VaRDashboard from './components/VaRDashboard';
 import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDashboard';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
@@ -50,7 +49,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'rebalancing';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -326,16 +325,7 @@ function App() {
               >
                 Analytics
               </button>
-              <button
-                onClick={() => setCurrentPage('var')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'var'
-                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-xl shadow-teal-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                VaR
-              </button>
+              
               <button
                 onClick={() => setCurrentPage('rebalancing')}
                 className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
@@ -450,17 +440,7 @@ function App() {
             </div>
           )}
           
-          {currentPage === 'var' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-                  VaR Dashboard
-                </h2>
-                <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
-              </div>
-              <VaRDashboard />
-            </div>
-          )}
+          
 
           {currentPage === 'rebalancing' && (
             <div className="space-y-6">
