@@ -1,7 +1,6 @@
 package com.portfolio.tracker.controller;
 
 import com.portfolio.tracker.model.AuditLog;
-import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.AuditService;
 import com.portfolio.tracker.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
