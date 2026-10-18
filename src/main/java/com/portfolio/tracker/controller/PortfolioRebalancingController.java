@@ -94,6 +94,9 @@ public class PortfolioRebalancingController {
             return ResponseEntity.status(403).body(Map.of("error", "You can only access your own portfolio"));
         }
 
+                String invalid = validateDriftParameters(threshold, riskTolerance);
+                if (invalid != null) return ResponseEntity.badRequest().body(Map.of("error", invalid));
+
         boolean needsRebalancing = rebalancingService.needsRebalancing(user, threshold, riskTolerance);
         return ResponseEntity.ok(Map.of(
             "needsRebalancing", needsRebalancing,
@@ -117,6 +120,9 @@ public class PortfolioRebalancingController {
         if (!user.getUsername().equals(username)) {
             return ResponseEntity.status(403).body(Map.of("error", "You can only access your own portfolio"));
         }
+        String invalid = validateDriftParameters(threshold, riskTolerance);
+        if (invalid != null) return ResponseEntity.badRequest().body(Map.of("error", invalid));
+
         return ResponseEntity.ok(rebalancingService.getRebalancingSummary(user, riskTolerance, threshold));
     }
 
@@ -161,5 +167,12 @@ public class PortfolioRebalancingController {
         if (!(value instanceof Number number)) return null;
         double v = number.doubleValue();
         return v >= 0 && v <= 1 ? v : null;
+    }
+
+    /** Total absolute drift ranges from 0 to 2 (moving every weight); risk tolerance is in [0, 1]. */
+    private String validateDriftParameters(double threshold, double riskTolerance) {
+        if (!(threshold >= 0 && threshold <= 2)) return "threshold must be between 0 and 2";
+        if (!(riskTolerance >= 0 && riskTolerance <= 1)) return "riskTolerance must be between 0 and 1";
+        return null;
     }
 }

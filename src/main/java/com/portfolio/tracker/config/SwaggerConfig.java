@@ -45,7 +45,6 @@ public class SwaggerConfig {
                     - **Asset Tracking**: Monitor individual assets with real-time price updates
                     - **Risk Analysis**: Calculate VaR (Value at Risk) and other risk metrics
                     - **Portfolio Optimization**: Rebalancing algorithms and optimization strategies
-                    - **Real-Time Data**: WebSocket integration for live market data
                     - **Security**: JWT authentication with Multi-Factor Authentication (MFA)
                     - **Analytics**: Comprehensive portfolio performance analytics
                     

@@ -102,6 +102,12 @@ public class PortfolioRebalancingService {
                 double tilt = 2 * sentiment - 1;
                 if (tilt == 0.0) continue; // neutral: no view
                 int i = indexOfHolding(snapshot, view.getKey());
+                if (sigma[i][i] <= 0) {
+                    // A view's uncertainty is proportional to the asset's variance; with none, the
+                    // view matrix is singular and the view carries no information
+                    throw new PortfolioDataException(PortfolioDataException.Reason.INVALID_VIEW,
+                            "Can't set a view on " + view.getKey() + ": its price did not move over the lookback window.");
+                }
                 viewAssets.add(new int[]{i});
                 viewReturns.add(pi[i] + tilt * Math.sqrt(sigma[i][i]));
             }

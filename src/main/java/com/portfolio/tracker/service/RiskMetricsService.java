@@ -86,6 +86,11 @@ public class RiskMetricsService {
         double sharpe = (annualReturn - properties.getRiskFreeRate()) / volatility;
 
         double benchmarkVariance = RiskMath.sampleVariance(s.benchmark());
+        if (benchmarkVariance == 0.0) {
+            throw new PortfolioDataException(PortfolioDataException.Reason.INSUFFICIENT_HISTORY,
+                    "Beta is undefined because the benchmark (" + properties.getBenchmarkCoinId()
+                            + ") did not move over the lookback window. Choose a different benchmark.");
+        }
         double beta = RiskMath.covariance(rp, s.benchmark()) / benchmarkVariance;
 
         double maxDrawdown = RiskMath.maxDrawdown(s.historicalValuePath());

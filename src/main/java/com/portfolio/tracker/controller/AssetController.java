@@ -51,8 +51,10 @@ public class AssetController {
                 return ResponseEntity.status(401).body("Authentication required");
             }
             
-            List<Asset> assets = assetService.getAllAssets();
-            return ResponseEntity.ok("Database connection OK. Total assets: " + assets.size());
+            // Count only the caller's assets; other users' data is not exposed
+            User user = userService.findByUsername(authentication.getName());
+            List<Asset> assets = assetService.getAssetsByUser(user);
+            return ResponseEntity.ok("Database connection OK. Your assets: " + assets.size());
         } catch (Exception e) {
             System.err.println("Health check failed: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -116,18 +118,9 @@ public class AssetController {
             User user = userService.findByUsername(username);
             asset.setUser(user);
             
-            // Basic validation
-            if (asset.getName() == null || asset.getName().trim().isEmpty()) {
-                return ResponseEntity.badRequest().body("Asset name is required");
-            }
-            if (asset.getQuantity() <= 0) {
-                return ResponseEntity.badRequest().body("Quantity must be greater than 0");
-            }
-            if (asset.getPricePerUnit() <= 0) {
-                return ResponseEntity.badRequest().body("Price per unit must be greater than 0");
-            }
-            if (asset.getPurchasePricePerUnit() <= 0) {
-                return ResponseEntity.badRequest().body("Purchase price per unit must be greater than 0");
+            String invalid = validateAsset(asset);
+            if (invalid != null) {
+                return ResponseEntity.badRequest().body(Map.of("error", invalid));
             }
             
             Asset savedAsset = assetService.saveAsset(asset);
@@ -161,7 +154,11 @@ public class AssetController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Asset> updateAsset(@PathVariable Long id, @RequestBody Asset asset, Authentication authentication) {
+    public ResponseEntity<?> updateAsset(@PathVariable Long id, @RequestBody Asset asset, Authentication authentication) {
+        String invalid = validateAsset(asset);
+        if (invalid != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", invalid));
+        }
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
@@ -356,5 +353,16 @@ public class AssetController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Failed to get assets with prices: " + e.getMessage()));
         }
+    }
+
+    /** Reasons an asset can't be valued; null when it is valid. Shared by create and update. */
+    private static String validateAsset(Asset asset) {
+        if (asset.getName() == null || asset.getName().trim().isEmpty()) return "Asset name is required";
+        if (!(asset.getQuantity() > 0) || Double.isInfinite(asset.getQuantity())) return "Quantity must be greater than 0";
+        if (!(asset.getPricePerUnit() > 0) || Double.isInfinite(asset.getPricePerUnit())) return "Price per unit must be greater than 0";
+        if (!(asset.getPurchasePricePerUnit() > 0) || Double.isInfinite(asset.getPurchasePricePerUnit())) {
+            return "Purchase price per unit must be greater than 0";
+        }
+        return null;
     }
 }

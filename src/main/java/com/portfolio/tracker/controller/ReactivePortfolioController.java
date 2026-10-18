@@ -79,38 +79,10 @@ public class ReactivePortfolioController {
     }
 
     /**
-     * Real-time market updates using Server-Sent Events (SSE)
-     * This is what makes BlackRock's trading platforms real-time
-     */
-    @GetMapping(value = "/market-updates", produces = MediaType.APPLICATION_JSON_VALUE)
-    public List<String> getRealTimeMarketUpdates() {
-        return reactivePortfolioService.getRealTimeMarketUpdates()
-                .stream()
-                .map(update -> "data: " + update.getMessage() + " at " + update.getTimestamp())
-                .collect(Collectors.toList());
-    }
-
-    /**
      * Health check endpoint for reactive operations
      */
     @GetMapping("/health")
     public String healthCheck() {
         return "Reactive Portfolio Service is running! 🚀";
-    }
-
-    /**
-     * Performance test endpoint
-     * Demonstrates concurrent processing capabilities
-     */
-    @GetMapping("/performance-test")
-    public String performanceTest() {
-        try {
-            // Simulate some work
-            Thread.sleep(100);
-            return "Performance test completed! Concurrent processing is working.";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Performance test interrupted.";
-        }
     }
 }

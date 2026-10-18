@@ -75,9 +75,6 @@ public class SecurityConfig {
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/verify")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/status/**")).permitAll()
 
-                // WebSocket handshake
-                .requestMatchers(mvcMatcherBuilder.pattern("/ws/**")).permitAll()
-
                 // Documentation endpoints (public for development, can be restricted in production)
                 .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui.html")).permitAll()

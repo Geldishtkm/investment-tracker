@@ -47,18 +47,9 @@ public class ReactivePortfolioService {
      * This simulates a potentially slow operation (like API calls) without blocking
      */
     private AssetMetrics calculateAssetMetricsReactive(Asset asset) {
-        // Simulate some calculation work
-        try {
-            Thread.sleep(10); // Simulate 10ms of work
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
         double currentValue = asset.getQuantity() * asset.getPricePerUnit();
-        double initialValue = asset.getQuantity() * asset.getPurchasePricePerUnit();
-        double roi = ((currentValue - initialValue) / initialValue) * 100;
-        
-        return new AssetMetrics(asset.getId(), currentValue, roi);
+        double costBasis = asset.getQuantity() * asset.getPurchasePricePerUnit();
+        return new AssetMetrics(asset.getId(), currentValue, costBasis);
     }
 
     /**
@@ -77,17 +68,6 @@ public class ReactivePortfolioService {
     }
 
     /**
-     * Simulate real-time market data updates
-     * This demonstrates how reactive streams can handle continuous data flow
-     */
-    public List<MarketUpdate> getRealTimeMarketUpdates() {
-        // For demo purposes, generate 10 market updates
-        return java.util.stream.IntStream.range(0, 10)
-                .mapToObj(tick -> new MarketUpdate("Market Update " + tick, System.currentTimeMillis()))
-                .collect(Collectors.toList());
-    }
-
-    /**
      * Calculate risk metrics reactively with multiple concurrent calculations
      * Shows how complex financial calculations can be parallelized
      */
@@ -100,16 +80,12 @@ public class ReactivePortfolioService {
      * Aggregate portfolio data from individual asset calculations
      */
     private PortfolioSummary aggregatePortfolioData(List<AssetMetrics> assetMetrics) {
-        double totalValue = assetMetrics.stream()
-                .mapToDouble(AssetMetrics::getCurrentValue)
-                .sum();
-        
-        double averageROI = assetMetrics.stream()
-                .mapToDouble(AssetMetrics::getRoi)
-                .average()
-                .orElse(0.0);
-
-        return new PortfolioSummary(totalValue, averageROI, assetMetrics.size());
+        double totalValue = assetMetrics.stream().mapToDouble(AssetMetrics::getCurrentValue).sum();
+        double totalCost = assetMetrics.stream().mapToDouble(AssetMetrics::getCostBasis).sum();
+        // Portfolio ROI = (total value - total cost) / total cost; a simple average of per-asset
+        // ROIs would weight a $10 position the same as a $10,000 one
+        double roi = totalCost > 0 ? (totalValue - totalCost) / totalCost * 100 : 0.0;
+        return new PortfolioSummary(totalValue, roi, assetMetrics.size());
     }
 
     /**
@@ -123,29 +99,16 @@ public class ReactivePortfolioService {
     public static class AssetMetrics {
         private final Long assetId;
         private final double currentValue;
-        private final double roi;
+        private final double costBasis;
 
-        public AssetMetrics(Long assetId, double currentValue, double roi) {
+        public AssetMetrics(Long assetId, double currentValue, double costBasis) {
             this.assetId = assetId;
             this.currentValue = currentValue;
-            this.roi = roi;
+            this.costBasis = costBasis;
         }
 
         public Long getAssetId() { return assetId; }
         public double getCurrentValue() { return currentValue; }
-        public double getRoi() { return roi; }
-    }
-
-    public static class MarketUpdate {
-        private final String message;
-        private final long timestamp;
-
-        public MarketUpdate(String message, long timestamp) {
-            this.message = message;
-            this.timestamp = timestamp;
-        }
-
-        public String getMessage() { return message; }
-        public long getTimestamp() { return timestamp; }
+        public double getCostBasis() { return costBasis; }
     }
 }

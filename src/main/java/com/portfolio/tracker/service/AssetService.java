@@ -6,6 +6,7 @@ import com.portfolio.tracker.repository.AssetRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.*;
@@ -20,39 +21,10 @@ public class AssetService {
         this.assetRepository = assetRepository;
     }
 
-    public List<Asset> getAllAssets() {
-        return assetRepository.findAll();
-    }
-
     public Asset saveAsset(Asset asset) {
         // Calculate initial investment automatically
         asset.setInitialInvestment(asset.getQuantity() * asset.getPurchasePricePerUnit());
         return assetRepository.save(asset);
-    }
-
-    public void deleteAssetById(Long id) {
-        Optional<Asset> assetOptional = assetRepository.findById(id);
-        if (assetOptional.isPresent()) {
-            assetRepository.delete(assetOptional.get());
-        } else {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: " + id);
-        }
-    }
-
-    public Asset getAssetById(Long id) {
-        return assetRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: " + id));
-    }
-
-    public double calculateTotalValue() {
-        return assetRepository.findAll()
-                .stream()
-                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
-                .sum();
-    }
-
-    public double getTotalValue() {
-        return calculateTotalValue();
     }
 
     public double getTotalValueByUser(User user) {
@@ -60,27 +32,6 @@ public class AssetService {
                 .stream()
                 .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
                 .sum();
-    }
-
-    public double calculateROI() {
-        List<Asset> assets = assetRepository.findAll();
-        List<Asset> validAssets = assets.stream()
-                .filter(asset -> asset.getInitialInvestment() > 0)
-                .toList();
-
-        if (validAssets.isEmpty()) {
-            throw new IllegalStateException("No assets with a valid initial investment.");
-        }
-
-        double totalInitialInvestment = validAssets.stream()
-                .mapToDouble(Asset::getInitialInvestment)
-                .sum();
-
-        double totalCurrentValue = validAssets.stream()
-                .mapToDouble(asset -> asset.getQuantity() * asset.getPricePerUnit())
-                .sum();
-
-        return (totalCurrentValue - totalInitialInvestment) / totalInitialInvestment;
     }
 
     public List<Asset> getAssetsByUser(User user) {
@@ -92,8 +43,14 @@ public class AssetService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: " + id));
     }
 
+    @Transactional
     public void deleteAssetByIdAndUser(Long id, User user) {
         Asset asset = getAssetByIdAndUser(id, user);
+        // User.assets cascades persist, so an asset still in its owner's collection would be
+        // re-saved at flush and the delete silently dropped; detach it from the owner first
+        if (asset.getUser() != null) {
+            asset.getUser().getAssets().remove(asset);
+        }
         assetRepository.delete(asset);
     }
 
