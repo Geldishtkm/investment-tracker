@@ -24,12 +24,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
- * Comprehensive test suite for AssetService
- * Demonstrates professional testing practices including:
- * - Unit testing with Mockito
- * - Edge case testing
- * - Performance testing considerations
- * - Proper test naming and organization
+ * Unit tests for AssetService: CRUD scoped to the owning user, portfolio value and
+ * cost-basis ROI.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AssetService Test Suite")
@@ -42,31 +38,29 @@ class AssetServiceTest {
     private AssetService assetService;
 
     private User testUser;
-    private Asset testAsset;
-    private Asset testAsset2;
+    private Asset bitcoin;
+    private Asset ethereum;
 
     @BeforeEach
     void setUp() {
-        // Setup test data
         testUser = new User();
         testUser.setId(1L);
         testUser.setUsername("testuser");
 
-        testAsset = new Asset();
-        testAsset.setId(1L);
-        testAsset.setName("AAPL");
-        testAsset.setQuantity(10.0);
-        testAsset.setPurchasePricePerUnit(150.0);
-        testAsset.setPricePerUnit(160.0);
-        testAsset.setUser(testUser);
+        bitcoin = asset(1L, "Bitcoin", 0.5, 60000.0, 50000.0);
+        ethereum = asset(2L, "Ethereum", 4.0, 3000.0, 2500.0);
+    }
 
-        testAsset2 = new Asset();
-        testAsset2.setId(2L);
-        testAsset2.setName("GOOGL");
-        testAsset2.setQuantity(5.0);
-        testAsset2.setPurchasePricePerUnit(2800.0);
-        testAsset2.setPricePerUnit(2900.0);
-        testAsset2.setUser(testUser);
+    private Asset asset(Long id, String name, double quantity, double price, double purchasePrice) {
+        Asset a = new Asset();
+        a.setId(id);
+        a.setName(name);
+        a.setQuantity(quantity);
+        a.setPricePerUnit(price);
+        a.setPurchasePricePerUnit(purchasePrice);
+        a.setInitialInvestment(quantity * purchasePrice);
+        a.setUser(testUser);
+        return a;
     }
 
     @Nested
@@ -74,91 +68,69 @@ class AssetServiceTest {
     class AssetCrudOperations {
 
         @Test
-        @DisplayName("Should save asset with calculated initial investment")
+        @DisplayName("Saving an asset sets the initial investment from quantity x purchase price")
         void shouldSaveAssetWithCalculatedInitialInvestment() {
-            // Given
-            Asset assetToSave = new Asset();
-            assetToSave.setQuantity(20.0);
-            assetToSave.setPurchasePricePerUnit(100.0);
-            assetToSave.setPricePerUnit(110.0);
+            Asset input = asset(null, "Solana", 60.0, 150.0, 120.0);
+            input.setInitialInvestment(0.0);
+            when(assetRepository.save(any(Asset.class))).thenAnswer(inv -> inv.getArgument(0));
 
-            when(assetRepository.save(any(Asset.class))).thenReturn(assetToSave);
+            Asset saved = assetService.saveAsset(input);
 
-            // When
-            Asset savedAsset = assetService.saveAsset(assetToSave);
-
-            // Then
-            assertEquals(2000.0, savedAsset.getInitialInvestment());
-            verify(assetRepository).save(assetToSave);
+            assertEquals(60.0 * 120.0, saved.getInitialInvestment(), 1e-9);
+            verify(assetRepository).save(input);
         }
 
         @Test
-        @DisplayName("Should get all assets successfully")
-        void shouldGetAllAssets() {
-            // Given
-            List<Asset> expectedAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(expectedAssets);
+        @DisplayName("Finds an asset that belongs to the user")
+        void shouldGetAssetByIdAndUser() {
+            when(assetRepository.findByIdAndUser(1L, testUser)).thenReturn(Optional.of(bitcoin));
 
-            // When
-            List<Asset> actualAssets = assetService.getAllAssets();
+            Asset found = assetService.getAssetByIdAndUser(1L, testUser);
 
-            // Then
-            assertEquals(expectedAssets.size(), actualAssets.size());
-            assertEquals(expectedAssets, actualAssets);
-            verify(assetRepository).findAll();
+            assertEquals(bitcoin.getId(), found.getId());
+            assertEquals(testUser, found.getUser());
         }
 
         @Test
-        @DisplayName("Should get asset by ID successfully")
-        void shouldGetAssetById() {
-            // Given
-            when(assetRepository.findById(1L)).thenReturn(Optional.of(testAsset));
+        @DisplayName("Another user's or a missing asset is a 404")
+        void shouldThrowNotFoundForAssetOfOtherUser() {
+            when(assetRepository.findByIdAndUser(99L, testUser)).thenReturn(Optional.empty());
 
-            // When
-            Asset foundAsset = assetService.getAssetById(1L);
-
-            // Then
-            assertNotNull(foundAsset);
-            assertEquals(testAsset.getName(), foundAsset.getName());
-            verify(assetRepository).findById(1L);
+            ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> assetService.getAssetByIdAndUser(99L, testUser));
+            assertEquals(404, e.getStatusCode().value());
         }
 
         @Test
-        @DisplayName("Should throw exception when asset not found by ID")
-        void shouldThrowExceptionWhenAssetNotFound() {
-            // Given
-            when(assetRepository.findById(999L)).thenReturn(Optional.empty());
+        @DisplayName("Deletes the user's own asset")
+        void shouldDeleteAssetByIdAndUser() {
+            when(assetRepository.findByIdAndUser(1L, testUser)).thenReturn(Optional.of(bitcoin));
 
-            // When & Then
-            assertThrows(ResponseStatusException.class, () -> assetService.getAssetById(999L));
-            verify(assetRepository).findById(999L);
+            assetService.deleteAssetByIdAndUser(1L, testUser);
+
+            verify(assetRepository).delete(bitcoin);
         }
 
         @Test
-        @DisplayName("Should delete asset successfully")
-        void shouldDeleteAssetSuccessfully() {
-            // Given
-            when(assetRepository.findById(1L)).thenReturn(Optional.of(testAsset));
-            doNothing().when(assetRepository).delete(testAsset);
-
-            // When
-            assertDoesNotThrow(() -> assetService.deleteAssetById(1L));
-
-            // Then
-            verify(assetRepository).findById(1L);
-            verify(assetRepository).delete(testAsset);
-        }
-
-        @Test
-        @DisplayName("Should handle delete of non-existent asset gracefully")
+        @DisplayName("Deleting a missing asset is a 404 and deletes nothing")
         void shouldHandleDeleteOfNonExistentAsset() {
-            // Given
-            when(assetRepository.findById(999L)).thenReturn(Optional.empty());
+            when(assetRepository.findByIdAndUser(999L, testUser)).thenReturn(Optional.empty());
 
-            // When & Then
-            assertDoesNotThrow(() -> assetService.deleteAssetById(999L));
-            verify(assetRepository).findById(999L);
+            ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                    () -> assetService.deleteAssetByIdAndUser(999L, testUser));
+            assertEquals(404, e.getStatusCode().value());
             verify(assetRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("Lists only the user's assets")
+        void shouldGetAssetsByUser() {
+            when(assetRepository.findByUser(testUser)).thenReturn(Arrays.asList(bitcoin, ethereum));
+
+            List<Asset> found = assetService.getAssetsByUser(testUser);
+
+            assertEquals(2, found.size());
+            assertTrue(found.stream().allMatch(a -> a.getUser().equals(testUser)));
         }
     }
 
@@ -167,46 +139,45 @@ class AssetServiceTest {
     class PortfolioValueCalculations {
 
         @Test
-        @DisplayName("Should calculate total portfolio value correctly")
-        void shouldCalculateTotalPortfolioValue() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double totalValue = assetService.calculateTotalValue();
-
-            // Then
-            double expectedValue = (10.0 * 160.0) + (5.0 * 2900.0);
-            assertEquals(expectedValue, totalValue, 0.01);
-        }
-
-        @Test
-        @DisplayName("Should return zero for empty portfolio")
-        void shouldReturnZeroForEmptyPortfolio() {
-            // Given
-            when(assetRepository.findAll()).thenReturn(Collections.emptyList());
-
-            // When
-            double totalValue = assetService.calculateTotalValue();
-
-            // Then
-            assertEquals(0.0, totalValue, 0.01);
-        }
-
-        @Test
-        @DisplayName("Should calculate total value by user correctly")
+        @DisplayName("Total value is the sum of quantity x current price")
         void shouldCalculateTotalValueByUser() {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(userAssets);
+            when(assetRepository.findByUser(testUser)).thenReturn(Arrays.asList(bitcoin, ethereum));
 
-            // When
-            double totalValue = assetService.getTotalValueByUser(testUser);
+            double total = assetService.getTotalValueByUser(testUser);
 
-            // Then
-            double expectedValue = (10.0 * 160.0) + (5.0 * 2900.0);
-            assertEquals(expectedValue, totalValue, 0.01);
+            assertEquals(0.5 * 60000.0 + 4.0 * 3000.0, total, 1e-9);
+        }
+
+        @Test
+        @DisplayName("Empty portfolio is worth zero")
+        void shouldReturnZeroForEmptyPortfolio() {
+            when(assetRepository.findByUser(testUser)).thenReturn(Collections.emptyList());
+
+            assertEquals(0.0, assetService.getTotalValueByUser(testUser));
+        }
+
+        @Test
+        @DisplayName("Zero-quantity positions contribute nothing")
+        void shouldHandleAssetsWithZeroQuantities() {
+            Asset empty = asset(3L, "Cardano", 0.0, 0.5, 0.4);
+            when(assetRepository.findByUser(testUser)).thenReturn(Arrays.asList(bitcoin, empty));
+
+            assertEquals(0.5 * 60000.0, assetService.getTotalValueByUser(testUser), 1e-9);
+        }
+
+        @Test
+        @DisplayName("Values a large portfolio exactly and quickly")
+        void shouldHandleLargeNumberOfAssetsEfficiently() {
+            List<Asset> many = new ArrayList<>();
+            for (int i = 0; i < 1000; i++) many.add(asset((long) i, "Coin" + i, 1.0, 100.0, 90.0));
+            when(assetRepository.findByUser(testUser)).thenReturn(many);
+
+            long start = System.nanoTime();
+            double total = assetService.getTotalValueByUser(testUser);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            assertEquals(100_000.0, total, 1e-6);
+            assertTrue(elapsedMs < 1000, "valuing 1000 assets took " + elapsedMs + " ms");
         }
     }
 
@@ -215,95 +186,36 @@ class AssetServiceTest {
     class RoiCalculations {
 
         @Test
-        @DisplayName("Should calculate ROI correctly for profitable portfolio")
-        void shouldCalculateRoiCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double roi = assetService.calculateROI();
-
-            // Then
-            double expectedRoi = 0.0667; // 6.67% profit
-            assertEquals(expectedRoi, roi, 0.001);
-        }
-
-        @Test
-        @DisplayName("Should throw exception when no valid assets for ROI calculation")
-        void shouldThrowExceptionWhenNoValidAssetsForRoi() {
-            // Given
-            Asset invalidAsset = new Asset();
-            invalidAsset.setInitialInvestment(0.0);
-            when(assetRepository.findAll()).thenReturn(Collections.singletonList(invalidAsset));
-
-            // When & Then
-            assertThrows(IllegalStateException.class, () -> assetService.calculateROI());
-        }
-
-        @Test
-        @DisplayName("Should calculate ROI by user correctly")
+        @DisplayName("ROI is (current value - cost basis) / cost basis, in percent")
         void shouldCalculateRoiByUser() {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(userAssets);
+            // Cost basis: 0.5 x 50,000 + 4 x 2,500 = 35,000; current value: 30,000 + 12,000 = 42,000
+            when(assetRepository.findByUser(testUser)).thenReturn(Arrays.asList(bitcoin, ethereum));
 
-            // When
             double roi = assetService.calculateROIByUser(testUser);
 
-            // Then
-            double expectedRoi = 0.0667; // 6.67% profit
-            assertEquals(expectedRoi, roi, 0.001);
-        }
-    }
-
-    @Nested
-    @DisplayName("User-Specific Operations")
-    class UserSpecificOperations {
-
-        @Test
-        @DisplayName("Should get assets by user correctly")
-        void shouldGetAssetsByUser() {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(userAssets);
-
-            // When
-            List<Asset> foundAssets = assetService.getAssetsByUser(testUser);
-
-            // Then
-            assertEquals(userAssets.size(), foundAssets.size());
-            assertTrue(foundAssets.stream().allMatch(asset -> asset.getUser().equals(testUser)));
+            assertEquals((42000.0 - 35000.0) / 35000.0 * 100, roi, 1e-9);
         }
 
         @Test
-        @DisplayName("Should get asset by ID and user correctly")
-        void shouldGetAssetByIdAndUser() {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(userAssets);
+        @DisplayName("Positions without a cost basis are excluded from ROI")
+        void shouldExcludeAssetsWithoutCostBasis() {
+            Asset gifted = asset(3L, "Solana", 10.0, 150.0, 120.0);
+            gifted.setInitialInvestment(0.0);
+            when(assetRepository.findByUser(testUser)).thenReturn(Arrays.asList(bitcoin, gifted));
 
-            // When
-            Asset foundAsset = assetService.getAssetByIdAndUser(1L, testUser);
+            double roi = assetService.calculateROIByUser(testUser);
 
-            // Then
-            assertNotNull(foundAsset);
-            assertEquals(testAsset.getId(), foundAsset.getId());
-            assertEquals(testUser, foundAsset.getUser());
+            assertEquals((30000.0 - 25000.0) / 25000.0 * 100, roi, 1e-9);
         }
 
         @Test
-        @DisplayName("Should delete asset by ID and user correctly")
-        void shouldDeleteAssetByIdAndUser() {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(userAssets);
+        @DisplayName("ROI is undefined when no asset has a cost basis")
+        void shouldThrowExceptionWhenNoValidAssetsForRoi() {
+            Asset gifted = asset(3L, "Solana", 10.0, 150.0, 120.0);
+            gifted.setInitialInvestment(0.0);
+            when(assetRepository.findByUser(testUser)).thenReturn(List.of(gifted));
 
-            // When
-            assertDoesNotThrow(() -> assetService.deleteAssetByIdAndUser(1L, testUser));
-
-            // Then
-            // Verify the method executes without exception
+            assertThrows(IllegalStateException.class, () -> assetService.calculateROIByUser(testUser));
         }
     }
 
@@ -312,82 +224,11 @@ class AssetServiceTest {
     class EdgeCasesAndErrorHandling {
 
         @Test
-        @DisplayName("Should handle null user gracefully")
+        @DisplayName("Null user yields an empty portfolio rather than an exception")
         void shouldHandleNullUserGracefully() {
-            // Given
-            when(assetRepository.findAll()).thenReturn(Collections.emptyList());
+            when(assetRepository.findByUser(null)).thenReturn(Collections.emptyList());
 
-            // When & Then
-            assertDoesNotThrow(() -> assetService.getTotalValueByUser(null));
-        }
-
-        @Test
-        @DisplayName("Should handle empty asset list gracefully")
-        void shouldHandleEmptyAssetListGracefully() {
-            // Given
-            when(assetRepository.findAll()).thenReturn(Collections.emptyList());
-
-            // When
-            double totalValue = assetService.calculateTotalValue();
-
-            // Then
-            assertEquals(0.0, totalValue, 0.01);
-        }
-
-        @Test
-        @DisplayName("Should handle assets with zero quantities")
-        void shouldHandleAssetsWithZeroQuantities() {
-            // Given
-            Asset zeroQuantityAsset = new Asset();
-            zeroQuantityAsset.setQuantity(0.0);
-            zeroQuantityAsset.setPricePerUnit(100.0);
-            zeroQuantityAsset.setInitialInvestment(0.0);
-
-            List<Asset> assets = Collections.singletonList(zeroQuantityAsset);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double totalValue = assetService.calculateTotalValue();
-
-            // Then
-            assertEquals(0.0, totalValue, 0.01);
-        }
-    }
-
-    @Nested
-    @DisplayName("Performance Considerations")
-    class PerformanceConsiderations {
-
-        @Test
-        @DisplayName("Should handle large number of assets efficiently")
-        void shouldHandleLargeNumberOfAssetsEfficiently() {
-            // Given
-            List<Asset> largeAssetList = createLargeAssetList(1000);
-            when(assetRepository.findAll()).thenReturn(largeAssetList);
-
-            // When
-            long startTime = System.currentTimeMillis();
-            double totalValue = assetService.calculateTotalValue();
-            long endTime = System.currentTimeMillis();
-
-            // Then
-            assertTrue(endTime - startTime < 1000); // Should complete in under 1 second
-            assertTrue(totalValue > 0);
-        }
-
-        private List<Asset> createLargeAssetList(int size) {
-            List<Asset> assets = new ArrayList<>();
-            for (int i = 0; i < size; i++) {
-                Asset asset = new Asset();
-                asset.setId((long) i);
-                asset.setName("ASSET" + i);
-                asset.setQuantity(100.0);
-                asset.setPricePerUnit(50.0 + i);
-                asset.setInitialInvestment(5000.0);
-                asset.setUser(testUser);
-                assets.add(asset);
-            }
-            return assets;
+            assertEquals(0.0, assetService.getTotalValueByUser(null));
         }
     }
 }

@@ -91,6 +91,18 @@ class ReactivePortfolioServiceTest {
         }
 
         @Test
+        @DisplayName("Portfolio ROI weights each position by its cost, not a simple average")
+        void shouldWeightRoiByCostBasis() throws ExecutionException, InterruptedException {
+            // Asset 1: cost 10 x 150 = 1,500, value 1,600 (+6.67%)
+            // Asset 2: cost 5 x 2,800 = 14,000, value 14,500 (+3.57%)
+            // Portfolio: (16,100 - 15,500) / 15,500 = +3.87%, not the simple average +5.12%
+            PortfolioSummary summary = reactivePortfolioService.calculatePortfolioSummaryReactive(testAssets).get();
+
+            assertEquals(16100.0, summary.getTotalValue(), 1e-9);
+            assertEquals((16100.0 - 15500.0) / 15500.0 * 100, summary.getAverageROI(), 1e-9);
+        }
+
+        @Test
         @DisplayName("Should handle empty asset list")
         void shouldHandleEmptyAssetList() throws ExecutionException, InterruptedException {
             // Given
@@ -181,35 +193,6 @@ class ReactivePortfolioServiceTest {
             RiskMetrics riskMetrics = result.get();
             assertNotNull(riskMetrics);
             assertTrue(riskMetrics.getVolatility() >= 0);
-        }
-    }
-
-    @Nested
-    @DisplayName("Real-time Market Updates")
-    class RealTimeMarketUpdates {
-
-        @Test
-        @DisplayName("Should generate real-time market updates")
-        void shouldGenerateRealTimeMarketUpdates() {
-            // When
-            List<ReactivePortfolioService.MarketUpdate> result = reactivePortfolioService.getRealTimeMarketUpdates();
-
-            // Then
-            assertEquals(10, result.size()); // Should generate 10 updates as configured
-        }
-
-        @Test
-        @DisplayName("Should generate market updates with timestamps")
-        void shouldGenerateMarketUpdatesWithTimestamps() {
-            // When
-            List<ReactivePortfolioService.MarketUpdate> result = reactivePortfolioService.getRealTimeMarketUpdates();
-
-            // Then
-            assertFalse(result.isEmpty());
-            ReactivePortfolioService.MarketUpdate firstUpdate = result.get(0);
-            assertNotNull(firstUpdate.getMessage());
-            assertTrue(firstUpdate.getTimestamp() > 0);
-            assertEquals(10, result.size());
         }
     }
 

@@ -1,9 +1,12 @@
 package com.portfolio.tracker.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.tracker.analytics.PortfolioDataException;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.AssetService;
+import com.portfolio.tracker.service.RiskMetricsService;
+import com.portfolio.tracker.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -12,28 +15,25 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.security.Principal;
+import java.util.*;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Comprehensive test suite for AssetController
- * Demonstrates professional controller testing practices including:
- * - HTTP endpoint testing with MockMvc
- * - Request/response validation
- * - HTTP status code verification
- * - Security testing considerations
+ * Web-layer tests for AssetController. Every request is made as an authenticated user, and the
+ * controller must only ever touch that user's assets.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AssetController Test Suite")
@@ -42,41 +42,53 @@ class AssetControllerTest {
     @Mock
     private AssetService assetService;
 
+    @Mock
+    private UserService userService;
+
+    @Mock
+    private RiskMetricsService riskMetricsService;
+
     @InjectMocks
     private AssetController assetController;
 
     private MockMvc mockMvc;
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Principal principal = new UsernamePasswordAuthenticationToken("testuser", null, List.of());
 
     private User testUser;
-    private Asset testAsset;
-    private Asset testAsset2;
+    private Asset bitcoin;
+    private Asset ethereum;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(assetController).build();
-        objectMapper = new ObjectMapper();
 
-        // Setup test data
         testUser = new User();
         testUser.setId(1L);
         testUser.setUsername("testuser");
 
-        testAsset = new Asset();
-        testAsset.setId(1L);
-        testAsset.setName("AAPL");
-        testAsset.setQuantity(10.0);
-        testAsset.setPurchasePricePerUnit(150.0);
-        testAsset.setPricePerUnit(160.0);
-        testAsset.setUser(testUser);
+        bitcoin = asset(1L, "Bitcoin", 0.5, 60000.0, 50000.0);
+        ethereum = asset(2L, "Ethereum", 4.0, 3000.0, 2500.0);
+    }
 
-        testAsset2 = new Asset();
-        testAsset2.setId(2L);
-        testAsset2.setName("GOOGL");
-        testAsset2.setQuantity(5.0);
-        testAsset2.setPurchasePricePerUnit(2800.0);
-        testAsset2.setPricePerUnit(2900.0);
-        testAsset2.setUser(testUser);
+    private Asset asset(Long id, String name, double quantity, double price, double purchasePrice) {
+        Asset a = new Asset();
+        a.setId(id);
+        a.setName(name);
+        a.setQuantity(quantity);
+        a.setPricePerUnit(price);
+        a.setPurchasePricePerUnit(purchasePrice);
+        a.setInitialInvestment(quantity * purchasePrice);
+        a.setUser(testUser);
+        return a;
+    }
+
+    private MockHttpServletRequestBuilder asUser(MockHttpServletRequestBuilder request) {
+        return request.principal(principal).contentType(MediaType.APPLICATION_JSON);
+    }
+
+    private void givenLoggedInUser() {
+        when(userService.findByUsername("testuser")).thenReturn(testUser);
     }
 
     @Nested
@@ -84,89 +96,64 @@ class AssetControllerTest {
     class GetEndpoints {
 
         @Test
-        @DisplayName("Should get all assets successfully")
-        void shouldGetAllAssets() throws Exception {
-            // Given
-            List<Asset> expectedAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetService.getAllAssets()).thenReturn(expectedAssets);
+        @DisplayName("Lists the authenticated user's assets")
+        void shouldGetAssetsOfUser() throws Exception {
+            givenLoggedInUser();
+            when(assetService.getAssetsByUser(testUser)).thenReturn(Arrays.asList(bitcoin, ethereum));
 
-            // When & Then
-            mockMvc.perform(get("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets")))
                     .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(jsonPath("$").isArray())
                     .andExpect(jsonPath("$.length()").value(2))
-                    .andExpect(jsonPath("$[0].name").value("AAPL"))
-                    .andExpect(jsonPath("$[1].name").value("GOOGL"));
+                    .andExpect(jsonPath("$[0].name").value("Bitcoin"))
+                    .andExpect(jsonPath("$[1].name").value("Ethereum"));
 
-            verify(assetService).getAllAssets();
+            verify(assetService).getAssetsByUser(testUser);
         }
 
         @Test
-        @DisplayName("Should return empty list when no assets exist")
+        @DisplayName("Returns an empty list for an empty portfolio")
         void shouldReturnEmptyListWhenNoAssets() throws Exception {
-            // Given
-            when(assetService.getAllAssets()).thenReturn(Collections.emptyList());
+            givenLoggedInUser();
+            when(assetService.getAssetsByUser(testUser)).thenReturn(Collections.emptyList());
 
-            // When & Then
-            mockMvc.perform(get("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets")))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray())
                     .andExpect(jsonPath("$.length()").value(0));
-
-            verify(assetService).getAllAssets();
         }
 
         @Test
-        @DisplayName("Should get asset by ID successfully")
+        @DisplayName("Returns one of the user's assets by ID")
         void shouldGetAssetById() throws Exception {
-            // Given
-            when(assetService.getAssetById(1L)).thenReturn(testAsset);
+            givenLoggedInUser();
+            when(assetService.getAssetByIdAndUser(1L, testUser)).thenReturn(bitcoin);
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/1")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets/1")))
                     .andExpect(status().isOk())
-                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(jsonPath("$.id").value(1))
-                    .andExpect(jsonPath("$.name").value("AAPL"))
-                    .andExpect(jsonPath("$.quantity").value(10.0));
-
-            verify(assetService).getAssetById(1L);
+                    .andExpect(jsonPath("$.name").value("Bitcoin"))
+                    .andExpect(jsonPath("$.quantity").value(0.5));
         }
 
         @Test
-        @DisplayName("Should return 404 when asset not found")
+        @DisplayName("Another user's or a missing asset is a 404")
         void shouldReturn404WhenAssetNotFound() throws Exception {
-            // Given
-            when(assetService.getAssetById(999L))
-                    .thenThrow(new RuntimeException("Asset not found"));
+            givenLoggedInUser();
+            when(assetService.getAssetByIdAndUser(999L, testUser))
+                    .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: 999"));
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/999")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isInternalServerError());
-
-            verify(assetService).getAssetById(999L);
+            mockMvc.perform(asUser(get("/api/assets/999")))
+                    .andExpect(status().isNotFound());
         }
 
         @Test
-        @DisplayName("Should get assets by user successfully")
-        void shouldGetAssetsByUser() throws Exception {
-            // Given
-            List<Asset> userAssets = Arrays.asList(testAsset, testAsset2);
-            when(assetService.getAssetsByUser(any(User.class))).thenReturn(userAssets);
+        @DisplayName("Assets with prices include value and profit/loss against cost basis")
+        void shouldReturnAssetsWithProfitLoss() throws Exception {
+            givenLoggedInUser();
+            when(assetService.getAssetsByUser(testUser)).thenReturn(List.of(bitcoin));
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/user")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets/with-prices")))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").isArray())
-                    .andExpect(jsonPath("$.length()").value(2));
-
-            verify(assetService).getAssetsByUser(any(User.class));
+                    .andExpect(jsonPath("$[0].totalValue").value(30000.0))
+                    .andExpect(jsonPath("$[0].profitLoss").value(5000.0));
         }
     }
 
@@ -175,51 +162,41 @@ class AssetControllerTest {
     class PostEndpoints {
 
         @Test
-        @DisplayName("Should create asset successfully")
+        @DisplayName("Creates an asset owned by the authenticated user")
         void shouldCreateAssetSuccessfully() throws Exception {
-            // Given
-            Asset assetToCreate = new Asset();
-            assetToCreate.setName("TSLA");
-            assetToCreate.setQuantity(5.0);
-            assetToCreate.setPurchasePricePerUnit(200.0);
-            assetToCreate.setPricePerUnit(220.0);
+            givenLoggedInUser();
+            when(assetService.saveAsset(any(Asset.class))).thenAnswer(inv -> {
+                Asset saved = inv.getArgument(0);
+                saved.setId(10L);
+                saved.setInitialInvestment(saved.getQuantity() * saved.getPurchasePricePerUnit());
+                return saved;
+            });
+            Asset input = asset(null, "Solana", 60.0, 150.0, 120.0);
 
-            Asset createdAsset = new Asset();
-            createdAsset.setId(3L);
-            createdAsset.setName("TSLA");
-            createdAsset.setQuantity(5.0);
-            createdAsset.setPurchasePricePerUnit(200.0);
-            createdAsset.setPricePerUnit(220.0);
-            createdAsset.setInitialInvestment(1000.0);
+            mockMvc.perform(asUser(post("/api/assets")).content(objectMapper.writeValueAsString(input)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.id").value(10))
+                    .andExpect(jsonPath("$.initialInvestment").value(7200.0));
 
-            when(assetService.saveAsset(any(Asset.class))).thenReturn(createdAsset);
-
-            // When & Then
-            mockMvc.perform(post("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(assetToCreate)))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.id").value(3))
-                    .andExpect(jsonPath("$.name").value("TSLA"))
-                    .andExpect(jsonPath("$.initialInvestment").value(1000.0));
-
-            verify(assetService).saveAsset(any(Asset.class));
+            verify(assetService).saveAsset(argThat(a -> a.getUser() == testUser));
         }
 
         @Test
-        @DisplayName("Should handle invalid asset data gracefully")
-        void shouldHandleInvalidAssetDataGracefully() throws Exception {
-            // Given
-            Asset invalidAsset = new Asset();
-            // Missing required fields
+        @DisplayName("Rejects assets that can't be valued (zero quantity, non-positive prices, no name)")
+        void shouldRejectInvalidAssets() throws Exception {
+            givenLoggedInUser();
+            List<Asset> invalid = List.of(
+                    asset(null, "Solana", 0.0, 150.0, 120.0),
+                    asset(null, "Solana", 60.0, -1.0, 120.0),
+                    asset(null, "Solana", 60.0, 150.0, 0.0),
+                    asset(null, " ", 60.0, 150.0, 120.0));
 
-            // When & Then
-            mockMvc.perform(post("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(invalidAsset)))
-                    .andExpect(status().isOk()); // Controller should handle gracefully
-
-            verify(assetService).saveAsset(any(Asset.class));
+            for (Asset a : invalid) {
+                mockMvc.perform(asUser(post("/api/assets")).content(objectMapper.writeValueAsString(a)))
+                        .andExpect(status().isBadRequest())
+                        .andExpect(jsonPath("$.error").exists());
+            }
+            verify(assetService, never()).saveAsset(any());
         }
     }
 
@@ -228,35 +205,42 @@ class AssetControllerTest {
     class PutEndpoints {
 
         @Test
-        @DisplayName("Should update asset successfully")
+        @DisplayName("Updates the user's asset")
         void shouldUpdateAssetSuccessfully() throws Exception {
-            // Given
-            Asset assetToUpdate = new Asset();
-            assetToUpdate.setId(1L);
-            assetToUpdate.setName("AAPL");
-            assetToUpdate.setQuantity(15.0); // Updated quantity
-            assetToUpdate.setPurchasePricePerUnit(150.0);
-            assetToUpdate.setPricePerUnit(160.0);
+            givenLoggedInUser();
+            when(assetService.getAssetByIdAndUser(1L, testUser)).thenReturn(bitcoin);
+            when(assetService.saveAsset(any(Asset.class))).thenAnswer(inv -> inv.getArgument(0));
+            Asset update = asset(null, "Bitcoin", 0.75, 61000.0, 50000.0);
 
-            Asset updatedAsset = new Asset();
-            updatedAsset.setId(1L);
-            updatedAsset.setName("AAPL");
-            updatedAsset.setQuantity(15.0);
-            updatedAsset.setPurchasePricePerUnit(150.0);
-            updatedAsset.setPricePerUnit(160.0);
-            updatedAsset.setInitialInvestment(2250.0);
-
-            when(assetService.saveAsset(any(Asset.class))).thenReturn(updatedAsset);
-
-            // When & Then
-            mockMvc.perform(put("/api/assets/1")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(assetToUpdate)))
+            mockMvc.perform(asUser(put("/api/assets/1")).content(objectMapper.writeValueAsString(update)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.quantity").value(15.0))
-                    .andExpect(jsonPath("$.initialInvestment").value(2250.0));
+                    .andExpect(jsonPath("$.quantity").value(0.75))
+                    .andExpect(jsonPath("$.pricePerUnit").value(61000.0));
+        }
 
-            verify(assetService).saveAsset(any(Asset.class));
+        @Test
+        @DisplayName("Rejects an update with a negative quantity")
+        void shouldRejectInvalidUpdate() throws Exception {
+            Asset update = asset(null, "Bitcoin", -1.0, 61000.0, 50000.0);
+
+            mockMvc.perform(asUser(put("/api/assets/1")).content(objectMapper.writeValueAsString(update)))
+                    .andExpect(status().isBadRequest());
+
+            verify(assetService, never()).saveAsset(any());
+        }
+
+        @Test
+        @DisplayName("Updating another user's asset is a 404")
+        void shouldReturn404WhenUpdatingForeignAsset() throws Exception {
+            givenLoggedInUser();
+            when(assetService.getAssetByIdAndUser(2L, testUser))
+                    .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: 2"));
+            Asset update = asset(null, "Ethereum", 1.0, 3000.0, 2500.0);
+
+            mockMvc.perform(asUser(put("/api/assets/2")).content(objectMapper.writeValueAsString(update)))
+                    .andExpect(status().isNotFound());
+
+            verify(assetService, never()).saveAsset(any());
         }
     }
 
@@ -265,101 +249,69 @@ class AssetControllerTest {
     class DeleteEndpoints {
 
         @Test
-        @DisplayName("Should delete asset successfully")
+        @DisplayName("Deletes the user's asset")
         void shouldDeleteAssetSuccessfully() throws Exception {
-            // Given
-            doNothing().when(assetService).deleteAssetById(1L);
+            givenLoggedInUser();
 
-            // When & Then
-            mockMvc.perform(delete("/api/assets/1")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk());
+            mockMvc.perform(asUser(delete("/api/assets/1")))
+                    .andExpect(status().isNoContent());
 
-            verify(assetService).deleteAssetById(1L);
+            verify(assetService).deleteAssetByIdAndUser(1L, testUser);
         }
 
         @Test
-        @DisplayName("Should handle delete of non-existent asset gracefully")
+        @DisplayName("Deleting a missing asset is a 404")
         void shouldHandleDeleteOfNonExistentAsset() throws Exception {
-            // Given
-            doNothing().when(assetService).deleteAssetById(999L);
+            givenLoggedInUser();
+            doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: 999"))
+                    .when(assetService).deleteAssetByIdAndUser(999L, testUser);
 
-            // When & Then
-            mockMvc.perform(delete("/api/assets/999")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk());
-
-            verify(assetService).deleteAssetById(999L);
+            mockMvc.perform(asUser(delete("/api/assets/999")))
+                    .andExpect(status().isNotFound());
         }
     }
 
     @Nested
-    @DisplayName("Portfolio Analytics Endpoints")
-    class PortfolioAnalyticsEndpoints {
+    @DisplayName("Analytics Endpoints")
+    class AnalyticsEndpoints {
 
         @Test
-        @DisplayName("Should get total portfolio value successfully")
-        void shouldGetTotalPortfolioValue() throws Exception {
-            // Given
-            double expectedValue = 15000.0;
-            when(assetService.getTotalValue()).thenReturn(expectedValue);
+        @DisplayName("Empty portfolio reports why risk metrics are unavailable instead of placeholder numbers")
+        void shouldReportEmptyPortfolio() throws Exception {
+            givenLoggedInUser();
+            when(assetService.getAssetsByUser(testUser)).thenReturn(Collections.emptyList());
+            when(assetService.getTotalValueByUser(testUser)).thenReturn(0.0);
+            when(assetService.calculateROIByUser(testUser)).thenThrow(new IllegalStateException("no cost basis"));
+            when(riskMetricsService.calculateDetailed(Collections.emptyList())).thenThrow(PortfolioDataException.noAssets());
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/total-value")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets/analytics")))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").value(expectedValue));
-
-            verify(assetService).getTotalValue();
+                    .andExpect(jsonPath("$.totalAssets").value(0))
+                    .andExpect(jsonPath("$.riskMetricsAvailable").value(false))
+                    .andExpect(jsonPath("$.riskMetricsCode").value("NO_ASSETS"))
+                    .andExpect(jsonPath("$.roi").doesNotExist())
+                    .andExpect(jsonPath("$.sharpeRatio").doesNotExist());
         }
 
         @Test
-        @DisplayName("Should get portfolio ROI successfully")
-        void shouldGetPortfolioRoi() throws Exception {
-            // Given
-            double expectedRoi = 0.15; // 15% return
-            when(assetService.calculateROI()).thenReturn(expectedRoi);
+        @DisplayName("Returns computed risk metrics and cost-basis ROI")
+        void shouldReturnRiskMetrics() throws Exception {
+            givenLoggedInUser();
+            List<Asset> assets = List.of(bitcoin, ethereum);
+            when(assetService.getAssetsByUser(testUser)).thenReturn(assets);
+            when(assetService.getTotalValueByUser(testUser)).thenReturn(42000.0);
+            when(assetService.calculateROIByUser(testUser)).thenReturn(20.0);
+            Map<String, Object> metrics = new LinkedHashMap<>();
+            metrics.put("sharpeRatio", -0.58);
+            metrics.put("volatility", 0.45);
+            when(riskMetricsService.calculateDetailed(assets)).thenReturn(metrics);
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/roi")
-                    .contentType(MediaType.APPLICATION_JSON))
+            mockMvc.perform(asUser(get("/api/assets/analytics")))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$").value(expectedRoi));
-
-            verify(assetService).calculateROI();
-        }
-    }
-
-    @Nested
-    @DisplayName("Error Handling")
-    class ErrorHandling {
-
-        @Test
-        @DisplayName("Should handle service exceptions gracefully")
-        void shouldHandleServiceExceptionsGracefully() throws Exception {
-            // Given
-            when(assetService.getAllAssets())
-                    .thenThrow(new RuntimeException("Database connection failed"));
-
-            // When & Then
-            mockMvc.perform(get("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isInternalServerError());
-
-            verify(assetService).getAllAssets();
-        }
-
-        @Test
-        @DisplayName("Should handle malformed JSON gracefully")
-        void shouldHandleMalformedJsonGracefully() throws Exception {
-            // Given
-            String malformedJson = "{ invalid json }";
-
-            // When & Then
-            mockMvc.perform(post("/api/assets")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(malformedJson))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(jsonPath("$.riskMetricsAvailable").value(true))
+                    .andExpect(jsonPath("$.sharpeRatio").value(-0.58))
+                    .andExpect(jsonPath("$.roi").value(20.0))
+                    .andExpect(jsonPath("$.totalValue").value(42000.0));
         }
     }
 
@@ -368,33 +320,14 @@ class AssetControllerTest {
     class SecurityConsiderations {
 
         @Test
-        @DisplayName("Should validate user ownership for asset operations")
-        void shouldValidateUserOwnershipForAssetOperations() throws Exception {
-            // Given
-            when(assetService.getAssetByIdAndUser(anyLong(), any(User.class)))
-                    .thenReturn(testAsset);
+        @DisplayName("Health check counts only the caller's assets")
+        void shouldScopeHealthCheckToUser() throws Exception {
+            givenLoggedInUser();
+            when(assetService.getAssetsByUser(testUser)).thenReturn(List.of(bitcoin));
 
-            // When & Then
-            mockMvc.perform(get("/api/assets/1/user")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isOk());
-
-            verify(assetService).getAssetByIdAndUser(anyLong(), any(User.class));
-        }
-
-        @Test
-        @DisplayName("Should handle unauthorized access gracefully")
-        void shouldHandleUnauthorizedAccessGracefully() throws Exception {
-            // Given
-            when(assetService.getAssetByIdAndUser(anyLong(), any(User.class)))
-                    .thenThrow(new RuntimeException("Unauthorized access"));
-
-            // When & Then
-            mockMvc.perform(get("/api/assets/1/user")
-                    .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isInternalServerError());
-
-            verify(assetService).getAssetByIdAndUser(anyLong(), any(User.class));
+            mockMvc.perform(asUser(get("/api/assets/health")))
+                    .andExpect(status().isOk())
+                    .andExpect(content().string("Database connection OK. Your assets: 1"));
         }
     }
 }
