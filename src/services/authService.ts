@@ -36,6 +36,41 @@ async function toAuthError(response: Response, fallback: string): Promise<AuthEr
   return new AuthError(body?.error || text || `${fallback} (HTTP ${response.status})`, body);
 }
 
+/** Fired on window when the saved session is missing, expired or rejected by the backend. */
+export const SESSION_EXPIRED_EVENT = 'auth:session-expired';
+
+/** Thrown by authFetch when the user has to log in again; the App has already been notified. */
+export class SessionExpiredError extends Error {
+  constructor(message = 'Your session has expired. Please log in again.') {
+    super(message);
+    this.name = 'SessionExpiredError';
+  }
+}
+
+/** True when the JWT's exp claim has passed (or the token can't be read). */
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
+// Several requests can fail at once when a session ends; only the first one notifies the App
+let sessionEndNotified = false;
+
+function expireSession(message?: string): SessionExpiredError {
+  const error = new SessionExpiredError(message);
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  if (!sessionEndNotified) {
+    sessionEndNotified = true;
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: error.message }));
+  }
+  return error;
+}
+
 export const authService = {
   register: async (credentials: RegisterCredentials): Promise<RegisterResponse> => {
     const formData = new URLSearchParams();
@@ -121,6 +156,7 @@ export const authService = {
 
   saveToken: (token: string): void => {
     localStorage.setItem('token', token);
+    sessionEndNotified = false;
   },
 
   getToken: (): string | null => {
@@ -198,6 +234,28 @@ export const authService = {
     } else {
       return {};
     }
+  },
+
+  /**
+   * fetch() for authenticated endpoints: sends the saved token as "Authorization: Bearer <token>".
+   * A missing or expired token, or a 401 from the backend, ends the session and returns the user
+   * to the login page instead of failing with a confusing error.
+   */
+  authFetch: async (url: string, init: RequestInit = {}): Promise<Response> => {
+    const token = authService.getToken();
+    if (!token || isTokenExpired(token)) {
+      throw expireSession(token ? undefined : 'Please log in to continue.');
+    }
+
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    const response = await fetch(url, { ...init, headers });
+
+    if (response.status === 401) {
+      const body: ApiErrorBody | null = await response.clone().json().catch(() => null);
+      throw expireSession(body?.error);
+    }
+    return response;
   },
 
   // Add method to test authentication

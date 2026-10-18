@@ -6,12 +6,9 @@ import { authService } from './authService';
 export const assetService = {
   getAllAssets: async (): Promise<Asset[]> => {
     try {
-      const authHeader = authService.getAuthHeader();
-      
-      const response = await fetch(`${API_BASE_URL}/api/assets`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets`, {
         headers: {
-          'Content-Type': 'application/json',
-          ...authHeader
+          'Content-Type': 'application/json'
         }
       });
       
@@ -31,11 +28,10 @@ export const assetService = {
 
   addAsset: async (asset: Omit<Asset, 'id'>): Promise<Asset> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/assets`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...authService.getAuthHeader()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(asset)
       });
@@ -54,11 +50,10 @@ export const assetService = {
 
   updateAsset: async (id: number, asset: Omit<Asset, 'id'>): Promise<Asset> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/assets/${id}`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/${id}`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          ...authService.getAuthHeader()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(asset)
       });
@@ -77,11 +72,8 @@ export const assetService = {
 
   deleteAsset: async (id: number): Promise<void> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/assets/${id}`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/${id}`, {
         method: 'DELETE',
-        headers: {
-          ...authService.getAuthHeader()
-        }
       });
       
       if (!response.ok) {
@@ -96,11 +88,7 @@ export const assetService = {
 
   getAllAssetsWithPrices: async (): Promise<AssetWithPrice[]> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/assets/with-prices`, {
-        headers: {
-          ...authService.getAuthHeader()
-        }
-      });
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/with-prices`);
       
       if (response.ok) {
         return await response.json();
@@ -123,11 +111,8 @@ export const assetService = {
 
   // Update all asset prices from CoinGecko in one batched backend call
   refreshPrices: async (): Promise<{ updated: number; unpriced: string[] }> => {
-    const response = await fetch(`${API_BASE_URL}/api/assets/refresh-prices`, {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/assets/refresh-prices`, {
       method: 'POST',
-      headers: {
-        ...authService.getAuthHeader()
-      }
     });
     if (!response.ok) {
       throw new Error(`Failed to refresh prices: ${response.status}`);
@@ -137,11 +122,7 @@ export const assetService = {
 
   getTopCoins: async (): Promise<Coin[]> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/crypto/top`, {
-        headers: {
-          ...authService.getAuthHeader()
-        }
-      });
+      const response = await fetch(`${API_BASE_URL}/api/crypto/top`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch top coins: ${response.status} ${response.statusText}`);
@@ -159,11 +140,7 @@ export const assetService = {
   // Get all analytics data in one call
   getAllAnalytics: async (): Promise<PortfolioAnalytics> => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/assets/analytics`, {
-        headers: {
-          ...authService.getAuthHeader()
-        }
-      });
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/analytics`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch analytics: ${response.status} ${response.statusText}`);

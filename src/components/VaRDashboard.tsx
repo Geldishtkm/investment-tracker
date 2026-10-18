@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '../config';
+import { authService } from '../services/authService';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { AlertTriangle, TrendingUp, TrendingDown, BarChart3, Shield, Target, Activity, DollarSign, Package, RefreshCw } from 'lucide-react';
 
@@ -66,16 +67,9 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
     setError(null);
     
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Authentication required');
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/var/calculate?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/var/calculate?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
@@ -96,9 +90,8 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
       setVarSummary(data);
       
       // Also fetch detailed calculation
-      const detailedResponse = await fetch(`${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
+      const detailedResponse = await authService.authFetch(`${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });

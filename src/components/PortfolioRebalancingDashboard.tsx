@@ -130,11 +130,10 @@ const PortfolioRebalancingDashboard: React.FC<PortfolioRebalancingDashboardProps
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE_URL}/api/portfolio-rebalancing/optimize`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/portfolio-rebalancing/optimize`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...authService.getAuthHeader()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           username: 'current_user',
@@ -170,11 +169,10 @@ const PortfolioRebalancingDashboard: React.FC<PortfolioRebalancingDashboardProps
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE_URL}/api/portfolio-rebalancing/black-litterman`, {
+      const response = await authService.authFetch(`${API_BASE_URL}/api/portfolio-rebalancing/black-litterman`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...authService.getAuthHeader()
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           username: 'current_user',

@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,6 +23,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.portfolio.tracker.security.JwtFilter;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.io.IOException;
 import java.util.Arrays;
 
 @Configuration
@@ -53,6 +59,9 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .addFilterBefore(jwtFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+            // Without a login form Spring answers unauthenticated requests with 403, which looks like a
+            // permissions problem. Answer 401 instead, so the frontend knows to send the user to login
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(this::rejectUnauthenticated))
             .headers(headers -> headers
                 .frameOptions(frame -> frame.deny()) // Prevent clickjacking
                 .contentTypeOptions(contentType -> {}) // Prevent MIME type sniffing
@@ -99,6 +108,26 @@ public class SecurityConfig {
 
         logger.info("Spring Security configured with proper authentication requirements and security headers");
         return http.build();
+    }
+
+    private void rejectUnauthenticated(HttpServletRequest request, HttpServletResponse response,
+                                       AuthenticationException authException) throws IOException {
+        Object tokenError = request.getAttribute(JwtFilter.TOKEN_ERROR_ATTRIBUTE);
+        String code;
+        String message;
+        if ("expired".equals(tokenError)) {
+            code = "TOKEN_EXPIRED";
+            message = "Your session has expired. Please log in again.";
+        } else if (tokenError != null) {
+            code = "TOKEN_INVALID";
+            message = "Your session is no longer valid. Please log in again.";
+        } else {
+            code = "AUTHENTICATION_REQUIRED";
+            message = "Please log in to continue.";
+        }
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.getWriter().write("{\"error\":\"" + message + "\",\"code\":\"" + code + "\"}");
     }
 
     @Bean

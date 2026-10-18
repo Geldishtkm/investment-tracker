@@ -29,6 +29,9 @@ public class JwtFilter extends OncePerRequestFilter {
     private static final String AUTH_HEADER_PREFIX = "Bearer ";
     private static final String AUTH_ENDPOINT_PREFIX = "/auth/";
 
+    /** Request attribute naming why a supplied token was rejected ("expired" or "invalid"), for the 401 response. */
+    public static final String TOKEN_ERROR_ATTRIBUTE = JwtFilter.class.getName() + ".tokenError";
+
     @Autowired
     private JwtUtil jwtUtil;
 
@@ -126,6 +129,7 @@ public class JwtFilter extends OncePerRequestFilter {
         String username = extractUsernameFromToken(token);
         if (username == null) {
             logger.debug("Could not extract username from JWT token");
+            request.setAttribute(TOKEN_ERROR_ATTRIBUTE, jwtUtil.isSignedButExpired(token) ? "expired" : "invalid");
             return; // Could not extract username
         }
 
@@ -193,8 +197,10 @@ public class JwtFilter extends OncePerRequestFilter {
             } else {
                 logger.warn("Invalid JWT token for user: {} on request: {}", 
                            username, request.getRequestURI());
+                request.setAttribute(TOKEN_ERROR_ATTRIBUTE, "invalid");
             }
         } catch (Exception e) {
+            request.setAttribute(TOKEN_ERROR_ATTRIBUTE, "invalid");
             logger.error("Error setting up authentication for user {} on request {}: {}", 
                         username, request.getRequestURI(), e.getMessage());
         }

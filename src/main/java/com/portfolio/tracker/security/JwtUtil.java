@@ -138,6 +138,21 @@ public class JwtUtil {
     }
 
     /**
+     * True when the token carries a valid signature but its expiry time has passed,
+     * so callers can tell an expired session apart from a forged or malformed token
+     */
+    public boolean isSignedButExpired(String token) {
+        try {
+            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token);
+            return false;
+        } catch (io.jsonwebtoken.ExpiredJwtException e) {
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Check if the JWT token has expired
      * @param token JWT token string
      * @return true if token is expired, false otherwise

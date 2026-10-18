@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { assetService } from './services/api';
-import { authService } from './services/authService';
+import { authService, SESSION_EXPIRED_EVENT, SessionExpiredError } from './services/authService';
 import { Asset, AssetWithPrice, User } from './types';
 import AssetCard from './components/AssetCard';
 import PortfolioSummary from './components/PortfolioSummary';
@@ -125,6 +125,22 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- check the saved session once on startup
   }, []);
 
+  // An expired or rejected token anywhere in the app ends the session and shows the login page
+  useEffect(() => {
+    const onSessionExpired = (event: Event) => {
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setAssets([]);
+      setAssetsWithPrices([]);
+      setCurrentPage('portfolio');
+      setCurrentAuthPage('login');
+      showToast('info', (event as CustomEvent<string>).detail || 'Your session has expired. Please log in again.');
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- register the listener once
+  }, []);
+
   const loadAssets = async () => {
     try {
       setLoading(true);
@@ -134,6 +150,7 @@ function App() {
       try {
         await assetService.refreshPrices();
       } catch (refreshError) {
+        if (refreshError instanceof SessionExpiredError) throw refreshError;
         console.warn('Price refresh skipped:', refreshError);
       }
 
@@ -168,6 +185,7 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading assets:', error);
+      if (error instanceof SessionExpiredError) return; // the login page and a notice are shown instead
       setAssetsLoadError(error instanceof Error ? error.message : 'Unknown error');
       showToast('error', 'Failed to load assets: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
@@ -182,6 +200,7 @@ function App() {
       showToast('success', 'Asset added successfully!');
     } catch (error) {
       console.error('Error adding asset:', error);
+      if (error instanceof SessionExpiredError) return;
       showToast('error', 'Failed to add asset: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   };
@@ -193,6 +212,7 @@ function App() {
       showToast('success', 'Asset updated successfully!');
     } catch (error) {
       console.error('Error updating asset:', error);
+      if (error instanceof SessionExpiredError) return;
       showToast('error', 'Failed to update asset');
     }
   };
@@ -204,6 +224,7 @@ function App() {
       showToast('success', `${assetName} deleted successfully!`);
     } catch (error) {
       console.error('Error deleting asset:', error);
+      if (error instanceof SessionExpiredError) return;
       showToast('error', `Failed to delete ${assetName}`);
     }
   };
