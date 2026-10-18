@@ -3,6 +3,7 @@ package com.portfolio.tracker.service;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.repository.AssetRepository;
+import com.portfolio.tracker.repository.TradeRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -15,10 +16,12 @@ import java.util.*;
 public class AssetService {
 
     private final AssetRepository assetRepository;
+    private final TradeRepository tradeRepository;
 
     @Autowired
-    public AssetService(AssetRepository assetRepository) {
+    public AssetService(AssetRepository assetRepository, TradeRepository tradeRepository) {
         this.assetRepository = assetRepository;
+        this.tradeRepository = tradeRepository;
     }
 
     public Asset saveAsset(Asset asset) {
@@ -43,9 +46,20 @@ public class AssetService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: " + id));
     }
 
+    /**
+     * Remove a holding that shouldn't be in the portfolio (e.g. added by mistake), together with its
+     * trades. Closing a real position is a sell instead, which keeps the trade history.
+     */
     @Transactional
     public void deleteAssetByIdAndUser(Long id, User user) {
         Asset asset = getAssetByIdAndUser(id, user);
+        tradeRepository.deleteByAssetId(asset.getId());
+        removeHolding(asset);
+    }
+
+    /** Delete the holding row only; its trades stay in the ledger (their asset link becomes NULL). */
+    @Transactional
+    public void removeHolding(Asset asset) {
         // User.assets cascades persist, so an asset still in its owner's collection would be
         // re-saved at flush and the delete silently dropped; detach it from the owner first
         if (asset.getUser() != null) {

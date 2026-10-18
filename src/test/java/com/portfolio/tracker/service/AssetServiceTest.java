@@ -3,6 +3,7 @@ package com.portfolio.tracker.service;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.repository.AssetRepository;
+import com.portfolio.tracker.repository.TradeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -33,6 +34,9 @@ class AssetServiceTest {
 
     @Mock
     private AssetRepository assetRepository;
+
+    @Mock
+    private TradeRepository tradeRepository;
 
     @InjectMocks
     private AssetService assetService;
@@ -109,6 +113,7 @@ class AssetServiceTest {
             assetService.deleteAssetByIdAndUser(1L, testUser);
 
             verify(assetRepository).delete(bitcoin);
+            verify(tradeRepository).deleteByAssetId(1L); // a removed holding takes its trades with it
         }
 
         @Test

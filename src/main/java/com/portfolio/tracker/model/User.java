@@ -53,6 +53,10 @@ public class User {
     private boolean isActive = true;
 
     // Email verification: new accounts stay disabled until the emailed code is confirmed
+    // Target annual volatility for risk-target adherence (e.g. 0.40 = 40%); null when not set
+    @Column(name = "risk_target_volatility")
+    private Double riskTargetVolatility;
+
     @Column(name = "is_enabled", nullable = false)
     private boolean enabled = false;
 
@@ -193,4 +197,7 @@ public class User {
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
+
+    public Double getRiskTargetVolatility() { return riskTargetVolatility; }
+    public void setRiskTargetVolatility(Double riskTargetVolatility) { this.riskTargetVolatility = riskTargetVolatility; }
 }

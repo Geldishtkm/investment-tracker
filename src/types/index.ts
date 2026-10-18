@@ -171,3 +171,76 @@ export interface RiskMetrics {
   beta: number;
   diversificationScore: number;
 } 
+// Institutional Trader Evaluation (GET /api/analytics/institutional-score)
+
+export type FlagSeverity = 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+export type PillarKey = 'risk' | 'behavior' | 'consistency' | 'execution';
+
+/** One scored metric. score is 0–1; points = weight × score. Unavailable metrics score 0 and explain why in detail. */
+export interface ScoreComponent {
+  key: string;
+  name: string;
+  available: boolean;
+  value: number | null;
+  displayValue: string;
+  weight: number;
+  score: number;
+  points: number;
+  detail: string;
+}
+
+export interface ScorePillar {
+  key: PillarKey;
+  name: string;
+  available: boolean;
+  points: number;
+  maxPoints: number;
+  /** Share of the pillar's points whose metrics had data (0–1). */
+  coverage: number;
+  components: ScoreComponent[];
+}
+
+export interface DiagnosticFlag {
+  id: string;
+  severity: FlagSeverity;
+  pillar: PillarKey;
+  title: string;
+  detail: string;
+  recommendation: string;
+}
+
+export interface RankTier {
+  rank: number;
+  name: string;
+  minScore: number;
+  maxScore: number;
+}
+
+export interface InstitutionalScore {
+  score: number;
+  maxScore: number;
+  /** True when some pillars couldn't be scored and the total is scaled over the rest. */
+  provisional: boolean;
+  pillarsScored: number;
+  tier: RankTier;
+  tiers: RankTier[];
+  pillars: ScorePillar[];
+  flags: DiagnosticFlag[];
+  strengths: string[];
+  coverage: { trades: number; datedTrades: number; closedLots: number; observations: number };
+  riskTargetVolatility: number | null;
+  generatedAt: string;
+}
+
+export interface TradeRequest {
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  /** YYYY-MM-DD; today when omitted. */
+  date?: string;
+}
+
+export interface TradeResult {
+  asset: Asset | null;
+  positionClosed: boolean;
+}

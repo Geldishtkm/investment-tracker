@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { todayLocal } from '../utils/dates';
 import {
   Search,
   TrendingUp,
@@ -6,14 +7,14 @@ import {
   ArrowLeft,
   Coins
 } from 'lucide-react';
-import { Coin, Asset } from '../types';
-import { assetService } from '../services/api';
+import { Coin } from '../types';
+import { assetService, NewAsset } from '../services/api';
 import Toast from './Toast';
 import PriceHistoryChart from './PriceHistoryChart';
 
 interface CoinsPageProps {
   onBack: () => void;
-  onAssetAdded: (asset: Omit<Asset, 'id'>) => void;
+  onAssetAdded: (asset: NewAsset) => void;
 }
 
 const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
@@ -25,6 +26,9 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const coinsPerPage = 50;
   const [quantities, setQuantities] = useState<{ [key: string]: string }>({});
+  // Optional purchase details per coin, recorded in the trade ledger (default: today, at the market price)
+  const [purchaseDates, setPurchaseDates] = useState<{ [key: string]: string }>({});
+  const [purchasePrices, setPurchasePrices] = useState<{ [key: string]: string }>({});
   const [toast, setToast] = useState<{
     message: string;
     type: 'success' | 'error';
@@ -128,25 +132,34 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
     try {
       const quantityNum = parseFloat(quantity);
       const currentPrice = coin.current_price || 0;
-      const purchasePricePerUnit = currentPrice; // Use current market price as purchase price
+      const enteredPrice = parseFloat(purchasePrices[coin.id] || '');
+      const purchasePricePerUnit = enteredPrice > 0 ? enteredPrice : currentPrice;
+      const purchaseDate = purchaseDates[coin.id] || todayLocal();
+      if (purchaseDate > todayLocal()) {
+        setToast({ message: 'The purchase date can\'t be in the future', type: 'error', isVisible: true });
+        return;
+      }
       const initialInvestment = quantityNum * purchasePricePerUnit;
 
       // Ensure all required fields are present and valid
-      const assetData = {
+      const assetData: NewAsset = {
         name: coin.name,
         quantity: quantityNum,
         pricePerUnit: currentPrice,
         purchasePricePerUnit: purchasePricePerUnit,
-        initialInvestment: initialInvestment
+        initialInvestment: initialInvestment,
+        purchaseDate
       };
 
       onAssetAdded(assetData);
       
-      // Clear the form field
+      // Clear the form fields
       setQuantities(prev => ({
         ...prev,
         [coin.id]: ''
       }));
+      setPurchaseDates(prev => ({ ...prev, [coin.id]: '' }));
+      setPurchasePrices(prev => ({ ...prev, [coin.id]: '' }));
 
       setToast({
         message: `${coin.name} added successfully!`,
@@ -484,6 +497,32 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
                     ≈ ${((parseFloat(quantities[coin.id]) || 0) * (coin.current_price || 0)).toFixed(2)} USD
                   </div>
                 )}
+              </div>
+
+              {/* When and at what price it was bought (feeds the trade ledger) */}
+              <div className="mb-6 grid grid-cols-2 gap-3">
+                <label className="text-xs text-gray-400 font-medium">
+                  Purchase date
+                  <input
+                    type="date"
+                    value={purchaseDates[coin.id] || todayLocal()}
+                    max={todayLocal()}
+                    onChange={(e) => setPurchaseDates(prev => ({ ...prev, [coin.id]: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 bg-gray-900/80 border border-gray-600/50 rounded-lg text-white text-sm"
+                  />
+                </label>
+                <label className="text-xs text-gray-400 font-medium">
+                  Purchase price (USD)
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder={String(coin.current_price ?? '')}
+                    value={purchasePrices[coin.id] || ''}
+                    onChange={(e) => setPurchasePrices(prev => ({ ...prev, [coin.id]: e.target.value }))}
+                    className="mt-1 w-full px-3 py-2 bg-gray-900/80 border border-gray-600/50 rounded-lg text-white text-sm"
+                  />
+                </label>
               </div>
 
               {/* Enhanced Add to Portfolio Button */}

@@ -1,7 +1,31 @@
-import { Asset, AssetWithPrice, Coin, PortfolioAnalytics } from '../types';
+import { Asset, AssetWithPrice, Coin, InstitutionalScore, PortfolioAnalytics, TradeRequest, TradeResult } from '../types';
 import { API_BASE_URL } from '../config';
 import { authService } from './authService';
 
+
+/** An API error carrying the backend's machine-readable code (e.g. NO_ASSETS). */
+export class ApiError extends Error {
+  code?: string;
+  status: number;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function jsonOrThrow<T>(response: Response, fallback: string): Promise<T> {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new ApiError(body?.error || `${fallback} (HTTP ${response.status})`, response.status, body?.code);
+  }
+  return body as T;
+}
+
+/** A new holding; purchaseDate (YYYY-MM-DD) is recorded in the trade ledger. */
+export type NewAsset = Omit<Asset, 'id'> & { purchaseDate?: string };
 
 export const assetService = {
   getAllAssets: async (): Promise<Asset[]> => {
@@ -26,7 +50,7 @@ export const assetService = {
     }
   },
 
-  addAsset: async (asset: Omit<Asset, 'id'>): Promise<Asset> => {
+  addAsset: async (asset: NewAsset): Promise<Asset> => {
     try {
       const response = await authService.authFetch(`${API_BASE_URL}/api/assets`, {
         method: 'POST',
@@ -153,9 +177,28 @@ export const assetService = {
     }
   },
 
+  /** Buy more of, or sell part of, a holding. Selling everything closes it (asset is then null). */
+  recordTrade: async (assetId: number, trade: TradeRequest): Promise<TradeResult> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/assets/${assetId}/trades`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(trade)
+    });
+    return jsonOrThrow<TradeResult>(response, 'Failed to record trade');
+  },
+
+  getInstitutionalScore: async (): Promise<InstitutionalScore> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/analytics/institutional-score`);
+    return jsonOrThrow<InstitutionalScore>(response, 'Failed to load the evaluation');
+  },
+
+  /** Target annual volatility as a fraction (0.4 = 40%), or null to clear it. */
+  setRiskTarget: async (targetVolatility: number | null): Promise<void> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/analytics/risk-target`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetVolatility })
+    });
+    await jsonOrThrow<unknown>(response, 'Failed to save the risk target');
+  },
 };
-
-
-
-
- 

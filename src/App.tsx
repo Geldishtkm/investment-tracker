@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { assetService } from './services/api';
+import { assetService, NewAsset } from './services/api';
 import { authService, SESSION_EXPIRED_EVENT, SessionExpiredError } from './services/authService';
 import { Asset, AssetWithPrice, User } from './types';
 import AssetCard from './components/AssetCard';
@@ -10,6 +10,7 @@ import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
 import VaRDashboard from './components/VaRDashboard';
 import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDashboard';
+import InstitutionalEvaluationPage from './components/InstitutionalEvaluationPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 
@@ -51,7 +52,7 @@ const AppToast: React.FC<{
   );
 };
 
-type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing';
+type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'institutional';
 type AuthPage = 'login' | 'register';
 
 interface ToastMessage {
@@ -193,7 +194,7 @@ function App() {
     }
   };
 
-  const handleAddAsset = async (asset: Omit<Asset, 'id'>) => {
+  const handleAddAsset = async (asset: NewAsset) => {
     try {
       await assetService.addAsset(asset);
       await loadAssets();
@@ -376,6 +377,16 @@ function App() {
               >
                 Rebalancing
               </button>
+              <button
+                onClick={() => setCurrentPage('institutional')}
+                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
+                  currentPage === 'institutional'
+                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-xl shadow-amber-500/25 transform scale-105 border-0' 
+                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
+                }`}
+              >
+                Evaluation
+              </button>
 
               <div className="h-8 w-px bg-gradient-to-b from-gray-600/50 to-transparent mx-3"></div>
               <button
@@ -440,6 +451,7 @@ function App() {
                       })}
                       onDelete={handleDeleteAsset}
                       onShowToast={showToast}
+                      onTraded={loadAssets}
                     />
                   ))}
                 </div>
@@ -518,6 +530,23 @@ function App() {
                 <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
               ) : (
                 <PortfolioRebalancingDashboard onAddAsset={() => setCurrentPage('coins')} />
+              )}
+            </div>
+          )}
+
+          {currentPage === 'institutional' && (
+            <div className="space-y-6">
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-amber-300 to-yellow-400 bg-clip-text text-transparent mb-2">
+                  Institutional Evaluation
+                </h2>
+                <p className="text-gray-400">Your 0–1000 Trader Index Score across risk, behavior, consistency and execution</p>
+              </div>
+              {assetsLoadError ? (
+                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+              ) : (
+                // Not gated on current holdings: closed positions still have a trade history to evaluate
+                <InstitutionalEvaluationPage onAddAsset={() => setCurrentPage('coins')} />
               )}
             </div>
           )}

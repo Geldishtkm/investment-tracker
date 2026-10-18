@@ -168,6 +168,10 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
     }
 
+    public User save(User user) {
+        return userRepository.save(user);
+    }
+
     /**
      * Update a user's password
      * @param username The username of the user

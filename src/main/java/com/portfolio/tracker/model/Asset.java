@@ -2,6 +2,9 @@ package com.portfolio.tracker.model;
 
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "assets")
@@ -30,6 +33,11 @@ public class Asset {
     @JoinColumn(name = "user_id")
     @JsonIgnore
     private User user;
+
+    // Date the holding was bought, sent when adding an asset and recorded in the trade ledger
+    @Transient
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private LocalDate purchaseDate;
 
     // Default constructor required by JPA
     public Asset() {}
@@ -95,6 +103,14 @@ public class Asset {
 
     public void setInitialInvestment(double initialInvestment) {
         this.initialInvestment = initialInvestment;
+    }
+
+    public LocalDate getPurchaseDate() {
+        return purchaseDate;
+    }
+
+    public void setPurchaseDate(LocalDate purchaseDate) {
+        this.purchaseDate = purchaseDate;
     }
 
     public User getUser() {

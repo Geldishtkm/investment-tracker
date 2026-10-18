@@ -5,6 +5,7 @@ import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.analytics.PortfolioDataException;
 import com.portfolio.tracker.service.RiskMetricsService;
 import com.portfolio.tracker.service.AssetPriceRefreshService;
+import com.portfolio.tracker.service.TradeService;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.UserService;
 
@@ -35,14 +36,17 @@ public class AssetController {
     private final UserService userService;
     private final RiskMetricsService riskMetricsService;
     private final AssetPriceRefreshService priceRefreshService;
+    private final TradeService tradeService;
 
     @Autowired
     public AssetController(AssetService assetService, UserService userService,
-                           RiskMetricsService riskMetricsService, AssetPriceRefreshService priceRefreshService) {
+                           RiskMetricsService riskMetricsService, AssetPriceRefreshService priceRefreshService,
+                           TradeService tradeService) {
         this.assetService = assetService;
         this.userService = userService;
         this.riskMetricsService = riskMetricsService;
         this.priceRefreshService = priceRefreshService;
+        this.tradeService = tradeService;
     }
 
     /**
@@ -140,8 +144,15 @@ public class AssetController {
             if (invalid != null) {
                 return ResponseEntity.badRequest().body(Map.of("error", invalid));
             }
+            try {
+                TradeService.validateDate(asset.getPurchaseDate());
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            }
             
             Asset savedAsset = assetService.saveAsset(asset);
+            // The holding's opening buy goes into the trade ledger for the behavioral analytics
+            tradeService.recordOpeningBuy(savedAsset, asset.getPurchaseDate());
             
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "id", savedAsset.getId(),
@@ -189,6 +200,7 @@ public class AssetController {
             existingAsset.setInitialInvestment(asset.getInitialInvestment());
             
             Asset updatedAsset = assetService.saveAsset(existingAsset);
+            tradeService.syncCorrectedHolding(updatedAsset);
             return ResponseEntity.ok(updatedAsset);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);

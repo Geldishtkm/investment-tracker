@@ -49,35 +49,8 @@ public class CoinMarketDataService {
 
     /** Current market capitalisation in USD for each CoinGecko ID. */
     public Map<String, Double> getMarketCaps(Collection<String> coinIds) {
-        Map<String, Double> caps = new HashMap<>();
-        // The top-100 list is already cached (with market caps); only fetch coins outside it
         try {
-            for (Map<String, Object> coin : cryptoPriceService.getTopCoins()) {
-                String id = String.valueOf(coin.get("id"));
-                if (coinIds.contains(id) && coin.get("market_cap") instanceof Number cap && cap.doubleValue() > 0) {
-                    caps.put(id, cap.doubleValue());
-                }
-            }
-        } catch (Exception e) {
-            logger.debug("Top coins unavailable for market caps: {}", e.getMessage());
-        }
-        List<String> toFetch = coinIds.stream().filter(id -> !caps.containsKey(id)).toList();
-        if (toFetch.isEmpty()) return caps;
-
-        String path = UriComponentsBuilder.fromPath("/coins/markets")
-                .queryParam("vs_currency", "usd")
-                .queryParam("ids", String.join(",", toFetch))
-                .queryParam("per_page", toFetch.size())
-                .encode()
-                .toUriString();
-        try {
-            JsonNode markets = objectMapper.readTree(coinGecko.get(path));
-            for (JsonNode coin : markets) {
-                JsonNode cap = coin.get("market_cap");
-                if (cap != null && cap.isNumber() && cap.asDouble() > 0) {
-                    caps.put(coin.get("id").asText(), cap.asDouble());
-                }
-            }
+            Map<String, Double> caps = getMarketField(coinIds, "market_cap");
             List<String> missing = coinIds.stream().filter(id -> !caps.containsKey(id)).toList();
             if (!missing.isEmpty()) {
                 throw new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
@@ -92,6 +65,52 @@ public class CoinMarketDataService {
             throw new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
                     "Market data is temporarily unavailable from CoinGecko. Please try again shortly.");
         }
+    }
+
+    /**
+     * Current 24h trading volume in USD for each CoinGecko ID. Coins CoinGecko can't provide right
+     * now are left out instead of failing the request.
+     */
+    public Map<String, Double> getTotalVolumes(Collection<String> coinIds) {
+        try {
+            return getMarketField(coinIds, "total_volume");
+        } catch (Exception e) {
+            logger.warn("Trading volumes unavailable for {}: {}", coinIds, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    /** A positive numeric /coins/markets field per coin, from the cached top-100 list where possible. */
+    private Map<String, Double> getMarketField(Collection<String> coinIds, String field) throws Exception {
+        Map<String, Double> values = new HashMap<>();
+        // The top-100 list is already cached (with market data); only fetch coins outside it
+        try {
+            for (Map<String, Object> coin : cryptoPriceService.getTopCoins()) {
+                String id = String.valueOf(coin.get("id"));
+                if (coinIds.contains(id) && coin.get(field) instanceof Number value && value.doubleValue() > 0) {
+                    values.put(id, value.doubleValue());
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Top coins unavailable for {}: {}", field, e.getMessage());
+        }
+        List<String> toFetch = coinIds.stream().filter(id -> !values.containsKey(id)).toList();
+        if (toFetch.isEmpty()) return values;
+
+        String path = UriComponentsBuilder.fromPath("/coins/markets")
+                .queryParam("vs_currency", "usd")
+                .queryParam("ids", String.join(",", toFetch))
+                .queryParam("per_page", toFetch.size())
+                .encode()
+                .toUriString();
+        JsonNode markets = objectMapper.readTree(coinGecko.get(path));
+        for (JsonNode coin : markets) {
+            JsonNode value = coin.get(field);
+            if (value != null && value.isNumber() && value.asDouble() > 0) {
+                values.put(coin.get("id").asText(), value.asDouble());
+            }
+        }
+        return values;
     }
 
     private Optional<String> findInTopCoins(String key) {

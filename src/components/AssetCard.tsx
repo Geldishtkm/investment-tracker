@@ -7,10 +7,12 @@ import {
   Save,
   X,
   Trash2,
-  Percent
+  Percent,
+  ArrowLeftRight
 } from 'lucide-react';
 import { Asset } from '../types';
 import { assetService } from '../services/api';
+import TradeModal from './TradeModal';
 
 interface AssetCardProps {
   asset: Asset;
@@ -18,10 +20,13 @@ interface AssetCardProps {
   onUpdate: (asset: Asset) => void;
   onDelete: (id: number, assetName: string) => void;
   onShowToast: (type: 'success' | 'error' | 'info', message: string) => void;
+  /** Called after a buy or sell is recorded, so the portfolio can reload. */
+  onTraded: () => void;
 }
 
-const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDelete, onShowToast }) => {
+const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDelete, onShowToast, onTraded }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [isTrading, setIsTrading] = useState(false);
   const [formData, setFormData] = useState({
     name: asset.name,
     quantity: asset.quantity.toString(),
@@ -63,6 +68,10 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
   };
 
   const handleDelete = async () => {
+    // Removing is for holdings added by mistake; a real exit is a sell, which keeps the trade history
+    if (!window.confirm(`Remove ${asset.name} and its trade history? To record that you sold it, use Trade → Sell instead.`)) {
+      return;
+    }
     try {
       await onDelete(asset.id, asset.name);
     } catch (error) {
@@ -85,6 +94,18 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
 
   return (
     <div className="bg-gradient-to-br from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:shadow-xl hover:shadow-gray-900/50 transition-all duration-300 group">
+      {isTrading && (
+        <TradeModal
+          asset={asset}
+          currentPrice={currentPrice}
+          onClose={() => setIsTrading(false)}
+          onSaved={(message) => {
+            setIsTrading(false);
+            onShowToast('success', message);
+            onTraded();
+          }}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -117,6 +138,14 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
             </>
           ) : (
             <>
+              <button
+                onClick={() => setIsTrading(true)}
+                title="Buy or sell"
+                aria-label={`Trade ${asset.name}`}
+                className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors duration-200"
+              >
+                <ArrowLeftRight size={16} />
+              </button>
               <button
                 onClick={() => setIsEditing(true)}
                 className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors duration-200"
