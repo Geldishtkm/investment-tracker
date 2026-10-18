@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import InstitutionalEvaluationPage from '../InstitutionalEvaluationPage';
+import InstitutionalEvaluationPage, { STALE_RETRY_MS } from '../InstitutionalEvaluationPage';
 import { scoreFixture } from './fixtures';
 
 const api = vi.hoisted(() => ({ getInstitutionalScore: vi.fn(), setRiskTarget: vi.fn() }));
@@ -92,6 +92,42 @@ describe('InstitutionalEvaluationPage', () => {
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     await screen.findByRole('meter');
     expect(screen.queryByText(/Score capped/)).not.toBeInTheDocument();
+  });
+
+  it('warns when the evaluation had to use old prices or saved history', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({
+      dataFreshness: { pricesAsOf: '2026-09-27T10:00:00Z', stalePrices: ['Bitcoin'], historyThrough: '2026-09-27', historyStale: true },
+    }));
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    const notice = await screen.findByRole('status', { name: 'Market data freshness' });
+    expect(notice).toHaveTextContent('Live prices unavailable for Bitcoin');
+    expect(notice).toHaveTextContent('Price history runs only to 2026-09-27');
+  });
+
+  it('reloads by itself while the history is stale, then stops once it is current', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const stale = scoreFixture({ dataFreshness: { pricesAsOf: null, stalePrices: [], historyThrough: '2026-09-27', historyStale: true } });
+      api.getInstitutionalScore.mockResolvedValueOnce(stale).mockResolvedValue(scoreFixture());
+      render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+      await screen.findByRole('status', { name: 'Market data freshness' });
+
+      await vi.advanceTimersByTimeAsync(STALE_RETRY_MS);
+      await waitFor(() => expect(screen.queryByRole('status', { name: 'Market data freshness' })).not.toBeInTheDocument());
+      expect(api.getInstitutionalScore).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(STALE_RETRY_MS * 3);
+      expect(api.getInstitutionalScore).toHaveBeenCalledTimes(2); // current now: no more reloads
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows no freshness warning when everything is current', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture());
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    await screen.findByRole('meter');
+    expect(screen.queryByRole('status', { name: 'Market data freshness' })).not.toBeInTheDocument();
   });
 
   it('shows the add-assets empty state when there is nothing to evaluate', async () => {

@@ -8,6 +8,7 @@ import com.portfolio.tracker.model.PriceHistoryCacheEntry;
 import com.portfolio.tracker.repository.PriceHistoryCacheRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -46,6 +47,8 @@ public class PriceHistoryService {
     private final Map<String, CompletableFuture<CachedHistory>> inFlight = new ConcurrentHashMap<>();
     // IDs CoinGecko said don't exist, so repeated lookups of a bad ID don't each cost an API call
     private final Map<String, Instant> unknownCoins = new ConcurrentHashMap<>();
+    // Coins currently served from an expired saved copy; refetched in the background once CoinGecko allows
+    private final Set<String> pendingRefresh = ConcurrentHashMap.newKeySet();
 
     public PriceHistoryService(CoinGeckoClient coinGecko,
                                PriceHistoryCacheRepository cacheRepository,
@@ -143,6 +146,26 @@ public class PriceHistoryService {
         return status;
     }
 
+    /**
+     * Refetch, one coin at a time, histories that had to be served from an old saved copy (typically
+     * when a user returns after a break and all their coins expire at once, hitting the rate limit).
+     * Stops at the first failure and resumes on the next run, after the rate limit has cleared.
+     */
+    @Scheduled(fixedDelayString = "${portfolio.analytics.stale-history-retry-ms:30000}", initialDelay = 30000)
+    public void refreshStaleHistories() {
+        for (String id : List.copyOf(pendingRefresh)) {
+            if (coinGecko.secondsUntilAvailable() > 0) return;
+            load(id, true);
+            if (pendingRefresh.contains(id)) return; // still failing: try again next run
+            logger.info("Refreshed stale price history for {} in the background", id);
+        }
+    }
+
+    /** Coins waiting for a background refresh of an outdated saved history. */
+    public Set<String> getPendingRefresh() {
+        return Set.copyOf(pendingRefresh);
+    }
+
     /** Clear the in-memory cache (the database copy is kept as the stale-data fallback). */
     public void clearCache() {
         int size = memoryCache.size();
@@ -178,6 +201,7 @@ public class PriceHistoryService {
             CachedHistory fresh = fetchFromCoinGecko(id);
             memoryCache.put(id, fresh);
             writeToDatabase(id, fresh);
+            pendingRefresh.remove(id);
             mine.complete(fresh);
             return fresh;
         } catch (RuntimeException e) {
@@ -188,6 +212,7 @@ public class PriceHistoryService {
             mine.completeExceptionally(failure);
             if (cached != null && failure.getReason() != PortfolioDataException.Reason.UNKNOWN_ASSET) {
                 logger.warn("Serving saved price history for {} from {} ({})", id, cached.fetchedAt(), e.getMessage());
+                pendingRefresh.add(id);
                 return cached;
             }
             throw failure;

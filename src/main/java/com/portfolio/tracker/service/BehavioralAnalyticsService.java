@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
@@ -32,10 +33,13 @@ public class BehavioralAnalyticsService {
     private final PriceHistoryService priceHistoryService;
     private final CoinMarketDataService coinMarketDataService;
     private final AnalyticsProperties properties;
+    private final AssetPriceRefreshService priceRefreshService;
 
     public BehavioralAnalyticsService(AssetService assetService, TradeService tradeService,
                                       PortfolioDataService portfolioDataService, PriceHistoryService priceHistoryService,
-                                      CoinMarketDataService coinMarketDataService, AnalyticsProperties properties) {
+                                      CoinMarketDataService coinMarketDataService, AnalyticsProperties properties,
+                                      AssetPriceRefreshService priceRefreshService) {
+        this.priceRefreshService = priceRefreshService;
         this.assetService = assetService;
         this.tradeService = tradeService;
         this.portfolioDataService = portfolioDataService;
@@ -44,7 +48,18 @@ public class BehavioralAnalyticsService {
         this.properties = properties;
     }
 
-    public Evaluation evaluate(User user) {
+    /**
+     * How current the data behind an evaluation is. stalePrices: holdings valued at a price older than
+     * {@link AssetPriceRefreshService#STALE_AFTER}; historyThrough: last day of the return series,
+     * behind today when saved history had to be used because CoinGecko was unavailable.
+     */
+    public record Freshness(Instant pricesAsOf, List<String> stalePrices, LocalDate historyThrough, boolean historyStale) {}
+
+    public record Result(Evaluation evaluation, Freshness freshness) {}
+
+    public Result evaluate(User user) {
+        // Value holdings and open lots at current prices, so returning after a break isn't scored on old ones
+        AssetPriceRefreshService.Result prices = priceRefreshService.refreshQuietly(user);
         List<Asset> assets = assetService.getAssetsByUser(user);
         List<Trade> trades = tradeService.getTrades(user);
         if (assets.isEmpty() && trades.isEmpty()) throw PortfolioDataException.noAssets();
@@ -70,6 +85,7 @@ public class BehavioralAnalyticsService {
         // Daily return history of the current holdings
         double[] portfolioReturns = null, benchmarkReturns = null;
         String historyReason = null;
+        LocalDate historyThrough = null;
         if (holdings.isEmpty()) {
             historyReason = "You have no current holdings.";
         } else {
@@ -77,6 +93,7 @@ public class BehavioralAnalyticsService {
                 PortfolioSnapshot snapshot = portfolioDataService.snapshot(assets, true);
                 portfolioReturns = snapshot.portfolioReturns();
                 benchmarkReturns = snapshot.benchmark();
+                historyThrough = snapshot.dates().get(snapshot.dates().size() - 1);
             } catch (PortfolioDataException e) {
                 historyReason = e.getMessage();
             }
@@ -104,9 +121,13 @@ public class BehavioralAnalyticsService {
         }
         Map<String, Double> volumes = tradedCoins.isEmpty() ? Map.of() : coinMarketDataService.getTotalVolumes(tradedCoins);
 
-        return TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns, historyReason,
-                events, dailyPrices, currentPrices, volumes, user.getRiskTargetVolatility(),
-                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), LocalDate.now(ZoneOffset.UTC)));
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
+                historyReason, events, dailyPrices, currentPrices, volumes, user.getRiskTargetVolatility(),
+                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today));
+        // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
+        boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
+        return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));
     }
 
     private String coinIdOrNull(String name, Map<String, String> cache) {

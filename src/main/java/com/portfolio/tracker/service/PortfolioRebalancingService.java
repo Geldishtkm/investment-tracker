@@ -24,15 +24,18 @@ public class PortfolioRebalancingService {
     private final PortfolioDataService portfolioDataService;
     private final CoinMarketDataService coinMarketDataService;
     private final AnalyticsProperties properties;
+    private final AssetPriceRefreshService priceRefreshService;
 
     public PortfolioRebalancingService(AssetService assetService,
                                        PortfolioDataService portfolioDataService,
                                        CoinMarketDataService coinMarketDataService,
-                                       AnalyticsProperties properties) {
+                                       AnalyticsProperties properties,
+                                       AssetPriceRefreshService priceRefreshService) {
         this.assetService = assetService;
         this.portfolioDataService = portfolioDataService;
         this.coinMarketDataService = coinMarketDataService;
         this.properties = properties;
+        this.priceRefreshService = priceRefreshService;
     }
 
     /** Annualized estimates for the user's holdings. */
@@ -40,6 +43,7 @@ public class PortfolioRebalancingService {
     }
 
     private Estimates estimate(User user) {
+        priceRefreshService.refreshQuietly(user); // weights from current prices, not the last session's
         List<Asset> assets = assetService.getAssetsByUser(user);
         if (assets.isEmpty()) throw PortfolioDataException.noAssets();
         PortfolioSnapshot snapshot = portfolioDataService.snapshot(assets, false);
@@ -279,6 +283,7 @@ public class PortfolioRebalancingService {
 
     /** Current value weights of the user's holdings. */
     public Map<String, Double> getCurrentAllocation(User user) {
+        priceRefreshService.refreshQuietly(user);
         List<Asset> assets = assetService.getAssetsByUser(user);
         if (assets.isEmpty()) throw PortfolioDataException.noAssets();
         Map<String, Double> values = new LinkedHashMap<>();

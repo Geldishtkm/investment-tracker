@@ -33,13 +33,16 @@ public class VaRCalculationService {
     private final AssetService assetService;
     private final PortfolioDataService portfolioDataService;
     private final AnalyticsProperties properties;
+    private final AssetPriceRefreshService priceRefreshService;
 
     public VaRCalculationService(AssetService assetService,
                                  PortfolioDataService portfolioDataService,
-                                 AnalyticsProperties properties) {
+                                 AnalyticsProperties properties,
+                                 AssetPriceRefreshService priceRefreshService) {
         this.assetService = assetService;
         this.portfolioDataService = portfolioDataService;
         this.properties = properties;
+        this.priceRefreshService = priceRefreshService;
     }
 
     /**
@@ -47,6 +50,7 @@ public class VaRCalculationService {
      * @throws PortfolioDataException if the portfolio is empty or lacks price history
      */
     public VaRCalculation calculatePortfolioVaR(User user, double confidenceLevel, int timeHorizon) {
+        priceRefreshService.refreshQuietly(user); // value the portfolio at current prices
         List<Asset> assets = assetService.getAssetsByUser(user);
         if (assets.isEmpty()) {
             throw PortfolioDataException.noAssets();

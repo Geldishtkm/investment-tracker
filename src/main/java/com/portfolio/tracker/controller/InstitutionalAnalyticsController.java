@@ -31,7 +31,8 @@ public class InstitutionalAnalyticsController {
     @GetMapping("/institutional-score")
     public ResponseEntity<?> institutionalScore(Authentication authentication) {
         User user = userService.findByUsername(authentication.getName());
-        Evaluation e = analyticsService.evaluate(user);
+        BehavioralAnalyticsService.Result result = analyticsService.evaluate(user);
+        Evaluation e = result.evaluation();
         if (e.tier() == null) {
             throw new PortfolioDataException(PortfolioDataException.Reason.INSUFFICIENT_HISTORY,
                     "None of the four pillars can be scored yet. Add holdings with price history or record trades.");
@@ -51,6 +52,13 @@ public class InstitutionalAnalyticsController {
         body.put("strengths", e.strengths());
         body.put("coverage", e.coverage());
         body.put("riskTargetVolatility", user.getRiskTargetVolatility());
+        BehavioralAnalyticsService.Freshness f = result.freshness();
+        Map<String, Object> freshness = new LinkedHashMap<>();
+        freshness.put("pricesAsOf", f.pricesAsOf() == null ? null : f.pricesAsOf().toString());
+        freshness.put("stalePrices", f.stalePrices());
+        freshness.put("historyThrough", f.historyThrough() == null ? null : f.historyThrough().toString());
+        freshness.put("historyStale", f.historyStale());
+        body.put("dataFreshness", freshness);
         body.put("generatedAt", Instant.now().toString());
         return ResponseEntity.ok(body);
     }

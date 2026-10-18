@@ -48,6 +48,7 @@ export function scoreFixture(overrides: Partial<InstitutionalScore> = {}): Insti
     strengths: ['Liquidity impact: largest trade 0.00% of 24h volume'],
     coverage: { trades: 4, datedTrades: 0, closedLots: 0, observations: 364 },
     riskTargetVolatility: null,
+    dataFreshness: { pricesAsOf: '2026-10-18T19:59:00Z', stalePrices: [], historyThrough: '2026-10-18', historyStale: false },
     generatedAt: '2026-10-18T20:00:00Z',
     ...overrides,
   };

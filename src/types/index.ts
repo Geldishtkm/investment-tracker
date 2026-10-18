@@ -5,6 +5,8 @@ export interface Asset {
   pricePerUnit: number;
   purchasePricePerUnit: number;
   initialInvestment: number;
+  /** ISO time the current price was quoted by the market; null if it never was. */
+  priceUpdatedAt?: string | null;
 }
 
 export interface AssetFormData {
@@ -250,7 +252,23 @@ export interface InstitutionalScore {
   strengths: string[];
   coverage: { trades: number; datedTrades: number; closedLots: number; observations: number };
   riskTargetVolatility: number | null;
+  /** How current the inputs are: prices older than 15 minutes, or history ending before yesterday, are stale. */
+  dataFreshness: {
+    pricesAsOf: string | null;
+    stalePrices: string[];
+    historyThrough: string | null;
+    historyStale: boolean;
+  };
   generatedAt: string;
+}
+
+/** Result of POST /api/assets/refresh-prices. */
+export interface PriceRefreshResult {
+  updated: number;
+  unpriced: string[];
+  /** Holdings still valued at an old (or never refreshed) price. */
+  stale: string[];
+  oldestPriceAt: string | null;
 }
 
 export interface TradeRequest {

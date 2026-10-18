@@ -34,6 +34,10 @@ public class Asset {
     @JsonIgnore
     private User user;
 
+    // When the current price was last quoted by the market (null: never refreshed from CoinGecko)
+    @Column(name = "price_updated_at")
+    private java.time.Instant priceUpdatedAt;
+
     // Date the holding was bought, sent when adding an asset and recorded in the trade ledger
     @Transient
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
@@ -103,6 +107,14 @@ public class Asset {
 
     public void setInitialInvestment(double initialInvestment) {
         this.initialInvestment = initialInvestment;
+    }
+
+    public java.time.Instant getPriceUpdatedAt() {
+        return priceUpdatedAt;
+    }
+
+    public void setPriceUpdatedAt(java.time.Instant priceUpdatedAt) {
+        this.priceUpdatedAt = priceUpdatedAt;
     }
 
     public LocalDate getPurchaseDate() {

@@ -591,6 +591,19 @@ class TraderScoringTest {
         }
 
         @Test
+        @DisplayName("A long break counts: the same trades measured months later show a lower trading pace")
+        void timeGapLowersVelocity() {
+            List<TradeEvent> trades = roundTrips(8, 10, 100, 120, 0);
+            Inputs now = inputs(List.of(), null, null, trades, Map.of(), Map.of(), null);
+            Inputs later = new Inputs(List.of(), null, null, "No price history.", trades, Map.of(), Map.of(), Map.of(),
+                    null, 0.04, 365, TODAY.plusDays(120));
+            double paceNow = component(TraderScoring.evaluate(now), "velocity").value();
+            double paceLater = component(TraderScoring.evaluate(later), "velocity").value();
+            assertEquals(16 * 30.0 / 101, paceNow, 1e-9);
+            assertEquals(16 * 30.0 / 221, paceLater, 1e-9);
+        }
+
+        @Test
         @DisplayName("Rare trading isn't rewarded as discipline: under 2 trades a month scores below an active pace")
         void inactivityNotRewarded() {
             Evaluation rare = TraderScoring.evaluate(inputs(List.of(), null, null,

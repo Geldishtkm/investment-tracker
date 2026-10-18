@@ -57,10 +57,12 @@ public class AssetController {
     public ResponseEntity<?> refreshPrices(Authentication authentication) {
         User user = userService.findByUsername(authentication.getName());
         AssetPriceRefreshService.Result result = priceRefreshService.refreshPrices(user);
-        return ResponseEntity.ok(Map.of(
-            "updated", result.updated(),
-            "unpriced", result.unpriced()
-        ));
+        Map<String, Object> body = new HashMap<>();
+        body.put("updated", result.updated());
+        body.put("unpriced", result.unpriced());
+        body.put("stale", result.stale());
+        body.put("oldestPriceAt", result.oldestPriceAt() == null ? null : result.oldestPriceAt().toString());
+        return ResponseEntity.ok(body);
     }
 
     /**
@@ -227,6 +229,7 @@ public class AssetController {
             
             Map<String, Object> analytics = new HashMap<>();
             
+            priceRefreshService.refreshQuietly(user); // value at current prices, also after a long break
             List<Asset> userAssets = assetService.getAssetsByUser(user);
             double totalValue = assetService.getTotalValueByUser(user);
             double totalInitialInvestment = userAssets.stream()
@@ -300,6 +303,7 @@ public class AssetController {
             
             Map<String, Object> summary = new HashMap<>();
             
+            priceRefreshService.refreshQuietly(user); // value at current prices, also after a long break
             List<Asset> userAssets = assetService.getAssetsByUser(user);
             double totalValue = assetService.getTotalValueByUser(user);
             double totalInitialInvestment = userAssets.stream()
@@ -354,6 +358,7 @@ public class AssetController {
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
+            priceRefreshService.refreshQuietly(user); // value at current prices, also after a long break
             List<Asset> userAssets = assetService.getAssetsByUser(user);
             
             List<Map<String, Object>> assetsWithPrices = userAssets.stream()

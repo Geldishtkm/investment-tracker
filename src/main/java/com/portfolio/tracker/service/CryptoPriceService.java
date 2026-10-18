@@ -99,6 +99,9 @@ public class CryptoPriceService {
         return cachedTopCoins;
     }
 
+    /** A USD price and when CoinGecko quoted it. An old asOf means CoinGecko couldn't be reached. */
+    public record Quote(double usd, Instant asOf) {}
+
     /**
      * Current USD prices for several coins using at most one CoinGecko call per batch of IDs.
      * Prices are taken from the cached top coins list or the spot price cache when fresh enough.
@@ -106,8 +109,18 @@ public class CryptoPriceService {
      *         were never priced before) are absent
      */
     public Map<String, Double> getPricesInUSD(Collection<String> coinIds) {
+        Map<String, Double> prices = new LinkedHashMap<>();
+        getQuotes(coinIds).forEach((id, quote) -> prices.put(id, quote.usd()));
+        return prices;
+    }
+
+    /**
+     * Like {@link #getPricesInUSD} but with the time of each quote, so callers can tell a live price
+     * from the last known one served while CoinGecko is unavailable.
+     */
+    public Map<String, Quote> getQuotes(Collection<String> coinIds) {
         Instant now = Instant.now();
-        Map<String, Double> result = new LinkedHashMap<>();
+        Map<String, Quote> result = new LinkedHashMap<>();
         Set<String> wanted = coinIds.stream()
                 .filter(Objects::nonNull)
                 .map(id -> id.trim().toLowerCase(Locale.ROOT))
@@ -116,12 +129,13 @@ public class CryptoPriceService {
 
         List<String> toFetch = new ArrayList<>();
         Map<String, Double> topCoinPrices = freshTopCoinPrices();
+        Instant topCoinsAsOf = Instant.ofEpochMilli(lastCacheTime);
         for (String id : wanted) {
             SpotPrice spot = spotPrices.get(id);
             if (spot != null && spot.fetchedAt().plus(spotPriceTtl).isAfter(now)) {
-                result.put(id, spot.usd());
+                result.put(id, new Quote(spot.usd(), spot.fetchedAt()));
             } else if (topCoinPrices.containsKey(id)) {
-                result.put(id, topCoinPrices.get(id));
+                result.put(id, new Quote(topCoinPrices.get(id), topCoinsAsOf));
             } else {
                 toFetch.add(id);
             }
@@ -131,13 +145,15 @@ public class CryptoPriceService {
             List<String> batch = toFetch.subList(start, Math.min(start + MAX_IDS_PER_BATCH, toFetch.size()));
             try {
                 Map<String, Double> fetched = fetchSimplePrices(batch);
-                fetched.forEach((id, price) -> spotPrices.put(id, new SpotPrice(price, now)));
-                result.putAll(fetched);
+                fetched.forEach((id, price) -> {
+                    spotPrices.put(id, new SpotPrice(price, now));
+                    result.put(id, new Quote(price, now));
+                });
             } catch (Exception e) {
                 logger.warn("Batch price fetch for {} coin(s) failed ({}); using last known prices", batch.size(), e.getMessage());
                 for (String id : batch) {
                     SpotPrice stale = spotPrices.get(id);
-                    if (stale != null) result.put(id, stale.usd());
+                    if (stale != null) result.put(id, new Quote(stale.usd(), stale.fetchedAt()));
                 }
             }
         }

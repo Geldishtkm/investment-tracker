@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -104,6 +105,47 @@ class PriceHistoryServiceTest {
 
         assertEquals(42.0, service.getPriceHistory("bitcoin", 7).get(0)[1]);
         verify(coinGecko, never()).get(anyString());
+    }
+
+    @Test
+    @DisplayName("Saved history from weeks ago is replaced with fresh data that runs to today")
+    void weeksOldCopyIsRefetched() {
+        long weeksAgo = Instant.now().minus(Duration.ofDays(21)).toEpochMilli();
+        String saved = "[[" + (weeksAgo - DAY) + ",95.0],[" + weeksAgo + ",96.0]]";
+        when(repository.findById(any())).thenReturn(Optional.of(new PriceHistoryCacheEntry("bitcoin", "usd", saved,
+                LocalDateTime.ofInstant(Instant.now().minus(Duration.ofDays(21)), ZoneOffset.UTC))));
+        when(coinGecko.get(anyString())).thenReturn(yearOfPrices(100));
+
+        java.util.SortedMap<java.time.LocalDate, Double> daily = service.getDailyPrices("bitcoin", 365);
+
+        verify(coinGecko, times(1)).get(anyString());
+        assertEquals(java.time.LocalDate.now(ZoneOffset.UTC), daily.lastKey());
+        verify(repository).save(any(PriceHistoryCacheEntry.class)); // the fresh copy replaces the old one
+    }
+
+    @Test
+    @DisplayName("Old saved history served during a rate limit is refetched in the background once allowed")
+    void healsStaleHistoryInBackground() {
+        long weeksAgo = Instant.now().minus(Duration.ofDays(21)).toEpochMilli();
+        String saved = "[[" + weeksAgo + ",96.0]]";
+        when(repository.findById(any())).thenReturn(Optional.of(new PriceHistoryCacheEntry("bitcoin", "usd", saved,
+                LocalDateTime.ofInstant(Instant.now().minus(Duration.ofDays(21)), ZoneOffset.UTC))));
+        when(coinGecko.get(anyString()))
+                .thenThrow(new CoinGeckoClient.RateLimitedException(60))
+                .thenReturn(yearOfPrices(100));
+
+        assertEquals(96.0, service.getPriceHistory("bitcoin", 30).get(0)[1]);   // the user still gets data
+        assertEquals(Set.of("bitcoin"), service.getPendingRefresh());
+
+        when(coinGecko.secondsUntilAvailable()).thenReturn(42L);
+        service.refreshStaleHistories();                                          // still rate limited: waits
+        verify(coinGecko, times(1)).get(anyString());
+
+        when(coinGecko.secondsUntilAvailable()).thenReturn(0L);
+        service.refreshStaleHistories();                                          // allowed again: refetches
+        assertTrue(service.getPendingRefresh().isEmpty());
+        assertEquals(java.time.LocalDate.now(ZoneOffset.UTC), service.getDailyPrices("bitcoin", 365).lastKey());
+        verify(coinGecko, times(2)).get(anyString());
     }
 
     @Test

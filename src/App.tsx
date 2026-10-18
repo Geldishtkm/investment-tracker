@@ -149,7 +149,12 @@ function App() {
       // Bring stored prices up to date first (one batched CoinGecko request on the backend).
       // If market data is unavailable the portfolio still loads with the last known prices.
       try {
-        await assetService.refreshPrices();
+        const refresh = await assetService.refreshPrices();
+        if (refresh.stale?.length) {
+          // Coming back after a break while CoinGecko is unreachable: say the values aren't live
+          const since = refresh.oldestPriceAt ? ` (last updated ${new Date(refresh.oldestPriceAt).toLocaleString()})` : '';
+          showToast('info', `Live prices unavailable for ${refresh.stale.join(', ')}; showing last known prices${since}.`);
+        }
       } catch (refreshError) {
         if (refreshError instanceof SessionExpiredError) throw refreshError;
         console.warn('Price refresh skipped:', refreshError);

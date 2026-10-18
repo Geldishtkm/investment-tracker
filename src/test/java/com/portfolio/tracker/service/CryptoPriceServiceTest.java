@@ -60,4 +60,22 @@ class CryptoPriceServiceTest {
         assertEquals(81000.0, prices.get("bitcoin"));
         assertFalse(prices.containsKey("ethereum")); // never priced before, so nothing to fall back to
     }
+
+    @Test
+    @DisplayName("Quotes carry their time: live now, or the old time when only the last known price is available")
+    void quotesCarryTheirTime() throws Exception {
+        when(coinGecko.get(anyString()))
+                .thenReturn("{\"bitcoin\":{\"usd\":81000}}")
+                .thenThrow(new CoinGeckoClient.RateLimitedException(60));
+        CryptoPriceService service = new CryptoPriceService(coinGecko, 0);
+
+        java.time.Instant before = java.time.Instant.now();
+        CryptoPriceService.Quote live = service.getQuotes(List.of("bitcoin")).get("bitcoin");
+        assertFalse(live.asOf().isBefore(before));
+
+        Thread.sleep(5);
+        CryptoPriceService.Quote fallback = service.getQuotes(List.of("bitcoin")).get("bitcoin");
+        assertEquals(81000.0, fallback.usd());
+        assertEquals(live.asOf(), fallback.asOf(), "a fallback keeps the time it was really quoted");
+    }
 }

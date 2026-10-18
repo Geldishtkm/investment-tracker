@@ -12,6 +12,9 @@ interface InstitutionalEvaluationPageProps {
   onAddAsset: () => void;
 }
 
+export const STALE_RETRY_MS = 75_000;
+const MAX_STALE_RETRIES = 3;
+
 const card = 'bg-gradient-to-br from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6';
 
 const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = ({ onAddAsset }) => {
@@ -34,6 +37,19 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Saved history was used because CoinGecko was busy; the backend refetches it in the background,
+  // so check again shortly (a few times at most) instead of leaving the user on old data
+  const [staleRetries, setStaleRetries] = useState(0);
+  const historyStale = data?.dataFreshness?.historyStale ?? false;
+  useEffect(() => {
+    if (!historyStale || staleRetries >= MAX_STALE_RETRIES) return;
+    const timer = setTimeout(() => {
+      setStaleRetries(n => n + 1);
+      load();
+    }, STALE_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [historyStale, staleRetries, load]);
 
   if (loading && !data) {
     return (
@@ -79,6 +95,8 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           <PillarRadar pillars={data.pillars} />
         </section>
       </div>
+
+      <FreshnessNotice freshness={data.dataFreshness} />
 
       <ScoreCaps score={data.score} rawScore={data.rawScore} caps={data.caps} />
 
@@ -239,6 +257,25 @@ const RiskTargetForm: React.FC<{ current: number | null; onSaved: () => void }> 
       </div>
       {message && <p className="text-sm text-red-300 mt-2" role="alert">{message}</p>}
     </form>
+  );
+};
+
+/** Shown only when the evaluation had to use old prices or saved history (CoinGecko unreachable). */
+export const FreshnessNotice: React.FC<{ freshness?: InstitutionalScore['dataFreshness'] }> = ({ freshness }) => {
+  if (!freshness || (freshness.stalePrices.length === 0 && !freshness.historyStale)) return null;
+  return (
+    <div className="rounded-2xl border border-blue-500/40 bg-blue-950/30 p-4 text-sm text-blue-100" role="status"
+         aria-label="Market data freshness">
+      <div className="font-semibold mb-1">Market data isn't fully up to date</div>
+      {freshness.stalePrices.length > 0 && (
+        <div>Live prices unavailable for {freshness.stalePrices.join(', ')}
+          {freshness.pricesAsOf ? `; valued at prices from ${new Date(freshness.pricesAsOf).toLocaleString()}` : ''}.</div>
+      )}
+      {freshness.historyStale && freshness.historyThrough && (
+        <div>Price history runs only to {freshness.historyThrough}; returns after that date aren't included yet.</div>
+      )}
+      <div className="text-blue-300/80 mt-1">Fresh data is being fetched in the background; this page updates automatically.</div>
+    </div>
   );
 };
 

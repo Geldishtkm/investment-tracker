@@ -1,4 +1,4 @@
-import { Asset, AssetWithPrice, Coin, InstitutionalScore, PortfolioAnalytics, TradeRequest, TradeResult } from '../types';
+import { Asset, AssetWithPrice, Coin, InstitutionalScore, PortfolioAnalytics, PriceRefreshResult, TradeRequest, TradeResult } from '../types';
 import { API_BASE_URL } from '../config';
 import { authService } from './authService';
 
@@ -134,7 +134,7 @@ export const assetService = {
   },
 
   // Update all asset prices from CoinGecko in one batched backend call
-  refreshPrices: async (): Promise<{ updated: number; unpriced: string[] }> => {
+  refreshPrices: async (): Promise<PriceRefreshResult> => {
     const response = await authService.authFetch(`${API_BASE_URL}/api/assets/refresh-prices`, {
       method: 'POST',
     });
