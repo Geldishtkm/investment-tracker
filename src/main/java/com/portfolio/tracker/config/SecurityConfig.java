@@ -45,16 +45,58 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http, HandlerMappingIntrospector introspector) throws Exception {
         logger.info("Configuring Spring Security filter chain...");
         
-        // TEMPORARILY DISABLE SECURITY FOR DEBUGGING
+        // Create MvcRequestMatchers with proper servlet paths
+        MvcRequestMatcher.Builder mvcMatcherBuilder = new MvcRequestMatcher.Builder(introspector);
+
         http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .addFilterBefore(jwtFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.deny()) // Prevent clickjacking
+                .contentTypeOptions(contentType -> {}) // Prevent MIME type sniffing
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .maxAgeInSeconds(31536000) // 1 year
+                )
+            )
             .authorizeHttpRequests(auth -> auth
-                // TEMPORARILY ALLOW ALL REQUESTS
-                .anyRequest().permitAll()
+                // Public endpoints (no authentication required)
+                .requestMatchers(mvcMatcherBuilder.pattern("/")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/health")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/ping")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/error")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
+
+                // MFA steps of the login flow run before the user has a token
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/setup")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/verify")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/status/**")).permitAll()
+
+                // WebSocket handshake
+                .requestMatchers(mvcMatcherBuilder.pattern("/ws/**")).permitAll()
+
+                // Documentation endpoints (public for development, can be restricted in production)
+                .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/swagger-ui.html")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api-docs/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/v3/api-docs/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/webjars/**")).permitAll()
+
+                // Static resources
+                .requestMatchers(mvcMatcherBuilder.pattern("/css/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/js/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/images/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/assets/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/dist/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/favicon.ico")).permitAll()
+
+                // All other endpoints require authentication
+                .anyRequest().authenticated()
             );
 
-        logger.info("Spring Security TEMPORARILY DISABLED - allowing all requests");
+        logger.info("Spring Security configured with proper authentication requirements and security headers");
         return http.build();
     }
 

@@ -45,13 +45,6 @@ public class HealthController {
         }
     }
 
-    @GetMapping("/favicon.ico")
-    public ResponseEntity<String> favicon() {
-        return ResponseEntity.ok()
-                .contentType(MediaType.valueOf("image/x-icon"))
-                .body("🎯");
-    }
-
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> health() {
         Map<String, Object> health = new HashMap<>();

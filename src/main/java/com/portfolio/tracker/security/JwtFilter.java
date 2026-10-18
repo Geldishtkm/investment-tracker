@@ -40,7 +40,7 @@ public class JwtFilter extends OncePerRequestFilter {
         String requestUri = request.getRequestURI();
         
         // Skip JWT filtering for public endpoints and static resources
-        return requestUri.startsWith("/") ||
+        return requestUri.equals("/") ||
                requestUri.startsWith("/health") ||
                requestUri.startsWith("/ping") ||
                requestUri.startsWith("/auth/") ||
