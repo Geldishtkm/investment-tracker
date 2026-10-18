@@ -14,13 +14,32 @@ import java.util.*;
  * without enough usable components (less than {@link #MIN_PILLAR_COVERAGE} of their points) are left
  * out and the total is scaled over the pillars that remain, marked provisional. Nothing is ever
  * filled in with assumed values.
+ *
+ * <p>The weighted total (the raw score) is then capped by evidence rules, so a high rank has to be
+ * earned with proven results rather than inferred from little or flat data:
+ * <ul>
+ *   <li>hard caps: stagnant portfolios stay at or below Tier 8 (≤ 399); provisional scores, no
+ *       recorded sells, a thin trade history, or no positive return on capital stay at or below
+ *       Tier 7 (≤ 499)</li>
+ *   <li>tier gates: Tier 5 and above, Tier 3 and above, and Tier 1 each require minimum return on
+ *       capital, profit factor, Sharpe ratio and trade history; failing a gate caps the score just
+ *       below it</li>
+ * </ul>
  */
 public final class TraderScoring {
 
     public static final double PILLAR_POINTS = 250.0;
     public static final int MAX_SCORE = 1000;
     /** Share of a pillar's points that must have data for the pillar to count, so one minor metric can't stand in for it. */
-    public static final double MIN_PILLAR_COVERAGE = 0.30;
+    public static final double MIN_PILLAR_COVERAGE = 0.40;
+
+    // Evidence caps
+    static final int STAGNANT_CAP = 399;                 // Tier 8 and below
+    static final int UNPROVEN_CAP = 499;                 // Tier 7 and below
+    static final double STAGNANT_VOLATILITY = 0.10;      // annualized; crypto typically runs at 40%+
+    static final double STAGNANT_RETURN = 0.02;          // |return on S0| below 2% counts as no movement
+    static final int MIN_DATED_TRADES = 5;
+    static final int MIN_SELLS = 2;
 
     // Behavioral detection thresholds
     static final double FOMO_RUN_UP = 0.15;          // bought after a 7-day rally of at least +15%
@@ -90,8 +109,21 @@ public final class TraderScoring {
 
     public record Coverage(int trades, int datedTrades, int closedLots, int observations) {}
 
-    /** tier is null only when no pillar could be scored (pillarsScored == 0). */
-    public record Evaluation(int score, boolean provisional, int pillarsScored, Tier tier, List<Pillar> pillars,
+    /** A limit on the score with the reason, e.g. "no sells recorded" capping at 499. */
+    public record ScoreCap(String id, int maxScore, String title, String detail) {}
+
+    /** One requirement of a tier gate, with the user's actual value. */
+    public record Requirement(String label, boolean met, String actual) {}
+
+    /** Requirements that must all be met before scores of minScore and above are allowed. */
+    public record TierGate(int minScore, String name, boolean unlocked, List<Requirement> requirements) {}
+
+    /**
+     * score is the final, capped score; rawScore the weighted total before evidence caps.
+     * caps lists every cap that applies, lowest first. tier is null only when no pillar could be scored.
+     */
+    public record Evaluation(int score, int rawScore, boolean provisional, int pillarsScored, Tier tier,
+                             List<Pillar> pillars, List<ScoreCap> caps, List<TierGate> gates,
                              List<Flag> flags, List<String> strengths, Coverage coverage) {}
 
     public static final List<Tier> TIERS = List.of(
@@ -137,8 +169,14 @@ public final class TraderScoring {
             scored++;
             points += p.points();
         }
-        int score = scored == 0 ? 0 : (int) Math.round(MAX_SCORE * points / (PILLAR_POINTS * scored));
-        score = Math.max(0, Math.min(MAX_SCORE, score));
+        int rawScore = scored == 0 ? 0 : (int) Math.round(MAX_SCORE * points / (PILLAR_POINTS * scored));
+        rawScore = Math.max(0, Math.min(MAX_SCORE, rawScore));
+
+        Evidence evidence = evidence(in, book);
+        List<TierGate> gates = tierGates(evidence);
+        List<ScoreCap> caps = scoreCaps(evidence, scored, pillars.size(), gates);
+        int score = rawScore;
+        for (ScoreCap cap : caps) score = Math.min(score, cap.maxScore());
 
         List<String> strengths = new ArrayList<>();
         for (Pillar p : pillars) {
@@ -150,8 +188,105 @@ public final class TraderScoring {
 
         int dated = (int) in.trades().stream().filter(TradeEvent::dateKnown).count();
         int observations = in.portfolioReturns() == null ? 0 : in.portfolioReturns().length;
-        return new Evaluation(score, scored < pillars.size(), scored, scored == 0 ? null : tierFor(score),
-                pillars, flags, strengths, new Coverage(in.trades().size(), dated, book.closed().size(), observations));
+        return new Evaluation(score, rawScore, scored < pillars.size(), scored, scored == 0 ? null : tierFor(score),
+                pillars, caps, gates, flags, strengths,
+                new Coverage(in.trades().size(), dated, book.closed().size(), observations));
+    }
+
+    // ---------------------------------------------------------------------
+    // Evidence caps and tier gates
+    // ---------------------------------------------------------------------
+
+    /**
+     * The facts the caps and gates are judged on. Values are NaN when unknown; an unknown value never
+     * meets a requirement.
+     */
+    record Evidence(double volatility, double sharpe, double bankrollReturn, double profitFactor,
+                    int sells, int datedTrades, long activeDays, int holdings) {}
+
+    static Evidence evidence(Inputs in, LotBook book) {
+        double[] rp = in.portfolioReturns();
+        double vol = Double.NaN, sharpe = Double.NaN;
+        if (rp != null && rp.length > 1) {
+            vol = RiskMath.sampleStdDev(rp) * Math.sqrt(in.periodsPerYear());
+            if (vol > 0) sharpe = (RiskMath.mean(rp) * in.periodsPerYear() - in.riskFreeRate()) / vol;
+        }
+        List<TradeEvent> manual = in.trades().stream().filter(t -> !t.imported() && t.dateKnown()).toList();
+        long activeDays = manual.isEmpty() ? 0 : ChronoUnit.DAYS.between(
+                manual.stream().map(TradeEvent::date).min(Comparator.naturalOrder()).orElseThrow(), in.today()) + 1;
+        int sells = (int) manual.stream().filter(t -> t.side() == Side.SELL).count();
+        return new Evidence(vol, sharpe, bankrollReturn(in, book).orElse(Double.NaN),
+                profitFactor(in, book).orElse(Double.NaN), sells, manual.size(), activeDays, in.holdings().size());
+    }
+
+    /** Gate thresholds: {min score, return on S0, profit factor, Sharpe, dated trades, active days}. */
+    private static final double[][] GATES = {
+            {600, 0.05, 1.2, 0.5, 10, 90},
+            {750, 0.15, 1.5, 1.0, 20, 180},
+            {900, 0.30, 2.0, 1.5, 40, 365},
+    };
+
+    static List<TierGate> tierGates(Evidence e) {
+        // Judge each value at the precision it is shown with, so "1.50" never fails "at least 1.5"
+        double ret = round(e.bankrollReturn(), 3), pf = round(e.profitFactor(), 2), sharpe = round(e.sharpe(), 2);
+        List<TierGate> gates = new ArrayList<>();
+        for (double[] g : GATES) {
+            int min = (int) g[0];
+            List<Requirement> reqs = List.of(
+                    new Requirement("Return on capital (S₀) of at least " + pct0(g[1]), ret >= g[1],
+                            Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn())),
+                    new Requirement("Profit factor of at least " + fmt1(g[2]) + " on closed trades", pf >= g[2],
+                            Double.isNaN(e.profitFactor()) ? "fewer than " + MIN_SELLS + " sells"
+                                    : Double.isInfinite(e.profitFactor()) ? "∞ (no losses)" : fmt2(e.profitFactor())),
+                    new Requirement("Sharpe ratio of at least " + fmt1(g[3]), sharpe >= g[3],
+                            Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe())),
+                    new Requirement("At least " + (int) g[4] + " dated trades over " + (int) g[5] + "+ days",
+                            e.datedTrades() >= g[4] && e.activeDays() >= g[5],
+                            e.datedTrades() + " trades over " + e.activeDays() + " days"));
+            gates.add(new TierGate(min, tierFor(min).rank() == 1 ? "Tier 1" : "Tier " + tierFor(min).rank() + " and above",
+                    reqs.stream().allMatch(Requirement::met), reqs));
+        }
+        return gates;
+    }
+
+    static List<ScoreCap> scoreCaps(Evidence e, int pillarsScored, int pillarCount, List<TierGate> gates) {
+        List<ScoreCap> caps = new ArrayList<>();
+        boolean flat = (!Double.isNaN(e.volatility()) && e.volatility() < STAGNANT_VOLATILITY)
+                || (!Double.isNaN(e.bankrollReturn()) && Math.abs(e.bankrollReturn()) < STAGNANT_RETURN && e.sells() == 0);
+        if (flat) {
+            caps.add(new ScoreCap("stagnant", STAGNANT_CAP, "Stagnant portfolio",
+                    "The portfolio has barely moved (" + (Double.isNaN(e.volatility()) ? "" : pct1(e.volatility()) + " annual volatility, ")
+                            + (Double.isNaN(e.bankrollReturn()) ? "no return data" : signedPct1(e.bankrollReturn()) + " on capital")
+                            + "). Holding still proves nothing about skill, so the score stays at Tier 8 or below."));
+        }
+        if (pillarsScored < pillarCount) {
+            caps.add(new ScoreCap("provisional", UNPROVEN_CAP, "Provisional score",
+                    "Only " + pillarsScored + " of " + pillarCount + " pillars could be scored; the rest is not assumed."));
+        }
+        if (e.sells() < MIN_SELLS) {
+            caps.add(new ScoreCap("no-sells", UNPROVEN_CAP, e.sells() == 0 ? "No sells recorded" : "Only one sell recorded",
+                    "Gains are only proven when trades are closed. Record at least " + MIN_SELLS + " sells to lift this cap."));
+        }
+        if (e.datedTrades() < MIN_DATED_TRADES) {
+            caps.add(new ScoreCap("thin-history", UNPROVEN_CAP, "Limited trade history",
+                    e.datedTrades() + " dated trade" + (e.datedTrades() == 1 ? "" : "s") + " recorded; at least "
+                            + MIN_DATED_TRADES + " are needed to judge execution."));
+        }
+        if (!(e.bankrollReturn() > 0)) {
+            caps.add(new ScoreCap("no-growth", UNPROVEN_CAP, "No positive return on capital",
+                    Double.isNaN(e.bankrollReturn()) ? "Return on capital can't be measured yet."
+                            : "The portfolio is " + signedPct1(e.bankrollReturn()) + " on the capital put in."));
+        }
+        for (TierGate gate : gates) {
+            if (gate.unlocked()) continue;
+            String missing = String.join("; ", gate.requirements().stream().filter(r -> !r.met())
+                    .map(r -> r.label() + " (now " + r.actual() + ")").toList());
+            caps.add(new ScoreCap("gate-" + gate.minScore(), gate.minScore() - 1, gate.name() + " locked",
+                    "Requires: " + missing + "."));
+            break; // higher gates are implied by the first locked one
+        }
+        caps.sort(Comparator.comparingInt(ScoreCap::maxScore));
+        return caps;
     }
 
     private static Pillar pillar(String key, String name, List<Component> components) {
@@ -409,16 +544,11 @@ public final class TraderScoring {
         List<Component> out = new ArrayList<>();
 
         // Return on initial bankroll S0 = all capital put in through buys
-        double bankroll = 0.0;
-        for (TradeEvent t : in.trades()) if (t.side() == Side.BUY) bankroll += t.notional();
+        double bankroll = bankroll(in);
         if (bankroll > 0) {
             double realized = book.closed().stream().mapToDouble(ClosedLot::pnl).sum();
-            double unrealized = 0.0;
-            for (OpenLot lot : book.open()) {
-                Double price = currentPrice(in, lot.coinId());
-                if (price != null) unrealized += lot.quantity() * (price - lot.buyPrice());
-            }
-            double r = (realized + unrealized) / bankroll;
+            double unrealized = unrealized(in, book);
+            double r = bankrollReturn(in, book).orElseThrow();
             out.add(component("bankroll-return", "Return on bankroll (S₀)", 90, r, signedPct1(r), lin(r, -0.30, 0.50),
                     "(realized " + money(realized) + " + unrealized " + money(unrealized) + ") / S₀ " + money(bankroll)));
             if (r < -0.10) {
@@ -478,6 +608,45 @@ public final class TraderScoring {
         return out;
     }
 
+    static double bankroll(Inputs in) {
+        double bankroll = 0.0;
+        for (TradeEvent t : in.trades()) if (t.side() == Side.BUY) bankroll += t.notional();
+        return bankroll;
+    }
+
+    static double unrealized(Inputs in, LotBook book) {
+        double unrealized = 0.0;
+        for (OpenLot lot : book.open()) {
+            Double price = currentPrice(in, lot.coinId());
+            if (price != null) unrealized += lot.quantity() * (price - lot.buyPrice());
+        }
+        return unrealized;
+    }
+
+    /** (realized + unrealized P&L) / S0, or empty when nothing was bought. */
+    static OptionalDouble bankrollReturn(Inputs in, LotBook book) {
+        double bankroll = bankroll(in);
+        if (!(bankroll > 0)) return OptionalDouble.empty();
+        double realized = book.closed().stream().mapToDouble(ClosedLot::pnl).sum();
+        return OptionalDouble.of((realized + unrealized(in, book)) / bankroll);
+    }
+
+    /**
+     * Gross realized profit / gross realized loss; +∞ with profits and no losses, 0 with neither.
+     * Empty with fewer than {@link #MIN_EVALUABLE_TRADES} sells.
+     */
+    static OptionalDouble profitFactor(Inputs in, LotBook book) {
+        long sells = in.trades().stream().filter(t -> t.side() == Side.SELL).count();
+        if (sells < MIN_EVALUABLE_TRADES || book.closed().isEmpty()) return OptionalDouble.empty();
+        double profit = 0.0, loss = 0.0;
+        for (ClosedLot lot : book.closed()) {
+            if (lot.pnl() > 0) profit += lot.pnl();
+            else loss -= lot.pnl();
+        }
+        if (loss > 0) return OptionalDouble.of(profit / loss);
+        return OptionalDouble.of(profit > 0 ? Double.POSITIVE_INFINITY : 0.0);
+    }
+
     /** Slope and R² of an ordinary least-squares line through the cumulative log return path. */
     static Optional<double[]> equityCurveFit(double[] returns) {
         int n = returns.length + 1;
@@ -509,7 +678,10 @@ public final class TraderScoring {
             LocalDate first = manual.stream().map(TradeEvent::date).min(Comparator.naturalOrder()).orElseThrow();
             long days = Math.max(30, ChronoUnit.DAYS.between(first, in.today()) + 1);
             double per30 = manual.size() * 30.0 / days;
-            out.add(component("velocity", "Trading velocity", 100, per30, fmt1(per30) + " trades / 30 days", inv(per30, 8, 40),
+            // Best between 2 and 8 trades a month; overtrading falls to 0 at 40, and near-inactivity
+            // (under 2) earns at most 40%, since a handful of trades shows little discipline
+            double velocityScore = per30 < 2 ? 0.4 + 0.6 * lin(per30, 0.5, 2.0) : inv(per30, 8, 40);
+            out.add(component("velocity", "Trading velocity", 100, per30, fmt1(per30) + " trades / 30 days", velocityScore,
                     manual.size() + " trades over " + days + " days"));
             if (per30 > 20) {
                 flags.add(new Flag("overtrading", per30 > 40 ? Severity.HIGH : Severity.MEDIUM, "execution", "Overtrading Flagged",
@@ -681,6 +853,12 @@ public final class TraderScoring {
         if (price != null && price > 0) return price;
         SortedMap<LocalDate, Double> prices = in.dailyPrices().get(coinId);
         return prices == null || prices.isEmpty() ? null : prices.get(prices.lastKey());
+    }
+
+    /** Rounds half up to the given decimals; NaN and infinities pass through. */
+    static double round(double v, int decimals) {
+        if (!Double.isFinite(v)) return v;
+        return java.math.BigDecimal.valueOf(v).setScale(decimals, java.math.RoundingMode.HALF_UP).doubleValue();
     }
 
     private static String fmt1(double v) { return String.format(Locale.ROOT, "%.1f", v); }

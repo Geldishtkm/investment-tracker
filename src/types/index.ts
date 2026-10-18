@@ -216,8 +216,29 @@ export interface RankTier {
   maxScore: number;
 }
 
+/** A limit on the score, e.g. "No sells recorded" capping at 499. */
+export interface ScoreCap {
+  id: string;
+  maxScore: number;
+  title: string;
+  detail: string;
+}
+
+export interface TierGate {
+  minScore: number;
+  name: string;
+  unlocked: boolean;
+  requirements: { label: string; met: boolean; actual: string }[];
+}
+
 export interface InstitutionalScore {
+  /** Final score after evidence caps. */
   score: number;
+  /** Weighted pillar total before caps. */
+  rawScore: number;
+  /** Every cap that applies, lowest first; the first one is binding when it is below rawScore. */
+  caps: ScoreCap[];
+  gates: TierGate[];
   maxScore: number;
   /** True when some pillars couldn't be scored and the total is scaled over the rest. */
   provisional: boolean;

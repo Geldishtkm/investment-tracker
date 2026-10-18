@@ -22,11 +22,11 @@ describe('InstitutionalEvaluationPage', () => {
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
 
     const gauge = await screen.findByRole('meter', { name: 'Trader Index Score' });
-    expect(gauge).toHaveAttribute('aria-valuenow', '566');
+    expect(gauge).toHaveAttribute('aria-valuenow', '499');
     expect(gauge).toHaveAttribute('aria-valuemax', '1000');
     const badge = screen.getByTestId('tier-badge');
-    expect(badge).toHaveTextContent('Tier 6');
-    expect(badge).toHaveTextContent('Systematic Swing Trader');
+    expect(badge).toHaveTextContent('Tier 7');
+    expect(badge).toHaveTextContent('Tactical Retail Trader');
     expect(screen.getByText('Provisional · based on 3 of 4 pillars')).toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe('InstitutionalEvaluationPage', () => {
   });
 
   it('says so when no issues are flagged', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4 }));
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4, caps: [] }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     expect(await screen.findByText(/No behavioral or risk issues detected/)).toBeInTheDocument();
     expect(screen.queryByText(/Provisional/)).not.toBeInTheDocument();
@@ -69,7 +69,29 @@ describe('InstitutionalEvaluationPage', () => {
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     await screen.findByRole('meter');
     const current = document.querySelector('[aria-current="true"]');
-    expect(current).toHaveTextContent('6. Systematic Swing Trader');
+    expect(current).toHaveTextContent('7. Tactical Retail Trader');
+  });
+
+  it('explains a capped score and what each locked tier still requires', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture());
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+
+    const caps = await screen.findByRole('region', { name: /Score capped at 499 \(pillar total 566\)/ });
+    expect(caps).toHaveTextContent('No sells recorded');
+    expect(caps).toHaveTextContent('Provisional score');
+
+    const gate = screen.getByTestId('gate-600');
+    expect(gate).toHaveTextContent('Tier 5 and above');
+    expect(within(gate).getAllByLabelText('met')).toHaveLength(1);
+    expect(within(gate).getAllByLabelText('not met')).toHaveLength(1);
+    expect(gate).toHaveTextContent('fewer than 2 sells');
+  });
+
+  it('shows no cap banner when nothing limits the score', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ caps: [], score: 566, rawScore: 566 }));
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    await screen.findByRole('meter');
+    expect(screen.queryByText(/Score capped/)).not.toBeInTheDocument();
   });
 
   it('shows the add-assets empty state when there is nothing to evaluate', async () => {

@@ -19,8 +19,20 @@ const pillar = (key: ScorePillar['key'], name: string, points: number, available
 
 export function scoreFixture(overrides: Partial<InstitutionalScore> = {}): InstitutionalScore {
   return {
-    score: 566, maxScore: 1000, provisional: true, pillarsScored: 3,
-    tier: TIERS[5], tiers: TIERS,
+    score: 499, rawScore: 566, maxScore: 1000, provisional: true, pillarsScored: 3,
+    caps: [
+      { id: 'no-sells', maxScore: 499, title: 'No sells recorded', detail: 'Gains are only proven when trades are closed.' },
+      { id: 'provisional', maxScore: 499, title: 'Provisional score', detail: 'Only 3 of 4 pillars could be scored.' },
+    ],
+    gates: [
+      { minScore: 600, name: 'Tier 5 and above', unlocked: false, requirements: [
+        { label: 'Return on capital (S₀) of at least 5%', met: true, actual: '+17.0%' },
+        { label: 'Profit factor of at least 1.2 on closed trades', met: false, actual: 'fewer than 2 sells' },
+      ] },
+      { minScore: 750, name: 'Tier 3 and above', unlocked: false, requirements: [] },
+      { minScore: 900, name: 'Tier 1', unlocked: false, requirements: [] },
+    ],
+    tier: TIERS[6], tiers: TIERS,
     pillars: [
       pillar('risk', 'Risk Control & Tail Risk', 97),
       pillar('behavior', 'Behavioral Psychology', 0, false),

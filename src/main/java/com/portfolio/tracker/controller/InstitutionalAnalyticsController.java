@@ -38,12 +38,15 @@ public class InstitutionalAnalyticsController {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("score", e.score());
+        body.put("rawScore", e.rawScore());
         body.put("maxScore", TraderScoring.MAX_SCORE);
         body.put("provisional", e.provisional());
         body.put("pillarsScored", e.pillarsScored());
         body.put("tier", e.tier());
         body.put("tiers", TraderScoring.TIERS);
         body.put("pillars", e.pillars());
+        body.put("caps", e.caps());
+        body.put("gates", e.gates());
         body.put("flags", e.flags());
         body.put("strengths", e.strengths());
         body.put("coverage", e.coverage());

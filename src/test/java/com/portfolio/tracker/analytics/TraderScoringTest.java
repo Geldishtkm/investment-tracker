@@ -441,6 +441,168 @@ class TraderScoringTest {
         }
     }
 
+    // ---- evidence caps and tier gates ----
+
+    /** n buy/sell round trips in one coin, every loserEvery-th one a small quick loss, the rest winners. */
+    private static List<TradeEvent> roundTrips(int n, int spacingDays, int startDaysAgo, double winnerSell, int loserEvery) {
+        List<TradeEvent> trades = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            boolean loser = loserEvery > 0 && i % loserEvery == 0;
+            LocalDate bought = TODAY.minusDays(startDaysAgo - (long) i * spacingDays);
+            trades.add(buy(2L * i, "btc", 1, 100, bought));
+            trades.add(sell(2L * i + 1, "btc", 1, loser ? 95 : winnerSell, bought.plusDays(loser ? 5 : 18)));
+        }
+        return trades;
+    }
+
+    /** Strong, steady returns (≈ 146% a year at 19% volatility) on 5 equal holdings. */
+    private static Inputs proven(List<TradeEvent> trades, double[] returns) {
+        double vol = RiskMath.sampleStdDev(returns) * Math.sqrt(365);
+        return new Inputs(equalHoldings(5), returns, returns, null, trades, Map.of("btc", prices(Map.of())),
+                Map.of(), Map.of("btc", 1e12), vol, 0.04, 365, TODAY);
+    }
+
+    @Nested
+    @DisplayName("Evidence caps and tier gates")
+    class Caps {
+        @Test
+        @DisplayName("One stablecoin held untouched: stagnant, Tier 8 or below")
+        void stagnantStablecoin() {
+            double[] flat = returns(364, 0.0, 0.0002);       // about 0.4% annual volatility
+            Evaluation e = TraderScoring.evaluate(inputs(List.of(new Holding("tether", "Tether", 10_000)), flat, returns(364, 0, 0.03),
+                    List.of(imported(1, "tether", 10_000, 1.0)), Map.of(), Map.of("tether", 1e11), null));
+
+            assertTrue(e.score() <= 399, "score " + e.score());
+            assertTrue(e.tier().rank() >= 8);
+            assertEquals("stagnant", e.caps().get(0).id());
+        }
+
+        @Test
+        @DisplayName("Two assets with little price action stay in the retail tiers even with a decent raw score")
+        void twoStagnantAssets() {
+            double[] calm = returns(364, 0.0003, 0.004);      // ≈ 7.6% volatility, 11% a year
+            List<Holding> two = List.of(new Holding("a", "Asset A", 5000), new Holding("b", "Asset B", 5000));
+            Evaluation e = TraderScoring.evaluate(inputs(two, calm, calm,
+                    List.of(imported(1, "a", 50, 100), imported(2, "b", 50, 100)), Map.of(), Map.of("a", 1e11, "b", 1e11), 0.08));
+
+            assertTrue(e.rawScore() > 399, "the raw metrics look respectable: " + e.rawScore());
+            assertTrue(e.score() <= 399);
+            assertTrue(e.tier().rank() >= 8);
+        }
+
+        @Test
+        @DisplayName("A volatile portfolio that has gone nowhere on its capital is also stagnant")
+        void noMovementOnCapital() {
+            double[] r = returns(364, 0.0, 0.03);
+            Inputs in = new Inputs(equalHoldings(4), r, r, null, List.of(imported(1, "coin0", 10, 100)), Map.of(),
+                    Map.of("coin0", 101.0), Map.of(), null, 0.04, 365, TODAY);   // +1% on capital
+            Evaluation e = TraderScoring.evaluate(in);
+            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")));
+            assertTrue(e.score() <= 399);
+        }
+
+        @Test
+        @DisplayName("Great numbers but no sells: capped at Tier 7, whatever the raw score")
+        void noSells() {
+            List<TradeEvent> buysOnly = new ArrayList<>();
+            for (int i = 0; i < 12; i++) buysOnly.add(buy(i, "btc", 1, 100, TODAY.minusDays(300 - i * 20L)));
+            Inputs in = new Inputs(equalHoldings(5), returns(364, 0.004, 0.01), returns(364, 0.004, 0.01), null, buysOnly,
+                    Map.of("btc", prices(Map.of())), Map.of("btc", 160.0), Map.of("btc", 1e12), 0.19, 0.04, 365, TODAY);
+            Evaluation e = TraderScoring.evaluate(in);
+
+            assertTrue(e.rawScore() > 600, "raw " + e.rawScore());
+            assertTrue(e.score() <= 499);
+            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("no-sells") && c.title().equals("No sells recorded")));
+        }
+
+        @Test
+        @DisplayName("Losing money on capital caps the score at Tier 7")
+        void negativeReturn() {
+            List<TradeEvent> losing = roundTrips(12, 15, 250, 90, 0);    // every trade sells at 90 after buying at 100
+            Evaluation e = TraderScoring.evaluate(proven(losing, returns(364, 0.004, 0.01)));
+            assertTrue(e.score() <= 499);
+            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("no-growth")));
+        }
+
+        @Test
+        @DisplayName("Tier 5 needs a real profit factor: 1.1 keeps the score at 599 and says why")
+        void tier5NeedsProfitFactor() {
+            // 6 winners at +5.5 and 6 losers at −5 give a profit factor of 1.1; an open ETH position up 40%
+            // keeps the return on capital clearly positive, so only the profit factor fails the gate
+            List<TradeEvent> trades = new ArrayList<>();
+            for (int i = 0; i < 12; i++) {
+                LocalDate d = TODAY.minusDays(300 - i * 20L);
+                trades.add(buy(2L * i, "btc", 1, 100, d));
+                trades.add(sell(2L * i + 1, "btc", 1, i % 2 == 0 ? 105.5 : 95, d.plusDays(i % 2 == 0 ? 18 : 5)));
+            }
+            trades.add(buy(100, "eth", 10, 100, TODAY.minusDays(200)));                 // open, now +40%
+            Inputs in = new Inputs(equalHoldings(5), returns(364, 0.004, 0.01), returns(364, 0.004, 0.01), null, trades,
+                    Map.of("btc", prices(Map.of()), "eth", prices(Map.of())), Map.of("eth", 140.0), Map.of("btc", 1e12, "eth", 1e12),
+                    0.19, 0.04, 365, TODAY);
+            Evaluation e = TraderScoring.evaluate(in);
+
+            assertEquals(1.1, TraderScoring.profitFactor(in, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
+            assertEquals(599, e.score());
+            ScoreCap cap = e.caps().get(0);
+            assertEquals("gate-600", cap.id());
+            assertTrue(cap.detail().contains("Profit factor of at least 1.2"), cap.detail());
+            assertFalse(cap.detail().contains("Sharpe"), "only the failed requirements are listed");
+        }
+
+        @Test
+        @DisplayName("Meeting the Tier 5 gate but not Tier 3 stops at 749")
+        void intermediate() {
+            Evaluation e = TraderScoring.evaluate(proven(roundTrips(6, 20, 130, 160, 5), returns(364, 0.004, 0.01)));
+            assertTrue(e.gates().get(0).unlocked());
+            assertFalse(e.gates().get(1).unlocked());          // 12 trades over ~131 days: needs 20 over 180
+            assertEquals(749, e.score());
+            assertEquals(4, e.tier().rank());
+        }
+
+        @Test
+        @DisplayName("A proven, active, profitable trader can still reach Tier 1")
+        void elite() {
+            Evaluation e = TraderScoring.evaluate(proven(roundTrips(20, 20, 400, 160, 5), returns(364, 0.004, 0.01)));
+            assertTrue(e.caps().isEmpty(), "caps " + e.caps());
+            assertTrue(e.gates().stream().allMatch(TierGate::unlocked));
+            assertTrue(e.score() >= 900, "score " + e.score());
+            assertEquals(1, e.tier().rank());
+            assertEquals(e.rawScore(), e.score());
+        }
+
+        @Test
+        @DisplayName("Requirements are judged at their displayed precision: 1.4996 shows as 1.50 and meets 1.5")
+        void displayedPrecision() {
+            var e = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.4996, 4, 25, 200, 5);
+            TierGate tier3 = TraderScoring.tierGates(e).get(1);
+            assertTrue(tier3.unlocked(), tier3.requirements().toString());
+            var below = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.494, 4, 25, 200, 5);
+            assertFalse(TraderScoring.tierGates(below).get(1).unlocked());
+        }
+
+        @Test
+        @DisplayName("Unknown evidence never satisfies a requirement")
+        void unknownFailsGates() {
+            Evaluation e = TraderScoring.evaluate(holdingsOnly(equalHoldings(5)));
+            for (TierGate g : e.gates()) {
+                assertFalse(g.unlocked());
+                g.requirements().forEach(r -> assertFalse(r.met(), r.label()));
+            }
+        }
+
+        @Test
+        @DisplayName("Rare trading isn't rewarded as discipline: under 2 trades a month scores below an active pace")
+        void inactivityNotRewarded() {
+            Evaluation rare = TraderScoring.evaluate(inputs(List.of(), null, null,
+                    List.of(buy(1, "btc", 1, 100, TODAY.minusDays(300)), sell(2, "btc", 1, 110, TODAY.minusDays(200))),
+                    Map.of(), Map.of(), null));
+            assertEquals(0.4, component(rare, "velocity").score(), 1e-9);
+            Evaluation active = TraderScoring.evaluate(inputs(List.of(), null, null, roundTrips(8, 10, 160, 120, 0),
+                    Map.of(), Map.of(), null));
+            assertEquals(1.0, component(active, "velocity").score(), 1e-9);
+        }
+    }
+
     // ---- total ----
 
     @Nested
@@ -452,16 +614,19 @@ class TraderScoringTest {
             double[] up = new double[200];
             Arrays.fill(up, 0.003);
             for (int i = 0; i < up.length; i += 2) up[i] += 0.01;
-            Evaluation e = TraderScoring.evaluate(inputs(equalHoldings(5), up, up, List.of(), Map.of(), Map.of(), null));
+            Evaluation e = TraderScoring.evaluate(inputs(equalHoldings(5), up, up, List.of(imported(1, "coin0", 10, 100)),
+                    Map.of(), Map.of(), null));
 
             assertTrue(pillar(e, "risk").available());
-            assertTrue(pillar(e, "consistency").available());   // smoothness covers 80 of 250 points
+            assertTrue(pillar(e, "consistency").available());   // bankroll + smoothness: 170 of 250 points
             assertFalse(pillar(e, "behavior").available());
             assertFalse(pillar(e, "execution").available());
             assertTrue(e.provisional());
             assertEquals(2, e.pillarsScored());
             double expected = 1000 * (pillar(e, "risk").points() + pillar(e, "consistency").points()) / 500.0;
-            assertEquals(Math.round(expected), e.score());
+            assertEquals(Math.round(expected), e.rawScore());
+            assertTrue(e.score() <= 499, "a provisional score stays at Tier 7 or below");
+            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("provisional")));
             assertEquals(TraderScoring.tierFor(e.score()), e.tier());
             assertTrue(flag(e, "missing-behavior").isPresent());
         }
@@ -491,7 +656,7 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Every pillar scored: the total is the plain sum of pillar points, not provisional")
+        @DisplayName("Every pillar scored: the raw total is the plain sum of pillar points, not provisional")
         void complete() {
             LocalDate s = TODAY.minusDays(200);
             double[] r = returns(200, 0.002, 0.02);
@@ -507,8 +672,10 @@ class TraderScoringTest {
             assertEquals(4, e.pillarsScored());
             assertFalse(e.provisional());
             double sum = e.pillars().stream().mapToDouble(Pillar::points).sum();
-            assertEquals(Math.round(sum), e.score());
-            assertTrue(e.score() >= 0 && e.score() <= 1000);
+            assertEquals(Math.round(sum), e.rawScore());
+            // 5 trades are far short of the 10 that Tier 5 needs
+            assertEquals(Math.min(e.rawScore(), 599), e.score());
+            assertEquals("gate-600", e.caps().get(0).id());
         }
 
         @Test

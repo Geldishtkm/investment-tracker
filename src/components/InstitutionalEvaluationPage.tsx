@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Award, Lightbulb, RefreshCw, ShieldAlert, Target } from 'lucide-react';
+import { Award, CheckCircle2, Lightbulb, Lock, RefreshCw, ShieldAlert, Target, Unlock } from 'lucide-react';
 import { ApiError, assetService } from '../services/api';
-import { DiagnosticFlag, InstitutionalScore, ScorePillar } from '../types';
+import { DiagnosticFlag, InstitutionalScore, ScoreCap, ScorePillar, TierGate } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import ScoreGauge from './institutional/ScoreGauge';
 import PillarRadar from './institutional/PillarRadar';
@@ -80,6 +80,8 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
         </section>
       </div>
 
+      <ScoreCaps score={data.score} rawScore={data.rawScore} caps={data.caps} />
+
       {/* Pillar breakdown */}
       <section aria-labelledby="breakdown-heading">
         <h3 id="breakdown-heading" className="text-xl font-bold text-white mb-4">Pillar Breakdown</h3>
@@ -129,6 +131,8 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           </section>
         )}
       </div>
+
+      <TierGates gates={data.gates} />
 
       <TierLadder tiers={data.tiers} currentRank={data.tier.rank} />
 
@@ -237,6 +241,58 @@ const RiskTargetForm: React.FC<{ current: number | null; onSaved: () => void }> 
     </form>
   );
 };
+
+/** Why the score is lower than the pillar total: the binding cap first, then any others that apply. */
+export const ScoreCaps: React.FC<{ score: number; rawScore: number; caps: ScoreCap[] }> = ({ score, rawScore, caps }) => {
+  if (caps.length === 0) return null;
+  const capped = score < rawScore;
+  return (
+    <section className="rounded-2xl border border-yellow-500/40 bg-yellow-950/20 p-5" aria-labelledby="caps-heading">
+      <h3 id="caps-heading" className="font-semibold text-yellow-200 mb-1 flex items-center gap-2">
+        <Lock size={18} /> {capped ? `Score capped at ${score} (pillar total ${rawScore})` : 'Score limits that apply'}
+      </h3>
+      <p className="text-sm text-gray-400 mb-3">High ranks require proven results: closed profitable trades, real growth and enough history.</p>
+      <ul className="space-y-2">
+        {caps.map(c => (
+          <li key={c.id} className="text-sm">
+            <span className="font-medium text-gray-100">{c.title}</span>
+            <span className="text-gray-500"> · max {c.maxScore}</span>
+            <div className="text-gray-400">{c.detail}</div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
+const TierGates: React.FC<{ gates: TierGate[] }> = ({ gates }) => (
+  <section className={card} aria-labelledby="gates-heading">
+    <h3 id="gates-heading" className="text-lg font-semibold text-white mb-3">Tier Requirements</h3>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {gates.map(g => (
+        <div key={g.minScore} className={`rounded-xl border p-4 ${g.unlocked ? 'border-emerald-500/40' : 'border-gray-700'}`}
+             data-testid={`gate-${g.minScore}`}>
+          <div className="flex items-center gap-2 font-medium mb-2">
+            {g.unlocked ? <Unlock size={16} className="text-emerald-300" /> : <Lock size={16} className="text-gray-400" />}
+            <span className={g.unlocked ? 'text-emerald-200' : 'text-gray-200'}>{g.name}</span>
+            <span className="text-xs text-gray-500">({g.minScore}+)</span>
+          </div>
+          <ul className="space-y-1.5">
+            {g.requirements.map(r => (
+              <li key={r.label} className="text-xs flex gap-2">
+                <CheckCircle2 size={14} className={`shrink-0 mt-0.5 ${r.met ? 'text-emerald-400' : 'text-gray-600'}`}
+                              aria-label={r.met ? 'met' : 'not met'} />
+                <span className={r.met ? 'text-gray-300' : 'text-gray-400'}>
+                  {r.label} <span className="text-gray-500">— {r.actual}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </section>
+);
 
 const TierLadder: React.FC<{ tiers: InstitutionalScore['tiers']; currentRank: number }> = ({ tiers, currentRank }) => (
   <section className={card} aria-labelledby="ladder-heading">
