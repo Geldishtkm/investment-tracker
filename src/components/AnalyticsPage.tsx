@@ -43,6 +43,7 @@ const AnalyticsPage: React.FC = () => {
   const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
   const [performance, setPerformance] = useState<AssetPerformance[]>([]);
   const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
+  const [riskMessage, setRiskMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +67,9 @@ const AnalyticsPage: React.FC = () => {
         maxDrawdown = 0,
         beta = 0,
         diversificationScore = 0,
-        assetBreakdown = []
+        assetBreakdown = [],
+        riskMetricsAvailable = false,
+        riskMetricsMessage = null
       } = analyticsData;
       
       const portfolioMetrics: PortfolioMetrics = {
@@ -111,7 +114,9 @@ const AnalyticsPage: React.FC = () => {
         diversificationScore
       };
       
-      setRiskMetrics(risk);
+      // Only show risk metrics the backend could actually compute from price history
+      setRiskMetrics(riskMetricsAvailable ? risk : null);
+      setRiskMessage(riskMetricsAvailable ? null : riskMetricsMessage);
       
     } catch (err) {
       setError('Failed to load analytics data from backend');
@@ -280,7 +285,7 @@ const AnalyticsPage: React.FC = () => {
                 <div className="text-gray-400 text-sm font-medium">Sharpe Ratio</div>
               </div>
               <div className="text-3xl font-bold text-purple-400 group-hover:text-purple-300 transition-colors duration-300">
-                {metrics.sharpeRatio.toFixed(3)}
+                {riskMetrics ? metrics.sharpeRatio.toFixed(3) : '—'}
               </div>
               <div className="text-xs text-gray-500 mt-2">Risk-adjusted return</div>
             </div>
@@ -288,6 +293,11 @@ const AnalyticsPage: React.FC = () => {
         )}
 
         {/* Risk Metrics */}
+        {!riskMetrics && riskMessage && (
+          <div className="mb-8 p-6 bg-yellow-600/10 border border-yellow-600/30 rounded-2xl text-yellow-300">
+            {riskMessage}
+          </div>
+        )}
         {riskMetrics && (
           <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 mb-8 shadow-xl shadow-black/20">
             <div className="flex items-center gap-3 mb-8">
@@ -348,7 +358,7 @@ const AnalyticsPage: React.FC = () => {
                 </div>
                 <div className="text-gray-400 text-sm font-medium mb-2">Diversification</div>
                 <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
-                  {riskMetrics.diversificationScore.toFixed(1)}/10
+                  {riskMetrics.diversificationScore.toFixed(1)}/100
                 </div>
                 <div className="text-xs text-gray-500 mt-2">Portfolio spread</div>
               </div>

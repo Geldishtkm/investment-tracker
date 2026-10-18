@@ -2,7 +2,8 @@ package com.portfolio.tracker.controller;
 
 import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.model.Asset;
-import com.portfolio.tracker.model.RiskMetrics;
+import com.portfolio.tracker.analytics.PortfolioDataException;
+import com.portfolio.tracker.service.RiskMetricsService;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.UserService;
 
@@ -31,11 +32,13 @@ public class AssetController {
 
     private final AssetService assetService;
     private final UserService userService;
+    private final RiskMetricsService riskMetricsService;
 
     @Autowired
-    public AssetController(AssetService assetService, UserService userService) {
+    public AssetController(AssetService assetService, UserService userService, RiskMetricsService riskMetricsService) {
         this.assetService = assetService;
         this.userService = userService;
+        this.riskMetricsService = riskMetricsService;
     }
 
     /**
@@ -207,28 +210,29 @@ public class AssetController {
             analytics.put("totalInitialInvestment", totalInitialInvestment);
             analytics.put("totalAssets", userAssets.size());
             
-            // Try to get risk metrics, fallback to defaults if calculation fails
+            // ROI from cost basis; undefined when no asset has a recorded purchase cost
+            Double roi = null;
             try {
-                RiskMetrics riskMetrics = assetService.getRiskMetricsByUser(user);
-                analytics.put("riskMetrics", riskMetrics);
-            } catch (Exception e) {
-                Map<String, Object> fallbackMetrics = new HashMap<>();
-                fallbackMetrics.put("roi", 0.0);
-                fallbackMetrics.put("sharpeRatio", 1.0);
-                fallbackMetrics.put("volatility", 0.0);
-                fallbackMetrics.put("maxDrawdown", 0.0);
-                fallbackMetrics.put("beta", 1.0);
-                fallbackMetrics.put("diversificationScore", 0.0);
-                analytics.put("riskMetrics", fallbackMetrics);
+                roi = assetService.calculateROIByUser(user);
+            } catch (IllegalStateException | ArithmeticException e) {
+                // leave ROI empty rather than reporting a made-up 0%
             }
+            analytics.put("roi", roi);
             
-            // Calculate individual metrics with fallbacks
-            analytics.put("roi", safeCalculate(() -> assetService.calculateROIByUser(user), 0.0));
-            analytics.put("sharpeRatio", safeCalculate(() -> assetService.calculateSharpeRatioByUser(user), 1.0));
-            analytics.put("volatility", safeCalculate(() -> assetService.calculateVolatilityByUser(user), 0.0));
-            analytics.put("maxDrawdown", safeCalculate(() -> assetService.calculateMaxDrawdownByUser(user), 0.0));
-            analytics.put("beta", safeCalculate(() -> assetService.calculateBetaByUser(user), 1.0));
-            analytics.put("diversificationScore", safeCalculate(() -> assetService.calculateDiversificationScoreByUser(user), 0.0));
+            // Risk metrics from real price history. When they cannot be computed (no assets,
+            // too little shared history) the UI gets the reason instead of placeholder numbers.
+            try {
+                Map<String, Object> riskMetrics = riskMetricsService.calculateDetailed(userAssets);
+                riskMetrics.put("roi", roi);
+                analytics.put("riskMetrics", riskMetrics);
+                analytics.putAll(riskMetrics);
+                analytics.put("riskMetricsAvailable", true);
+            } catch (PortfolioDataException e) {
+                analytics.put("riskMetrics", null);
+                analytics.put("riskMetricsAvailable", false);
+                analytics.put("riskMetricsMessage", e.getMessage());
+                analytics.put("riskMetricsCode", e.getReason().name());
+            }
             
             // Build asset breakdown
             List<Map<String, Object>> assetBreakdown = userAssets.stream()
@@ -352,19 +356,5 @@ public class AssetController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Failed to get assets with prices: " + e.getMessage()));
         }
-    }
-    
-    // Helper method to safely calculate metrics with fallback values
-    private double safeCalculate(CalculationSupplier supplier, double fallback) {
-        try {
-            return supplier.get();
-        } catch (Exception e) {
-            return fallback;
-        }
-    }
-    
-    @FunctionalInterface
-    private interface CalculationSupplier {
-        double get() throws Exception;
     }
 }

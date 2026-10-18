@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -18,6 +19,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Test suite for ReactivePortfolioService
@@ -30,6 +33,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Reactive Portfolio Service Test Suite")
 class ReactivePortfolioServiceTest {
+
+    @Mock
+    private RiskMetricsService riskMetricsService;
 
     @InjectMocks
     private ReactivePortfolioService reactivePortfolioService;
@@ -144,6 +150,10 @@ class ReactivePortfolioServiceTest {
         @Test
         @DisplayName("Should calculate risk metrics reactively")
         void shouldCalculateRiskMetricsReactive() throws ExecutionException, InterruptedException {
+            // Given
+            RiskMetrics expected = RiskMetrics.builder().volatility(0.45).beta(0.9).build();
+            when(riskMetricsService.calculate(testAssets)).thenReturn(expected);
+
             // When
             CompletableFuture<RiskMetrics> result = reactivePortfolioService.calculateRiskMetricsReactive(testAssets);
 
@@ -151,7 +161,9 @@ class ReactivePortfolioServiceTest {
             RiskMetrics riskMetrics = result.get();
             assertNotNull(riskMetrics);
             assertTrue(riskMetrics.getVolatility() >= 0);
-            assertTrue(riskMetrics.getBeta() >= 0);
+            assertEquals(0.45, riskMetrics.getVolatility());
+            assertEquals(0.9, riskMetrics.getBeta());
+            verify(riskMetricsService).calculate(testAssets);
         }
 
         @Test
@@ -159,6 +171,8 @@ class ReactivePortfolioServiceTest {
         void shouldHandleSingleAssetForRiskCalculation() throws ExecutionException, InterruptedException {
             // Given
             List<Asset> singleAsset = Arrays.asList(testAsset1);
+            when(riskMetricsService.calculate(singleAsset))
+                    .thenReturn(RiskMetrics.builder().volatility(0.6).beta(1.0).build());
 
             // When
             CompletableFuture<RiskMetrics> result = reactivePortfolioService.calculateRiskMetricsReactive(singleAsset);

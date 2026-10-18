@@ -78,7 +78,9 @@ const VaRDashboard: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // The backend explains data problems (e.g. an empty portfolio) in the "error" field
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `Failed to calculate VaR (HTTP ${response.status})`);
       }
 
       const data = await response.json();

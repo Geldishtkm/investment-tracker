@@ -1,5 +1,6 @@
 package com.portfolio.tracker.controller;
 
+import com.portfolio.tracker.analytics.PortfolioDataException;
 import com.portfolio.tracker.model.VaRCalculation;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.VaRCalculationService;
@@ -63,6 +64,8 @@ public class VaRController {
             
             return ResponseEntity.ok(summary);
             
+        } catch (PortfolioDataException e) {
+            throw e; // rendered as 422 by AnalyticsExceptionHandler
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to calculate VaR: " + e.getMessage());
@@ -88,12 +91,22 @@ public class VaRController {
                 return ResponseEntity.badRequest().body(Map.of("error", "User not found"));
             }
 
+            if (confidenceLevel < 0.5 || confidenceLevel > 0.999) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Confidence level must be between 0.5 and 0.999"));
+            }
+
+            if (timeHorizon < 1 || timeHorizon > 365) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Time horizon must be between 1 and 365 days"));
+            }
+
             // Calculate VaR
             VaRCalculation varCalculation = varCalculationService.calculatePortfolioVaR(user, confidenceLevel, timeHorizon);
-            
+
             // Return detailed VaR calculation
             return ResponseEntity.ok(varCalculation);
             
+        } catch (PortfolioDataException e) {
+            throw e; // rendered as 422 by AnalyticsExceptionHandler
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to get VaR: " + e.getMessage());
@@ -138,6 +151,8 @@ public class VaRController {
             
             return ResponseEntity.ok(summary);
             
+        } catch (PortfolioDataException e) {
+            throw e; // rendered as 422 by AnalyticsExceptionHandler
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to get VaR summary: " + e.getMessage());
@@ -175,6 +190,8 @@ public class VaRController {
             
             return ResponseEntity.ok(riskMetrics);
             
+        } catch (PortfolioDataException e) {
+            throw e; // rendered as 422 by AnalyticsExceptionHandler
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to get risk metrics: " + e.getMessage());
@@ -236,6 +253,8 @@ public class VaRController {
             
             return ResponseEntity.ok(comparison);
             
+        } catch (PortfolioDataException e) {
+            throw e; // rendered as 422 by AnalyticsExceptionHandler
         } catch (Exception e) {
             Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to compare VaR methodologies: " + e.getMessage());

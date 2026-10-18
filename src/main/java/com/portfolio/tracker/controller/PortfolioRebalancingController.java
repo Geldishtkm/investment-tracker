@@ -9,11 +9,15 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * REST Controller for Portfolio Rebalancing operations
- * Provides endpoints for Mean-Variance Optimization and Black-Litterman model
+ * Provides endpoints for Mean-Variance Optimization and Black-Litterman model.
+ * Every endpoint works on the authenticated user's own portfolio. Errors caused by the
+ * portfolio's contents (no assets, too little history) are returned as HTTP 422 by
+ * AnalyticsExceptionHandler.
  */
 @RestController
 @RequestMapping("/api/portfolio-rebalancing")
@@ -30,159 +34,108 @@ public class PortfolioRebalancingController {
      * Calculate optimal portfolio allocation using Mean-Variance Optimization
      */
     @PostMapping("/optimize")
-    public ResponseEntity<PortfolioRebalancing> optimizePortfolio(
+    public ResponseEntity<?> optimizePortfolio(
             @RequestBody Map<String, Object> request,
             Authentication authentication) {
-        
-        try {
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return ResponseEntity.status(401).build();
-            }
-            
-            String username = authentication.getName();
-            Double riskTolerance = (Double) request.get("riskTolerance");
-            
-            if (riskTolerance == null) {
-                return ResponseEntity.badRequest().build();
-            }
-            
-            // Get the authenticated user from the database
-            User user = userService.findByUsername(username);
-            if (user == null) {
-                return ResponseEntity.status(404).build();
-            }
-            
-            PortfolioRebalancing result = rebalancingService.calculateOptimalAllocation(user, riskTolerance);
-            return ResponseEntity.ok(result);
-            
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        User user = currentUser(authentication);
+        if (user == null) return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+
+        Double riskTolerance = riskTolerance(request.get("riskTolerance"));
+        if (riskTolerance == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "riskTolerance must be a number between 0 and 1"));
         }
+
+        PortfolioRebalancing result = rebalancingService.calculateOptimalAllocation(user, riskTolerance);
+        return ResponseEntity.ok(result);
     }
 
     /**
      * Calculate optimal allocation using Black-Litterman model
      */
     @PostMapping("/black-litterman")
-    public ResponseEntity<PortfolioRebalancing> blackLittermanOptimization(
+    public ResponseEntity<?> blackLittermanOptimization(
             @RequestBody Map<String, Object> request,
             Authentication authentication) {
-        
-        try {
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return ResponseEntity.status(401).build();
-            }
-            
-            String username = authentication.getName();
-            Double riskTolerance = (Double) request.get("riskTolerance");
-            @SuppressWarnings("unchecked")
-            Map<String, Double> userViews = (Map<String, Double>) request.get("userViews");
-            
-            if (riskTolerance == null || userViews == null) {
-                return ResponseEntity.badRequest().build();
-            }
-            
-            // Get the authenticated user from the database
-            User user = userService.findByUsername(username);
-            if (user == null) {
-                return ResponseEntity.status(404).build();
-            }
-            
-            PortfolioRebalancing result = rebalancingService.calculateBlackLittermanAllocation(
-                user, riskTolerance, userViews);
-            return ResponseEntity.ok(result);
-            
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        User user = currentUser(authentication);
+        if (user == null) return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+
+        Double riskTolerance = riskTolerance(request.get("riskTolerance"));
+        if (riskTolerance == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "riskTolerance must be a number between 0 and 1"));
         }
+
+        Map<String, Double> userViews = new HashMap<>();
+        if (request.get("userViews") instanceof Map<?, ?> views) {
+            for (Map.Entry<?, ?> view : views.entrySet()) {
+                if (!(view.getValue() instanceof Number value)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "View for " + view.getKey() + " must be a number"));
+                }
+                userViews.put(String.valueOf(view.getKey()), value.doubleValue());
+            }
+        }
+
+        PortfolioRebalancing result = rebalancingService.calculateBlackLittermanAllocation(
+            user, riskTolerance, userViews);
+        return ResponseEntity.ok(result);
     }
 
     /**
      * Check if portfolio needs rebalancing
      */
     @GetMapping("/needs-rebalancing/{username}")
-    public ResponseEntity<Map<String, Object>> checkRebalancingNeeded(
+    public ResponseEntity<?> checkRebalancingNeeded(
             @PathVariable String username,
             @RequestParam(defaultValue = "0.05") double threshold,
+            @RequestParam(defaultValue = "0.5") double riskTolerance,
             Authentication authentication) {
-        
-        try {
-            if (authentication == null || !authentication.isAuthenticated()) {
-                return ResponseEntity.status(401).build();
-            }
-            
-            // Verify the authenticated user is requesting their own data
-            String authenticatedUsername = authentication.getName();
-            if (!authenticatedUsername.equals(username)) {
-                return ResponseEntity.status(403).build(); // Forbidden - can't access other user's data
-            }
-            
-            // Get the authenticated user from the database
-            User user = userService.findByUsername(username);
-            if (user == null) {
-                return ResponseEntity.status(404).build();
-            }
-            
-            boolean needsRebalancing = rebalancingService.needsRebalancing(user, threshold);
-            
-            Map<String, Object> response = Map.of(
-                "needsRebalancing", needsRebalancing,
-                "threshold", threshold,
-                "username", username
-            );
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+        User user = currentUser(authentication);
+        if (user == null) return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        if (!user.getUsername().equals(username)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only access your own portfolio"));
         }
+
+        boolean needsRebalancing = rebalancingService.needsRebalancing(user, threshold, riskTolerance);
+        return ResponseEntity.ok(Map.of(
+            "needsRebalancing", needsRebalancing,
+            "threshold", threshold,
+            "riskTolerance", riskTolerance,
+            "username", username
+        ));
     }
 
     /**
      * Get rebalancing summary for dashboard
      */
     @GetMapping("/summary/{username}")
-    public ResponseEntity<Map<String, Object>> getRebalancingSummary(
-            @PathVariable String username) {
-        
-        try {
-            // Create a mock user for now (in production, get from authentication)
-            User user = new User();
-            user.setUsername(username);
-            
-            Map<String, Object> summary = rebalancingService.getRebalancingSummary(user);
-            return ResponseEntity.ok(summary);
-            
-        } catch (Exception e) {
-            Map<String, Object> errorResponse = Map.of("error", e.getMessage());
-            return ResponseEntity.ok(errorResponse);
+    public ResponseEntity<?> getRebalancingSummary(
+            @PathVariable String username,
+            @RequestParam(defaultValue = "0.05") double threshold,
+            @RequestParam(defaultValue = "0.5") double riskTolerance,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        if (!user.getUsername().equals(username)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only access your own portfolio"));
         }
+        return ResponseEntity.ok(rebalancingService.getRebalancingSummary(user, riskTolerance, threshold));
     }
 
     /**
      * Get current portfolio allocation
      */
     @GetMapping("/allocation/{username}")
-    public ResponseEntity<Map<String, Object>> getCurrentAllocation(
-            @PathVariable String username) {
-        
-        try {
-            // Create a mock user for now (in production, get from authentication)
-            User user = new User();
-            user.setUsername(username);
-            
-            // For now, return a simple response
-            // In production, this would calculate actual allocation
-            Map<String, Object> response = Map.of(
-                "username", username,
-                "message", "Allocation calculation endpoint - implement with actual asset data"
-            );
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+    public ResponseEntity<?> getCurrentAllocation(
+            @PathVariable String username,
+            Authentication authentication) {
+        User user = currentUser(authentication);
+        if (user == null) return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        if (!user.getUsername().equals(username)) {
+            return ResponseEntity.status(403).body(Map.of("error", "You can only access your own portfolio"));
         }
+        return ResponseEntity.ok(Map.of(
+            "username", username,
+            "allocation", rebalancingService.getCurrentAllocation(user)
+        ));
     }
 
     /**
@@ -196,5 +149,17 @@ public class PortfolioRebalancingController {
             "message", "Mean-Variance Optimization and Black-Litterman model ready"
         );
         return ResponseEntity.ok(response);
+    }
+
+    private User currentUser(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) return null;
+        return userService.findByUsername(authentication.getName());
+    }
+
+    /** Accepts any JSON number (0.5 or 1), returns null if missing or outside [0, 1]. */
+    private Double riskTolerance(Object value) {
+        if (!(value instanceof Number number)) return null;
+        double v = number.doubleValue();
+        return v >= 0 && v <= 1 ? v : null;
     }
 }

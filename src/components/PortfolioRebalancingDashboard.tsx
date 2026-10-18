@@ -137,13 +137,15 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // The backend explains data problems (e.g. no assets, too little history) in "error"
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
       setRebalancing(result);
     } catch (err) {
-      setError('Failed to optimize portfolio. Please try again.');
+      setError(err instanceof Error && !err.message.startsWith('HTTP') ? err.message : 'Failed to optimize portfolio. Please try again.');
       console.error('Error optimizing portfolio:', err);
     } finally {
       setLoading(false);
@@ -171,13 +173,15 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // The backend explains data problems (e.g. no assets, too little history) in "error"
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || `HTTP ${response.status}`);
       }
 
       const result = await response.json();
       setRebalancing(result);
     } catch (err) {
-      setError('Failed to apply Black-Litterman optimization. Please try again.');
+      setError(err instanceof Error && !err.message.startsWith('HTTP') ? err.message : 'Failed to apply Black-Litterman optimization. Please try again.');
       console.error('Error applying Black-Litterman:', err);
     } finally {
       setLoading(false);

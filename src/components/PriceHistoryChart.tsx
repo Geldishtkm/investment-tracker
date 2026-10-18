@@ -16,6 +16,8 @@ interface PriceHistoryChartProps {
   onClose: () => void;
 }
 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
+
 const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onClose }) => {
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,48 +49,28 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
     try {
       setLoading(true);
       setError(null);
-      
-      // Generate mock price history data instantly instead of waiting for API
-      const mockData = generateMockPriceHistory(selectedCoin.current_price || 1000, timeRange);
-      setPriceHistory(mockData);
-      
-      // Simulate a small delay for better UX
-      setTimeout(() => setLoading(false), 150);
-      
+
+      // Real daily prices from CoinGecko, served (and cached) by the backend
+      const response = await fetch(`${API_BASE_URL}/api/price-history/${encodeURIComponent(selectedCoin.id)}?days=${timeRange}`);
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error || `Failed to load price history (HTTP ${response.status})`);
+      }
+
+      const points: PriceHistoryPoint[] = (body?.priceHistory ?? []).map(
+        ([timestamp, price]: [number, number]) => ({ timestamp, price })
+      );
+      if (points.length === 0) {
+        throw new Error(`No price history available for ${selectedCoin.name}`);
+      }
+      setPriceHistory(points);
     } catch (err) {
-      setError('Failed to generate price history');
-      console.error('Error generating price history:', err);
+      setPriceHistory([]);
+      setError(err instanceof Error ? err.message : 'Failed to load price history');
+      console.error('Error loading price history:', err);
+    } finally {
       setLoading(false);
     }
-  };
-
-  // Generate realistic mock price history data
-  const generateMockPriceHistory = (currentPrice: number, days: number): PriceHistoryPoint[] => {
-    const data: PriceHistoryPoint[] = [];
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-    
-    // Start with a base price that's slightly different from current
-    let basePrice = currentPrice * (0.8 + Math.random() * 0.4); // 80% to 120% of current price
-    
-    for (let i = days; i >= 0; i--) {
-      const timestamp = now - (i * dayMs);
-      
-      // Add some realistic price volatility
-      const volatility = 0.02; // 2% daily volatility
-      const randomChange = (Math.random() - 0.5) * volatility;
-      basePrice = basePrice * (1 + randomChange);
-      
-      // Ensure price stays positive and realistic
-      basePrice = Math.max(basePrice, currentPrice * 0.1);
-      
-      data.push({
-        timestamp,
-        price: basePrice
-      });
-    }
-    
-    return data;
   };
 
   const handleRefresh = () => {

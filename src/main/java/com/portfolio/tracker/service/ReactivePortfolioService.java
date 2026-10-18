@@ -3,6 +3,7 @@ package com.portfolio.tracker.service;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.PortfolioSummary;
 import com.portfolio.tracker.model.RiskMetrics;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,6 +25,9 @@ import java.util.stream.Collectors;
 public class ReactivePortfolioService {
 
     private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+
+    @Autowired
+    private RiskMetricsService riskMetricsService;
 
     /**
      * Calculate portfolio summary reactively - processes multiple assets simultaneously
@@ -88,23 +92,8 @@ public class ReactivePortfolioService {
      * Shows how complex financial calculations can be parallelized
      */
     public CompletableFuture<RiskMetrics> calculateRiskMetricsReactive(List<Asset> assets) {
-        return CompletableFuture.supplyAsync(() -> {
-            List<AssetRisk> assetRisks = assets.parallelStream()
-                    .map(this::calculateAssetRiskReactive)
-                    .collect(Collectors.toList());
-            return aggregateRiskMetrics(assetRisks);
-        }, executorService);
-    }
-
-    /**
-     * Calculate risk for individual asset (simulated complex calculation)
-     */
-    private AssetRisk calculateAssetRiskReactive(Asset asset) {
-        // Simulate complex risk calculation
-        double volatility = Math.random() * 0.3; // Simulated volatility
-        double beta = 0.8 + Math.random() * 0.4; // Simulated beta
-        
-        return new AssetRisk(asset.getId(), volatility, beta);
+        // Risk depends on how the holdings move together, so it is computed on the portfolio as a whole
+        return CompletableFuture.supplyAsync(() -> riskMetricsService.calculate(assets), executorService);
     }
 
     /**
@@ -121,23 +110,6 @@ public class ReactivePortfolioService {
                 .orElse(0.0);
 
         return new PortfolioSummary(totalValue, averageROI, assetMetrics.size());
-    }
-
-    /**
-     * Aggregate risk metrics from individual asset risk calculations
-     */
-    private RiskMetrics aggregateRiskMetrics(List<AssetRisk> assetRisks) {
-        double averageVolatility = assetRisks.stream()
-                .mapToDouble(AssetRisk::getVolatility)
-                .average()
-                .orElse(0.0);
-        
-        double averageBeta = assetRisks.stream()
-                .mapToDouble(AssetRisk::getBeta)
-                .average()
-                .orElse(0.0);
-
-        return new RiskMetrics(averageVolatility, 0.0, averageBeta, 50.0);
     }
 
     /**
@@ -162,22 +134,6 @@ public class ReactivePortfolioService {
         public Long getAssetId() { return assetId; }
         public double getCurrentValue() { return currentValue; }
         public double getRoi() { return roi; }
-    }
-
-    public static class AssetRisk {
-        private final Long assetId;
-        private final double volatility;
-        private final double beta;
-
-        public AssetRisk(Long assetId, double volatility, double beta) {
-            this.assetId = assetId;
-            this.volatility = volatility;
-            this.beta = beta;
-        }
-
-        public Long getAssetId() { return assetId; }
-        public double getVolatility() { return volatility; }
-        public double getBeta() { return beta; }
     }
 
     public static class MarketUpdate {

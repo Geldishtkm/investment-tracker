@@ -36,17 +36,35 @@ public class VaRCalculation {
     // Simulation Parameters
     private int numberOfSimulations;
     private double riskFreeRate;
-    
+
+    // Data provenance
+    private double annualizedVolatility;
+    private int observations; // daily returns the estimates are based on
+    private String historyStart;
+    private String historyEnd;
+    private String historicalVaRMethod; // how the historical VaR reaches the time horizon
+
     // Constructor
     public VaRCalculation() {
         this.calculationDate = LocalDateTime.now();
-        this.confidenceLevel = 0.95;
-        this.timeHorizon = 1;
-        this.numberOfSimulations = 10000;
-        this.riskFreeRate = 0.02; // 2% annual risk-free rate
     }
-    
+
     // Getters and Setters
+    public double getAnnualizedVolatility() { return annualizedVolatility; }
+    public void setAnnualizedVolatility(double annualizedVolatility) { this.annualizedVolatility = annualizedVolatility; }
+
+    public int getObservations() { return observations; }
+    public void setObservations(int observations) { this.observations = observations; }
+
+    public String getHistoryStart() { return historyStart; }
+    public void setHistoryStart(String historyStart) { this.historyStart = historyStart; }
+
+    public String getHistoryEnd() { return historyEnd; }
+    public void setHistoryEnd(String historyEnd) { this.historyEnd = historyEnd; }
+
+    public String getHistoricalVaRMethod() { return historicalVaRMethod; }
+    public void setHistoricalVaRMethod(String historicalVaRMethod) { this.historicalVaRMethod = historicalVaRMethod; }
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     

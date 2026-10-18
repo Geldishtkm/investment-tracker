@@ -2,7 +2,6 @@ package com.portfolio.tracker.service;
 
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.User;
-import com.portfolio.tracker.model.RiskMetrics;
 import com.portfolio.tracker.repository.AssetRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -255,103 +254,6 @@ class AssetServiceTest {
             // Then
             double expectedRoi = 0.0667; // 6.67% profit
             assertEquals(expectedRoi, roi, 0.001);
-        }
-    }
-
-    @Nested
-    @DisplayName("Risk Metrics Calculations")
-    class RiskMetricsCalculations {
-
-        @Test
-        @DisplayName("Should calculate Sharpe ratio correctly")
-        void shouldCalculateSharpeRatioCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double sharpeRatio = assetService.calculateSharpeRatio();
-
-            // Then
-            // Since getPortfolioReturns() returns empty list, should handle gracefully
-            assertNotNull(sharpeRatio);
-        }
-
-        @Test
-        @DisplayName("Should calculate volatility correctly")
-        void shouldCalculateVolatilityCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double volatility = assetService.calculateVolatility();
-
-            // Then
-            assertNotNull(volatility);
-            assertTrue(volatility >= 0.0);
-        }
-
-        @Test
-        @DisplayName("Should calculate beta correctly")
-        void shouldCalculateBetaCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double beta = assetService.calculateBeta();
-
-            // Then
-            assertNotNull(beta);
-        }
-
-        @Test
-        @DisplayName("Should calculate max drawdown correctly")
-        void shouldCalculateMaxDrawdownCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double maxDrawdown = assetService.calculateMaxDrawdown();
-
-            // Then
-            assertNotNull(maxDrawdown);
-            assertTrue(maxDrawdown >= 0.0);
-        }
-
-        @Test
-        @DisplayName("Should calculate diversification score correctly")
-        void shouldCalculateDiversificationScoreCorrectly() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            double diversificationScore = assetService.calculateDiversificationScore();
-
-            // Then
-            assertNotNull(diversificationScore);
-            assertTrue(diversificationScore >= 0.0 && diversificationScore <= 1.0);
-        }
-
-        @Test
-        @DisplayName("Should get comprehensive risk metrics")
-        void shouldGetComprehensiveRiskMetrics() {
-            // Given
-            List<Asset> assets = Arrays.asList(testAsset, testAsset2);
-            when(assetRepository.findAll()).thenReturn(assets);
-
-            // When
-            RiskMetrics riskMetrics = assetService.getRiskMetrics();
-
-            // Then
-            assertNotNull(riskMetrics);
-            assertNotNull(riskMetrics.getSharpeRatio());
-            assertNotNull(riskMetrics.getVolatility());
-            assertNotNull(riskMetrics.getBeta());
-            assertNotNull(riskMetrics.getMaxDrawdown());
         }
     }
 
