@@ -32,6 +32,8 @@ export interface RegisterResponse {
   requiresVerification: boolean;
   email: string;
   emailSent: boolean;
+  /** True when this repeated an unverified signup that was still waiting for its code. */
+  resumed: boolean;
   codeExpiresInSeconds: number;
   resendCooldownSeconds: number;
 }

@@ -149,6 +149,24 @@ public class EmailVerificationService {
         return issueCode(user);
     }
 
+    /** Result of resuming a pending signup: whether a new code went out, and how long until the next resend. */
+    public record ResumeOutcome(boolean codeSent, boolean sendFailed, long resendAvailableInSeconds) {
+    }
+
+    /**
+     * Someone repeated the signup of an account that is still waiting for verification: send a
+     * fresh code if the cooldown allows, otherwise keep the code already in their inbox.
+     */
+    @Transactional
+    public ResumeOutcome resumePendingSignup(User user) {
+        long wait = secondsUntilResendAllowed(user);
+        if (wait > 0) {
+            return new ResumeOutcome(false, false, wait);
+        }
+        boolean sent = issueCode(user);
+        return new ResumeOutcome(sent, !sent, sent ? resendCooldownSeconds : 0);
+    }
+
     public long getCodeTtlSeconds() {
         return codeTtlMinutes * 60;
     }

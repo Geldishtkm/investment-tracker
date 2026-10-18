@@ -55,7 +55,8 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
       setPendingVerification({
         email: result.email,
         cooldown: result.resendCooldownSeconds,
-        notice: result.emailSent ? undefined : result.message
+        // Explain a resumed signup or a failed send; a normal first send needs no extra notice
+        notice: result.resumed || !result.emailSent ? result.message : undefined
       });
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');

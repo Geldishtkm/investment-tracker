@@ -94,18 +94,35 @@ public class AuthController {
         try {
             logger.info("Registration attempt for username: {}", username);
             
-            User user = userService.registerUser(username.trim(), email, password);
+            UserService.Registration registration = userService.registerUser(username.trim(), email, password);
+            User user = registration.user();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("requiresVerification", true);
+            body.put("email", user.getEmail());
+            body.put("codeExpiresInSeconds", emailVerificationService.getCodeTtlSeconds());
+
+            if (registration.existingPendingSignup()) {
+                // Same person signing up again before verifying: back to the code screen
+                EmailVerificationService.ResumeOutcome outcome = emailVerificationService.resumePendingSignup(user);
+                logger.info("Resumed pending signup for {}", username);
+                body.put("message", outcome.codeSent()
+                        ? "You already started signing up. We sent a new code to " + user.getEmail() + "."
+                        : outcome.sendFailed()
+                            ? "You already started signing up, but we couldn't send a new code. Use \"Resend code\" to try again."
+                            : "You already started signing up. Enter the code we sent to " + user.getEmail() + ".");
+                body.put("emailSent", !outcome.sendFailed());
+                body.put("resumed", true);
+                body.put("resendCooldownSeconds", outcome.resendAvailableInSeconds());
+                return ResponseEntity.ok(body);
+            }
+
             boolean emailSent = emailVerificationService.issueCode(user);
             logger.info("User registered, awaiting email verification: {}", username);
-
-            Map<String, Object> body = new LinkedHashMap<>();
             body.put("message", emailSent
                     ? "Account created. We sent a 6-digit code to " + user.getEmail() + "."
                     : "Account created, but we couldn't send the verification email. Use \"Resend code\" to try again.");
-            body.put("requiresVerification", true);
-            body.put("email", user.getEmail());
             body.put("emailSent", emailSent);
-            body.put("codeExpiresInSeconds", emailVerificationService.getCodeTtlSeconds());
+            body.put("resumed", false);
             body.put("resendCooldownSeconds", emailSent ? emailVerificationService.getResendCooldownSeconds() : 0);
             return ResponseEntity.status(HttpStatus.CREATED).body(body);
         } catch (IllegalArgumentException e) {
