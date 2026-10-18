@@ -47,7 +47,6 @@ export interface PortfolioAnalytics {
   roi: number | null;
   sharpeRatio?: number;
   volatility?: number;
-  maxDrawdown?: number;
   beta?: number;
   diversificationScore?: number;
   assetBreakdown: AssetBreakdownItem[];
@@ -169,7 +168,6 @@ export interface AssetPerformance {
 export interface RiskMetrics {
   sharpeRatio: number;
   volatility: number;
-  maxDrawdown: number;
   beta: number;
   diversificationScore: number;
 } 

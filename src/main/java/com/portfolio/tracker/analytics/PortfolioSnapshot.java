@@ -53,13 +53,6 @@ public record PortfolioSnapshot(
         return out;
     }
 
-    /** Value path of the current holdings priced at each historical date. */
-    public double[] historicalValuePath() {
-        double[] path = new double[prices.length];
-        for (int t = 0; t < prices.length; t++) path[t] = RiskMath.dot(quantities, prices[t]);
-        return path;
-    }
-
     public int indexOf(String coinId) {
         return coinIds.indexOf(coinId);
     }

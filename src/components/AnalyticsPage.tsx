@@ -7,8 +7,7 @@ import {
   BarChart3,
   PieChart,
   Activity,
-  DollarSign,
-  ArrowDownRight
+  DollarSign
 } from 'lucide-react';
 
 interface PortfolioMetrics {
@@ -36,7 +35,6 @@ interface AssetPerformance {
 interface RiskMetrics {
   sharpeRatio: number;
   volatility: number;
-  maxDrawdown: number;
   beta: number;
   diversificationScore: number;
 }
@@ -72,7 +70,6 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
         totalAssets = 0,
         sharpeRatio = 0,
         volatility = 0,
-        maxDrawdown = 0,
         beta = 0,
         diversificationScore = 0,
         assetBreakdown = [],
@@ -125,7 +122,6 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
       const risk: RiskMetrics = {
         sharpeRatio,
         volatility,
-        maxDrawdown,
         beta,
         diversificationScore
       };
@@ -331,7 +327,7 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
                 Backend Calculated
               </span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <div className="group text-center p-6 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 backdrop-blur-sm rounded-2xl border border-blue-600/30 hover:border-blue-500/50 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-600/40">
                   <TrendingUp size={24} className="text-white" />
@@ -351,16 +347,6 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
                   {formatPercentage(riskMetrics.volatility)}
                 </div>
                 <div className="text-xs text-gray-500 mt-2">Price fluctuation</div>
-              </div>
-              <div className="group text-center p-6 bg-gradient-to-r from-red-600/20 to-pink-600/20 backdrop-blur-sm rounded-2xl border border-red-600/30 hover:border-red-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-red-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-600/40">
-                  <ArrowDownRight size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium mb-2">Max Drawdown</div>
-                <div className="text-xl font-bold text-red-400 group-hover:text-red-300 transition-colors duration-300">
-                  {formatPercentage(riskMetrics.maxDrawdown)}
-                </div>
-                <div className="text-xs text-gray-500 mt-2">Largest decline</div>
               </div>
               <div className="group text-center p-6 bg-gradient-to-r from-purple-600/20 to-pink-600/20 backdrop-blur-sm rounded-2xl border border-purple-600/30 hover:border-purple-500/50 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">

@@ -49,12 +49,6 @@ class RiskMathTest {
         assertEquals(6.333333333333333, cov[1][1], 1e-12);
     }
 
-    @Test
-    @DisplayName("Max drawdown measures the deepest fall from a running peak")
-    void maxDrawdown() {
-        assertEquals(0.5, RiskMath.maxDrawdown(new double[]{100, 120, 90, 130, 65, 140}), 1e-12);
-        assertEquals(0.0, RiskMath.maxDrawdown(new double[]{1, 2, 3}), 1e-12);
-    }
 
     @Test
     @DisplayName("Cholesky factor and matrix inverse are exact on small matrices")

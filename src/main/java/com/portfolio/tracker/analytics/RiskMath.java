@@ -129,17 +129,6 @@ public final class RiskMath {
         return sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
     }
 
-    /** Maximum peak-to-trough decline of a value path, as a fraction of the peak. */
-    public static double maxDrawdown(double[] values) {
-        double peak = values[0];
-        double maxDd = 0.0;
-        for (double v : values) {
-            if (v > peak) peak = v;
-            if (peak > 0) maxDd = Math.max(maxDd, (peak - v) / peak);
-        }
-        return maxDd;
-    }
-
     // ---------------------------------------------------------------------
     // Normal distribution
     // ---------------------------------------------------------------------

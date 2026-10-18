@@ -19,7 +19,6 @@ import java.util.Map;
  *   <li>volatility: annualized sample standard deviation of daily portfolio returns</li>
  *   <li>Sharpe ratio: (annualized mean return - risk-free rate) / annualized volatility</li>
  *   <li>beta: cov(portfolio, benchmark) / var(benchmark) on daily returns</li>
- *   <li>max drawdown: largest peak-to-trough fall of today's holdings over the lookback window</li>
  *   <li>diversification score: 100 x (1 - Herfindahl-Hirschman index of the weights)</li>
  * </ul>
  */
@@ -40,7 +39,6 @@ public class RiskMetricsService {
         return RiskMetrics.builder()
                 .sharpeRatio(r.sharpeRatio())
                 .volatility(r.volatility())
-                .maxDrawdown(r.maxDrawdown())
                 .beta(r.beta())
                 .diversificationScore(r.diversificationScore())
                 .build();
@@ -53,7 +51,6 @@ public class RiskMetricsService {
         out.put("sharpeRatio", r.sharpeRatio());
         out.put("volatility", r.volatility());
         out.put("annualizedReturn", r.annualizedReturn());
-        out.put("maxDrawdown", r.maxDrawdown());
         out.put("beta", r.beta());
         out.put("diversificationScore", r.diversificationScore());
         out.put("effectiveNumberOfAssets", r.effectiveAssets());
@@ -66,8 +63,8 @@ public class RiskMetricsService {
         return out;
     }
 
-    private record Result(double sharpeRatio, double volatility, double annualizedReturn, double maxDrawdown,
-                          double beta, double diversificationScore, double effectiveAssets,
+    private record Result(double sharpeRatio, double volatility, double annualizedReturn, double beta,
+                          double diversificationScore, double effectiveAssets,
                           double diversificationRatio, int observations, String historyStart, String historyEnd) {
     }
 
@@ -93,8 +90,6 @@ public class RiskMetricsService {
         }
         double beta = RiskMath.covariance(rp, s.benchmark()) / benchmarkVariance;
 
-        double maxDrawdown = RiskMath.maxDrawdown(s.historicalValuePath());
-
         double hhi = 0.0;
         for (double w : s.weights()) hhi += w * w;
         double diversificationScore = 100.0 * (1.0 - hhi);
@@ -105,7 +100,7 @@ public class RiskMetricsService {
         for (int i = 0; i < s.size(); i++) weightedVol += s.weights()[i] * Math.sqrt(cov[i][i]);
         double diversificationRatio = weightedVol / Math.sqrt(RiskMath.quadraticForm(s.weights(), cov));
 
-        return new Result(sharpe, volatility, annualReturn, maxDrawdown, beta, diversificationScore, 1.0 / hhi,
+        return new Result(sharpe, volatility, annualReturn, beta, diversificationScore, 1.0 / hhi,
                 diversificationRatio, s.observations(), s.dates().get(0).toString(),
                 s.dates().get(s.dates().size() - 1).toString());
     }
