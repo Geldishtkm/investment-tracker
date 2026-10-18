@@ -91,14 +91,14 @@ function App() {
               await loadAssets();
               setIsAuthenticated(true);
             } else {
-              authService.removeToken();
+              // An ended session was already cleared by authService; after a network error the
+              // saved tokens are kept so the next visit can still renew them
               setIsAuthenticated(false);
               setCurrentUser(null);
               setAssets([]);
               setAssetsWithPrices([]);
             }
           } catch (error) {
-            authService.removeToken();
             setIsAuthenticated(false);
             setCurrentUser(null);
             setAssets([]);
@@ -243,7 +243,7 @@ function App() {
   };
 
   const handleLogout = () => {
-    authService.clearAuth();
+    void authService.logout();
     setIsAuthenticated(false);
     setCurrentUser(null);
     setAssets([]);

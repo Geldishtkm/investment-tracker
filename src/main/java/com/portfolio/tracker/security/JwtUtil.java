@@ -137,6 +137,11 @@ public class JwtUtil {
         }
     }
 
+    /** Lifetime of a newly issued access token, in seconds. */
+    public long getExpirationSeconds() {
+        return expirationTime / 1000;
+    }
+
     /**
      * True when the token carries a valid signature but its expiry time has passed,
      * so callers can tell an expired session apart from a forged or malformed token

@@ -4,6 +4,8 @@ import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.security.JwtUtil;
 import com.portfolio.tracker.service.EmailVerificationService;
 import com.portfolio.tracker.service.EmailVerificationService.VerificationException;
+import com.portfolio.tracker.service.RefreshTokenService;
+import com.portfolio.tracker.service.RefreshTokenService.RefreshTokenException;
 import com.portfolio.tracker.service.UserDetailsServiceImpl;
 import com.portfolio.tracker.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +49,9 @@ public class AuthController {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
     /**
      * Test endpoint to verify auth controller is accessible
      */
@@ -58,6 +63,8 @@ public class AuthController {
             "timestamp", System.currentTimeMillis(),
             "endpoints", Map.of(
                 "login", "POST /auth/login",
+                "refresh", "POST /auth/refresh",
+                "logout", "POST /auth/logout",
                 "register", "POST /auth/register",
                 "verifyEmail", "POST /auth/verify-email",
                 "resendCode", "POST /auth/resend-code",
@@ -197,15 +204,15 @@ public class AuthController {
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
             logger.debug("User details loaded for: {}", username);
             
-            // Generate JWT token using UserDetails
+            // Short-lived access token plus a refresh token that renews it without a new login
             String token = jwtUtil.generateToken(userDetails);
+            String refreshToken = refreshTokenService.issue(userService.findByUsername(username));
             logger.info("JWT token generated successfully for user: {}", username);
             
-            return ResponseEntity.ok(Map.of(
-                "token", token, 
-                "message", "Login successful",
-                "username", username
-            ));
+            Map<String, Object> body = tokenBody(token, refreshToken);
+            body.put("message", "Login successful");
+            body.put("username", userDetails.getUsername());
+            return ResponseEntity.ok(body);
         } catch (DisabledException e) {
             // Spring checks "enabled" before the password, so confirm the password first to avoid
             // revealing which accounts exist but are unverified
@@ -229,5 +236,42 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Login failed: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Exchange a refresh token for a new access token. The refresh token is replaced on every call,
+     * so the client must store the new one from the response
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody(required = false) Map<String, String> request) {
+        try {
+            RefreshTokenService.Rotation rotation =
+                    refreshTokenService.rotate(request == null ? null : request.get("refreshToken"));
+            UserDetails userDetails = userDetailsService.loadUserByUsername(rotation.user().getUsername());
+            Map<String, Object> body = tokenBody(jwtUtil.generateToken(userDetails), rotation.refreshToken());
+            body.put("username", userDetails.getUsername());
+            return ResponseEntity.ok(body);
+        } catch (RefreshTokenException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", e.getMessage(), "code", e.getCode()));
+        }
+    }
+
+    /**
+     * End the login session the refresh token belongs to. Always succeeds, so logging out never fails
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody(required = false) Map<String, String> request) {
+        refreshTokenService.revoke(request == null ? null : request.get("refreshToken"));
+        return ResponseEntity.noContent().build();
+    }
+
+    private Map<String, Object> tokenBody(String accessToken, String refreshToken) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("token", accessToken);
+        body.put("expiresInSeconds", jwtUtil.getExpirationSeconds());
+        body.put("refreshToken", refreshToken);
+        body.put("refreshExpiresInSeconds", refreshTokenService.getTtlSeconds());
+        return body;
     }
 }

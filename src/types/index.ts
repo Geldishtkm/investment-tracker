@@ -69,6 +69,9 @@ export interface RegisterResponse {
 
 export interface AuthResponse {
   token: string;
+  refreshToken?: string;
+  expiresInSeconds?: number;
+  refreshExpiresInSeconds?: number;
   message?: string;
   username?: string;
   requiresMfa?: boolean;

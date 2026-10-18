@@ -56,7 +56,10 @@ npm run build
 ## 🔐 Security
 
 - All API endpoints require authentication (except `/auth/**`, `/api/crypto/**`)
-- JWT-based stateless authentication
+- JWT-based stateless authentication: a 1-hour access token plus a refresh token (7 days, renewed
+  on every use) that `POST /api/auth/refresh` exchanges for a new pair. Refresh tokens are stored
+  only as SHA-256 hashes, rotate on each use, and replaying an old one ends that login session.
+  `POST /api/auth/logout` revokes the session. The frontend renews tokens automatically
 - User data isolation
 - Security headers configured
 

@@ -47,14 +47,80 @@ export class SessionExpiredError extends Error {
   }
 }
 
-/** True when the JWT's exp claim has passed (or the token can't be read). */
-function isTokenExpired(token: string): boolean {
+const TOKEN_KEY = 'token';
+const REFRESH_TOKEN_KEY = 'refreshToken';
+// Renew a little before the access token expires, so a request doesn't arrive just after it lapses
+const EXPIRY_MARGIN_MS = 30_000;
+const REFRESH_LOCK = 'auth-token-refresh';
+
+/** True when the JWT's exp claim has passed, or will within the margin (or the token can't be read). */
+function isTokenExpired(token: string, marginMs = 0): boolean {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]));
-    return typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now();
+    return typeof payload.exp === 'number' && payload.exp * 1000 - marginMs <= Date.now();
   } catch {
     return true;
   }
+}
+
+/** Tokens returned by /auth/login and /auth/refresh. */
+interface TokenResponse {
+  token: string;
+  refreshToken?: string;
+}
+
+function saveTokens(tokens: TokenResponse): void {
+  localStorage.setItem(TOKEN_KEY, tokens.token);
+  if (tokens.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+  sessionEndNotified = false;
+}
+
+/**
+ * Gets a new access token with the stored refresh token. The refresh token is single-use, so
+ * concurrent callers share one request, and other tabs wait on a browser lock: a tab that finds
+ * the tokens already renewed by another tab uses those instead of spending a used refresh token.
+ */
+let refreshInFlight: Promise<string> | null = null;
+
+function refreshAccessToken(rejectedToken: string | null): Promise<string> {
+  if (!refreshInFlight) {
+    const run = () => renewTokens(rejectedToken);
+    // The lock resolves with the callback's result; the DOM typings model that as a nested promise
+    const locked: Promise<string> = typeof navigator !== 'undefined' && navigator.locks
+      ? (navigator.locks.request(REFRESH_LOCK, run) as unknown as Promise<string>)
+      : run();
+    refreshInFlight = locked.finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function renewTokens(rejectedToken: string | null): Promise<string> {
+  const current = localStorage.getItem(TOKEN_KEY);
+  if (current && current !== rejectedToken && !isTokenExpired(current, EXPIRY_MARGIN_MS)) {
+    return current; // renewed meanwhile by another tab
+  }
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (!refreshToken) {
+    throw expireSession(current ? undefined : 'Please log in to continue.');
+  }
+
+  // A network failure or server error here propagates as a normal error: the session is kept
+  // and the next request tries again, instead of logging the user out over a brief outage
+  const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (response.status === 401 || response.status === 400) {
+    const body: ApiErrorBody | null = await response.json().catch(() => null);
+    throw expireSession(body?.error);
+  }
+  if (!response.ok) {
+    throw new Error(`Could not renew the session (HTTP ${response.status}). Please try again.`);
+  }
+  const tokens: TokenResponse = await response.json();
+  saveTokens(tokens);
+  return tokens.token;
 }
 
 // Several requests can fail at once when a session ends; only the first one notifies the App
@@ -62,7 +128,8 @@ let sessionEndNotified = false;
 
 function expireSession(message?: string): SessionExpiredError {
   const error = new SessionExpiredError(message);
-  localStorage.removeItem('token');
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem('user');
   if (!sessionEndNotified) {
     sessionEndNotified = true;
@@ -143,10 +210,8 @@ export const authService = {
         throw new Error('No token received from server');
       }
 
-      // Save the token to localStorage
-      authService.saveToken(authResponse.token);
-      
-      
+      // Short-lived access token plus the refresh token that renews it
+      saveTokens(authResponse);
       return authResponse;
     } catch (error) {
       console.error('Login error:', error);
@@ -155,57 +220,58 @@ export const authService = {
   },
 
   saveToken: (token: string): void => {
-    localStorage.setItem('token', token);
-    sessionEndNotified = false;
+    saveTokens({ token });
   },
 
   getToken: (): string | null => {
-    return localStorage.getItem('token');
+    return localStorage.getItem(TOKEN_KEY);
   },
 
   removeToken: (): void => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(TOKEN_KEY);
   },
 
+  /**
+   * Whether a session can be used without logging in: a well-formed access token is saved, or a
+   * refresh token that can renew it. An expired access token alone doesn't end the session.
+   */
   isAuthenticated: (): boolean => {
-    const token = localStorage.getItem('token');
-    if (!token || token.length === 0) {
+    if (localStorage.getItem(REFRESH_TOKEN_KEY)) {
+      return true;
+    }
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
       return false;
     }
-    
-    // Basic token validation - check if it's a valid JWT format
     try {
-      const parts = token.split('.');
-      if (parts.length !== 3) {
-        return false;
-      }
-      
-      // Check if token is expired (basic check)
-      const payload = JSON.parse(atob(parts[1]));
-      const currentTime = Math.floor(Date.now() / 1000);
-      
-      if (payload.exp && payload.exp < currentTime) {
-        authService.removeToken();
-        return false;
-      }
-      
-      // Additional validation: check if token has required fields
-      if (!payload.sub || !payload.iat) {
-        authService.removeToken();
-        return false;
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Token validation error:', error);
-      authService.removeToken();
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return Boolean(payload.sub && payload.iat) && !isTokenExpired(token);
+    } catch {
       return false;
     }
   },
 
   clearAuth: (): void => {
-    localStorage.removeItem('token');
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem('user');
+  },
+
+  /** Ends the session on the server (so the refresh token can't be used again) and locally. */
+  logout: async (): Promise<void> => {
+    const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    authService.clearAuth();
+    if (!refreshToken) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+    } catch (error) {
+      // Already logged out locally; the token expires on its own
+      console.warn('Logout request failed:', error);
+    }
   },
 
   getCurrentUser: (): User | null => {
@@ -225,52 +291,42 @@ export const authService = {
     }
   },
 
-  getAuthHeader: (): Record<string, string> => {
-    const token = authService.getToken();
-    
-    if (token) {
-      const header = { Authorization: `Bearer ${token}` };
-      return header;
-    } else {
-      return {};
-    }
-  },
-
   /**
-   * fetch() for authenticated endpoints: sends the saved token as "Authorization: Bearer <token>".
-   * A missing or expired token, or a 401 from the backend, ends the session and returns the user
-   * to the login page instead of failing with a confusing error.
+   * fetch() for authenticated endpoints, acting as the auth interceptor: sends the access token as
+   * "Authorization: Bearer <token>", renews it with the refresh token when it has expired (before
+   * sending, or after a 401) and retries the request once with the new token. Only when the refresh
+   * token is also expired or invalid does the session end and the login page appear.
    */
   authFetch: async (url: string, init: RequestInit = {}): Promise<Response> => {
-    const token = authService.getToken();
-    if (!token || isTokenExpired(token)) {
-      throw expireSession(token ? undefined : 'Please log in to continue.');
+    const send = (accessToken: string) => {
+      const headers = new Headers(init.headers);
+      headers.set('Authorization', `Bearer ${accessToken}`);
+      return fetch(url, { ...init, headers });
+    };
+
+    let token = authService.getToken();
+    if (!token || isTokenExpired(token, EXPIRY_MARGIN_MS)) {
+      token = await refreshAccessToken(token);
     }
 
-    const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    const response = await fetch(url, { ...init, headers });
-
+    let response = await send(token);
     if (response.status === 401) {
-      const body: ApiErrorBody | null = await response.clone().json().catch(() => null);
-      throw expireSession(body?.error);
+      // Rejected despite looking valid (e.g. revoked, or the server's clock differs): renew and retry once
+      token = await refreshAccessToken(token);
+      response = await send(token);
+      if (response.status === 401) {
+        const body: ApiErrorBody | null = await response.clone().json().catch(() => null);
+        throw expireSession(body?.error);
+      }
     }
     return response;
   },
 
-  // Add method to test authentication
+  /** Checks the saved session with the backend, renewing the access token if needed. */
   testAuth: async (): Promise<boolean> => {
     try {
-      const token = authService.getToken();
-      if (!token) return false;
-
       // Any authenticated endpoint works; /api/assets/health is cheap and requires a valid token
-      const response = await fetch(`${API_BASE_URL}/api/assets/health`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
+      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/health`);
       return response.ok;
     } catch (error) {
       console.error('Auth test error:', error);

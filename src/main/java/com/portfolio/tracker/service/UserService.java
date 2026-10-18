@@ -24,6 +24,9 @@ public class UserService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
     /**
      * Outcome of a signup: either a new account, or an unverified account the same person
      * already started (same username, email and password) whose code is still valid.
@@ -183,7 +186,10 @@ public class UserService {
         
         User user = findByUsername(username);
         user.setPassword(passwordEncoder.encode(newPassword));
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        // Log out every device that signed in with the old password
+        refreshTokenService.revokeAll(saved.getId());
+        return saved;
     }
 
     /**
