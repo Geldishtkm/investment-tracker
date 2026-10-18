@@ -207,7 +207,7 @@ function App() {
   };
 
   const handleRegisterSuccess = () => {
-    showToast('success', 'Account created successfully! Please log in.');
+    showToast('success', 'Email verified! Please log in.');
     setCurrentAuthPage('login');
   };
 

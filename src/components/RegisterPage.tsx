@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, Copy } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Mail, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, Copy } from 'lucide-react';
 import { RegisterCredentials } from '../types';
 import { authService } from '../services/authService';
+import VerifyEmailPage from './VerifyEmailPage';
 
 interface RegisterPageProps {
   onRegisterSuccess: () => void;
@@ -11,8 +12,15 @@ interface RegisterPageProps {
 const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitchToLogin }) => {
   const [credentials, setCredentials] = useState<RegisterCredentials>({
     username: '',
+    email: '',
     password: ''
   });
+  // Set after signup: the account exists but must be verified with the emailed code
+  const [pendingVerification, setPendingVerification] = useState<{
+    email: string;
+    cooldown: number;
+    notice?: string;
+  } | null>(null);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -41,13 +49,14 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
     }
 
     try {
-      // Register the user only
-      await authService.register(credentials);
-      
-      // Show success message and redirect to login
-      console.log('Registration successful!');
+      // Create the account; it stays inactive until the emailed code is verified
+      const result = await authService.register(credentials);
       setRegistrationSuccess(true);
-      onRegisterSuccess();
+      setPendingVerification({
+        email: result.email,
+        cooldown: result.resendCooldownSeconds,
+        notice: result.emailSent ? undefined : result.message
+      });
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Registration failed');
     } finally {
@@ -69,6 +78,18 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
     setConfirmPassword(e.target.value);
     if (error) setError(''); // Clear error when user starts typing
   };
+
+  if (pendingVerification) {
+    return (
+      <VerifyEmailPage
+        email={pendingVerification.email}
+        initialCooldownSeconds={pendingVerification.cooldown}
+        initialNotice={pendingVerification.notice}
+        onVerified={() => onRegisterSuccess()}
+        onBack={onSwitchToLogin}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
@@ -113,6 +134,31 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                     disabled={isLoading}
                   />
                 </div>
+              </div>
+
+              {/* Email Field */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Email
+                </label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
+                    <Mail size={20} className="text-green-400" />
+                  </div>
+                  <input
+                    type="email"
+                    value={credentials.email}
+                    onChange={handleInputChange('email')}
+                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+                <p className="text-xs text-gray-500">
+                  We'll send a 6-digit code to verify it
+                </p>
               </div>
 
               {/* Password Field */}

@@ -23,7 +23,17 @@ export interface LoginCredentials {
 
 export interface RegisterCredentials {
   username: string;
+  email: string;
   password: string;
+}
+
+export interface RegisterResponse {
+  message: string;
+  requiresVerification: boolean;
+  email: string;
+  emailSent: boolean;
+  codeExpiresInSeconds: number;
+  resendCooldownSeconds: number;
 }
 
 export interface AuthResponse {

@@ -66,6 +66,7 @@ public class SecurityConfig {
                 .requestMatchers(mvcMatcherBuilder.pattern("/ping")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/error")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern("/api/auth/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
 

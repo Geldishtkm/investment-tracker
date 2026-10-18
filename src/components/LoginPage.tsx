@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, Shield, Zap, Smartphone } from 'lucide-react';
 import { LoginCredentials } from '../types';
-import { authService } from '../services/authService';
+import { authService, AuthError } from '../services/authService';
+import VerifyEmailPage from './VerifyEmailPage';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -16,6 +17,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [verifiedNotice, setVerifiedNotice] = useState('');
   const [requiresMfa, setRequiresMfa] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaUsername, setMfaUsername] = useState('');
@@ -46,6 +49,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       
       onLoginSuccess();
     } catch (error) {
+      if (error instanceof AuthError && error.code === 'EMAIL_NOT_VERIFIED' && error.email) {
+        // Account exists but was never verified: go straight to the code screen
+        setUnverifiedEmail(error.email);
+        return;
+      }
       setError(error instanceof Error ? error.message : 'Login failed');
     } finally {
       setIsLoading(false);
@@ -89,6 +97,21 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       setIsLoading(false);
     }
   };
+
+  if (unverifiedEmail) {
+    return (
+      <VerifyEmailPage
+        email={unverifiedEmail}
+        initialCooldownSeconds={0}
+        initialNotice="Your email isn't verified yet. Enter the code we sent you, or request a new one."
+        onVerified={() => {
+          setUnverifiedEmail(null);
+          setVerifiedNotice('Email verified! Log in to continue.');
+        }}
+        onBack={() => setUnverifiedEmail(null)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
@@ -163,6 +186,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                   </button>
                 </div>
               </div>
+
+              {/* Success Message after verifying an email */}
+              {verifiedNotice && !error && (
+                <div className="p-4 bg-gradient-to-r from-green-600/20 to-emerald-500/20 backdrop-blur-sm border border-green-500/40 rounded-xl">
+                  <div className="flex items-center gap-2 text-green-400">
+                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                    <span className="text-sm font-medium">{verifiedNotice}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Error Message */}
               {error && (

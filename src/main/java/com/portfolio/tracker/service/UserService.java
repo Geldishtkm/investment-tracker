@@ -8,9 +8,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class UserService {
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     @Autowired
     private UserRepository userRepository;
@@ -25,10 +28,13 @@ public class UserService {
      * @return The newly created user
      * @throws RuntimeException if username already exists or validation fails
      */
-    public User registerUser(String username, String rawPassword) {
+    public User registerUser(String username, String email, String rawPassword) {
         // Validate input parameters
         if (username == null || username.trim().isEmpty()) {
             throw new IllegalArgumentException("Username cannot be null or empty");
+        }
+        if (email == null || !EMAIL_PATTERN.matcher(email.trim()).matches()) {
+            throw new IllegalArgumentException("A valid email address is required");
         }
         if (rawPassword == null || rawPassword.trim().isEmpty()) {
             throw new IllegalArgumentException("Password cannot be null or empty");
@@ -37,16 +43,21 @@ public class UserService {
             throw new IllegalArgumentException("Password must be at least 6 characters long");
         }
         
-        // Check if username already exists
+        // Check if username or email already exists
         if (userRepository.findByUsername(username).isPresent()) {
-            throw new RuntimeException("User with username '" + username + "' already exists");
+            throw new IllegalStateException("Username '" + username + "' is already taken");
+        }
+        if (userRepository.findByEmailIgnoreCase(email.trim()).isPresent()) {
+            throw new IllegalStateException("An account with this email already exists");
         }
         
         // Encode the password for security
         String encodedPassword = passwordEncoder.encode(rawPassword);
 
-        // Create and save the new user
+        // Create the account disabled; it is enabled once the emailed code is verified
         User user = new User(username, encodedPassword, "USER");
+        user.setEmail(email.trim());
+        user.setEnabled(false);
         return userRepository.save(user);
     }
 

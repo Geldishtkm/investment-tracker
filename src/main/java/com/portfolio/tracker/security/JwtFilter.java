@@ -44,6 +44,7 @@ public class JwtFilter extends OncePerRequestFilter {
                requestUri.startsWith("/health") ||
                requestUri.startsWith("/ping") ||
                requestUri.startsWith("/auth/") ||
+               requestUri.startsWith("/api/auth/") ||
                requestUri.startsWith("/api/crypto/") ||
                requestUri.startsWith("/api/price-history/") ||
                requestUri.startsWith("/dist/") ||
@@ -96,7 +97,8 @@ public class JwtFilter extends OncePerRequestFilter {
      * Check if the request URI is for authentication endpoints
      */
     private boolean isAuthEndpoint(String requestUri) {
-        return requestUri != null && requestUri.startsWith(AUTH_ENDPOINT_PREFIX);
+        return requestUri != null && (requestUri.startsWith(AUTH_ENDPOINT_PREFIX)
+                || requestUri.startsWith("/api" + AUTH_ENDPOINT_PREFIX));
     }
 
     /**

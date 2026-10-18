@@ -51,6 +51,22 @@ public class User {
     
     @Column(name = "is_active")
     private boolean isActive = true;
+
+    // Email verification: new accounts stay disabled until the emailed code is confirmed
+    @Column(name = "is_enabled", nullable = false)
+    private boolean enabled = false;
+
+    @Column(name = "verification_code", length = 6)
+    private String verificationCode;
+
+    @Column(name = "code_expiration")
+    private LocalDateTime codeExpiration;
+
+    @Column(name = "verification_attempts", nullable = false)
+    private int verificationAttempts = 0;
+
+    @Column(name = "verification_sent_at")
+    private LocalDateTime verificationSentAt;
     
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private Set<Asset> assets = new HashSet<>();
@@ -118,6 +134,21 @@ public class User {
 
     public boolean isActive() { return isActive; }
     public void setActive(boolean active) { isActive = active; }
+
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public String getVerificationCode() { return verificationCode; }
+    public void setVerificationCode(String verificationCode) { this.verificationCode = verificationCode; }
+
+    public LocalDateTime getCodeExpiration() { return codeExpiration; }
+    public void setCodeExpiration(LocalDateTime codeExpiration) { this.codeExpiration = codeExpiration; }
+
+    public int getVerificationAttempts() { return verificationAttempts; }
+    public void setVerificationAttempts(int verificationAttempts) { this.verificationAttempts = verificationAttempts; }
+
+    public LocalDateTime getVerificationSentAt() { return verificationSentAt; }
+    public void setVerificationSentAt(LocalDateTime verificationSentAt) { this.verificationSentAt = verificationSentAt; }
 
     public Set<Asset> getAssets() { return assets; }
     public void setAssets(Set<Asset> assets) { this.assets = assets; }

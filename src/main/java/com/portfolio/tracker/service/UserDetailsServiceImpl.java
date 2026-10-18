@@ -49,6 +49,10 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 new org.springframework.security.core.userdetails.User(
                     user.getUsername(),
                     user.getPassword(),
+                    user.isEnabled(), // unverified accounts are disabled until their email is confirmed
+                    true,
+                    true,
+                    true,
                     Collections.emptyList() // No authorities for now - can be extended later
                 );
 

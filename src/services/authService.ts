@@ -1,35 +1,78 @@
-import { LoginCredentials, RegisterCredentials, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
+import { LoginCredentials, RegisterCredentials, RegisterResponse, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
 
 const AUTH_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
+/** Error from the auth API, carrying the backend's machine-readable code (e.g. EMAIL_NOT_VERIFIED). */
+export class AuthError extends Error {
+  code?: string;
+  email?: string;
+  retryAfterSeconds?: number;
+
+  constructor(message: string, body?: any) {
+    super(message);
+    this.name = 'AuthError';
+    this.code = body?.code;
+    this.email = body?.email;
+    this.retryAfterSeconds = body?.retryAfterSeconds;
+  }
+}
+
+async function toAuthError(response: Response, fallback: string): Promise<AuthError> {
+  const text = await response.text();
+  let body: any = null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // plain-text error body
+  }
+  return new AuthError(body?.error || text || `${fallback} (HTTP ${response.status})`, body);
+}
+
 export const authService = {
-  register: async (credentials: RegisterCredentials): Promise<string> => {
-    try {
-      const formData = new URLSearchParams();
-      formData.append('username', credentials.username);
-      formData.append('password', credentials.password);
+  register: async (credentials: RegisterCredentials): Promise<RegisterResponse> => {
+    const formData = new URLSearchParams();
+    formData.append('username', credentials.username);
+    formData.append('email', credentials.email);
+    formData.append('password', credentials.password);
 
-      const fullUrl = `${AUTH_BASE_URL}/auth/register`;
+    const response = await fetch(`${AUTH_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
 
-      const response = await fetch(fullUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: formData.toString(),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Registration failed with status ${response.status}`);
-      }
-
-      const result = await response.text();
-      return result;
-    } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
+    if (!response.ok) {
+      throw await toAuthError(response, 'Registration failed');
     }
+    return response.json();
+  },
+
+  // Confirm the 6-digit code emailed at signup
+  verifyEmail: async (email: string, code: string): Promise<{ message: string; username: string }> => {
+    const response = await fetch(`${AUTH_BASE_URL}/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    if (!response.ok) {
+      throw await toAuthError(response, 'Verification failed');
+    }
+    return response.json();
+  },
+
+  // Ask for a new code; the backend enforces a cooldown between sends
+  resendCode: async (email: string): Promise<{ message: string; resendCooldownSeconds: number }> => {
+    const response = await fetch(`${AUTH_BASE_URL}/auth/resend-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (!response.ok) {
+      throw await toAuthError(response, 'Could not resend the code');
+    }
+    return response.json();
   },
 
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
@@ -47,8 +90,7 @@ export const authService = {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Login failed with status ${response.status}`);
+        throw await toAuthError(response, 'Login failed');
       }
 
       // Parse the JSON response to get the token
