@@ -43,14 +43,12 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
   const fetchCoins = async () => {
     // Prevent multiple simultaneous requests
     if (isFetching) {
-      console.log('Already fetching coins, skipping duplicate request');
       return;
     }
     
     // Check cache duration
     const now = Date.now();
     if (now - lastFetchTime < CACHE_DURATION && coins.length > 0) {
-      console.log('Using cached coins data, skipping API call');
       return;
     }
     
@@ -59,13 +57,6 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
       setLoading(true);
       setError('');
       const coinsData = await assetService.getTopCoins();
-      console.log('Raw coins data received:', coinsData);
-      console.log('Type of coinsData:', typeof coinsData);
-      console.log('Is array?', Array.isArray(coinsData));
-      if (Array.isArray(coinsData)) {
-        console.log('Number of coins:', coinsData.length);
-        console.log('First coin sample:', coinsData[0]);
-      }
       setCoins(coinsData);
       setFilteredCoins(coinsData);
       setLastFetchTime(now);
@@ -82,9 +73,10 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
     }
   };
 
-  // Load coins on component mount
+  // Load coins once on mount
   useEffect(() => {
     fetchCoins();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs once
   }, []);
 
   // Filter coins based on search term

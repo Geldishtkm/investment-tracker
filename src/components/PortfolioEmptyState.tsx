@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wallet, Plus, Activity, TrendingUp, ShieldCheck } from 'lucide-react';
+import { Wallet, Plus, Activity, TrendingUp, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface PortfolioEmptyStateProps {
   /** Opens the add-asset flow (the Coins page). */
@@ -53,5 +53,18 @@ const PortfolioEmptyState: React.FC<PortfolioEmptyStateProps> = ({ onAddAsset })
     </div>
   );
 };
+
+/** Shown instead of the empty state when the portfolio itself could not be loaded. */
+export const AssetsLoadError: React.FC<{ message: string; onRetry: () => void }> = ({ message, onRetry }) => (
+  <div className="glass-card p-10 text-center max-w-2xl mx-auto border border-red-600/30">
+    <AlertTriangle size={40} className="text-red-400 mx-auto mb-4" />
+    <h3 className="text-xl font-bold text-white mb-2">Couldn't load your portfolio</h3>
+    <p className="text-gray-400 mb-6">{message}</p>
+    <button onClick={onRetry} className="btn btn-primary flex-center gap-2 mx-auto">
+      <RefreshCw size={18} />
+      Try again
+    </button>
+  </div>
+);
 
 export default PortfolioEmptyState;

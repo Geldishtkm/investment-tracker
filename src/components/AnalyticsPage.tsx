@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PortfolioEmptyState from './PortfolioEmptyState';
+import { AssetBreakdownItem } from '../types';
 import { assetService } from '../services/api';
 import {
   TrendingUp,
@@ -101,7 +102,7 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
       
       setMetrics(portfolioMetrics);
       
-      const assetPerformance: AssetPerformance[] = assetBreakdown.map((asset: any) => {
+      const assetPerformance: AssetPerformance[] = assetBreakdown.map((asset: AssetBreakdownItem) => {
         const currentValue = asset.currentValue || 0;
         const initialInvestment = asset.initialInvestment || 0;
         const assetRoi = currentValue - initialInvestment;

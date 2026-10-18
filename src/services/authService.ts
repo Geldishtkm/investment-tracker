@@ -1,14 +1,22 @@
 import { LoginCredentials, RegisterCredentials, RegisterResponse, AuthResponse, User, MfaSetupResponse, MfaVerificationResponse } from '../types';
+import { API_BASE_URL } from '../config';
 
-const AUTH_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 /** Error from the auth API, carrying the backend's machine-readable code (e.g. EMAIL_NOT_VERIFIED). */
+/** JSON error body returned by the auth endpoints. */
+interface ApiErrorBody {
+  error?: string;
+  code?: string;
+  email?: string;
+  retryAfterSeconds?: number;
+}
+
 export class AuthError extends Error {
   code?: string;
   email?: string;
   retryAfterSeconds?: number;
 
-  constructor(message: string, body?: any) {
+  constructor(message: string, body?: ApiErrorBody | null) {
     super(message);
     this.name = 'AuthError';
     this.code = body?.code;
@@ -19,7 +27,7 @@ export class AuthError extends Error {
 
 async function toAuthError(response: Response, fallback: string): Promise<AuthError> {
   const text = await response.text();
-  let body: any = null;
+  let body: ApiErrorBody | null = null;
   try {
     body = JSON.parse(text);
   } catch {
@@ -35,7 +43,7 @@ export const authService = {
     formData.append('email', credentials.email);
     formData.append('password', credentials.password);
 
-    const response = await fetch(`${AUTH_BASE_URL}/auth/register`, {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -51,7 +59,7 @@ export const authService = {
 
   // Confirm the 6-digit code emailed at signup
   verifyEmail: async (email: string, code: string): Promise<{ message: string; username: string }> => {
-    const response = await fetch(`${AUTH_BASE_URL}/auth/verify-email`, {
+    const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code }),
@@ -64,7 +72,7 @@ export const authService = {
 
   // Ask for a new code; the backend enforces a cooldown between sends
   resendCode: async (email: string): Promise<{ message: string; resendCooldownSeconds: number }> => {
-    const response = await fetch(`${AUTH_BASE_URL}/auth/resend-code`, {
+    const response = await fetch(`${API_BASE_URL}/auth/resend-code`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -81,7 +89,7 @@ export const authService = {
       formData.append('username', credentials.username);
       formData.append('password', credentials.password);
 
-      const response = await fetch(`${AUTH_BASE_URL}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -103,7 +111,6 @@ export const authService = {
       // Save the token to localStorage
       authService.saveToken(authResponse.token);
       
-      console.log('Login successful, token saved:', authResponse.token.substring(0, 20) + '...');
       
       return authResponse;
     } catch (error) {
@@ -134,7 +141,6 @@ export const authService = {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) {
-        console.log('Invalid JWT format');
         return false;
       }
       
@@ -143,14 +149,12 @@ export const authService = {
       const currentTime = Math.floor(Date.now() / 1000);
       
       if (payload.exp && payload.exp < currentTime) {
-        console.log('Token expired, removing from storage');
         authService.removeToken();
         return false;
       }
       
       // Additional validation: check if token has required fields
       if (!payload.sub || !payload.iat) {
-        console.log('Token missing required fields');
         authService.removeToken();
         return false;
       }
@@ -185,15 +189,13 @@ export const authService = {
     }
   },
 
-  getAuthHeader: (): { Authorization: string } | {} => {
+  getAuthHeader: (): Record<string, string> => {
     const token = authService.getToken();
     
     if (token) {
       const header = { Authorization: `Bearer ${token}` };
-      console.log('Creating auth header with token:', token.substring(0, 20) + '...');
       return header;
     } else {
-      console.log('No token found, returning empty auth header');
       return {};
     }
   },
@@ -204,20 +206,14 @@ export const authService = {
       const token = authService.getToken();
       if (!token) return false;
 
-      const response = await fetch(`${AUTH_BASE_URL}/api/assets/debug`, {
+      // Any authenticated endpoint works; /api/assets/health is cheap and requires a valid token
+      const response = await fetch(`${API_BASE_URL}/api/assets/health`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Auth test successful:', data);
-        return true;
-      } else {
-        console.log('Auth test failed:', response.status);
-        return false;
-      }
+      return response.ok;
     } catch (error) {
       console.error('Auth test error:', error);
       return false;
@@ -227,7 +223,7 @@ export const authService = {
   // MFA Methods
   setupMfa: async (username: string, password: string): Promise<MfaSetupResponse> => {
     try {
-      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/setup`, {
+      const response = await fetch(`${API_BASE_URL}/api/security/mfa/setup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -250,7 +246,7 @@ export const authService = {
 
   verifyMfa: async (username: string, code: string): Promise<MfaVerificationResponse> => {
     try {
-      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/verify`, {
+      const response = await fetch(`${API_BASE_URL}/api/security/mfa/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -271,25 +267,5 @@ export const authService = {
     }
   },
 
-  getMfaStatus: async (username: string): Promise<any> => {
-    try {
-      const response = await fetch(`${AUTH_BASE_URL}/api/security/mfa/status/${username}`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Failed to get MFA status with status ${response.status}`);
-      }
-
-      const result = await response.json();
-      return result;
-    } catch (error) {
-      console.error('Get MFA status error:', error);
-      throw error;
-    }
-  }
 };
-
-// Expose authService to window for debugging
-if (typeof window !== 'undefined') {
-  (window as any).authService = authService;
-} 
+ 

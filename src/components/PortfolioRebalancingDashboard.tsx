@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 import {
   TrendingUp,
   Target,
@@ -55,7 +56,6 @@ interface PortfolioRebalancing {
   portfolioStatus: string;
 }
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 interface PortfolioRebalancingDashboardProps {
   /** Opens the add-asset flow; shown when the portfolio is empty. */

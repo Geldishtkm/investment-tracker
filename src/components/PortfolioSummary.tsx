@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Package, BarChart3, Target, Activity, RefreshCw } from 'lucide-react';
+import { DollarSign, Package, BarChart3, Target, Activity } from 'lucide-react';
 import { AssetWithPrice } from '../types';
 
 interface PortfolioSummaryProps {
@@ -8,7 +8,6 @@ interface PortfolioSummaryProps {
 
 const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const assetCount = assets.length;
   const totalValue = assets.reduce((sum, asset) => {
@@ -40,30 +39,10 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
       }) 
     : null;
 
-  // Manual refresh function
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      // Simulate refresh delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setLastUpdate(new Date());
-      // Trigger parent component refresh if needed
-      window.location.reload();
-    } catch (error) {
-      console.error('Refresh failed:', error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Auto-refresh every 5 minutes
+  // "Last update" reflects when new asset prices actually arrived
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLastUpdate(new Date());
-    }, 5 * 60 * 1000); // 5 minutes
-
-    return () => clearInterval(interval);
-  }, []);
+    setLastUpdate(new Date());
+  }, [assets]);
 
   return (
     <div className="space-y-8">
@@ -72,9 +51,9 @@ const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({ assets }) => {
         <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 shadow-xl shadow-black/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${isRefreshing ? 'bg-yellow-400' : 'bg-green-400'}`}></div>
+              <div className="w-3 h-3 rounded-full bg-green-400"></div>
               <span className="text-gray-300 text-sm">
-                {isRefreshing ? '�� Refreshing...' : '🟢 Live Market Data'}
+                🟢 Live Market Data
               </span>
             </div>
             <div className="text-xs text-gray-500">

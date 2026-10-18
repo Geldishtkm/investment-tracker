@@ -5,7 +5,7 @@ import { Asset, AssetWithPrice, User } from './types';
 import AssetCard from './components/AssetCard';
 import PortfolioSummary from './components/PortfolioSummary';
 import EmptyState from './components/EmptyState';
-import PortfolioEmptyState from './components/PortfolioEmptyState';
+import PortfolioEmptyState, { AssetsLoadError } from './components/PortfolioEmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
 import VaRDashboard from './components/VaRDashboard';
@@ -66,6 +66,8 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
+  // Set when assets could not be loaded, so an outage isn't mistaken for an empty portfolio
+  const [assetsLoadError, setAssetsLoadError] = useState<string | null>(null);
   const [assetsWithPrices, setAssetsWithPrices] = useState<AssetWithPrice[]>([]);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -89,7 +91,6 @@ function App() {
               await loadAssets();
               setIsAuthenticated(true);
             } else {
-              console.log('Token is invalid or expired, redirecting to login');
               authService.removeToken();
               setIsAuthenticated(false);
               setCurrentUser(null);
@@ -97,7 +98,6 @@ function App() {
               setAssetsWithPrices([]);
             }
           } catch (error) {
-            console.log('Token validation failed, redirecting to login:', error);
             authService.removeToken();
             setIsAuthenticated(false);
             setCurrentUser(null);
@@ -105,7 +105,6 @@ function App() {
             setAssetsWithPrices([]);
           }
         } else {
-          console.log('User not authenticated, showing login page');
           setIsAuthenticated(false);
           setCurrentUser(null);
           setAssets([]);
@@ -123,6 +122,7 @@ function App() {
     };
 
     checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- check the saved session once on startup
   }, []);
 
   const loadAssets = async () => {
@@ -131,6 +131,7 @@ function App() {
       
       const assetsData = await assetService.getAllAssets();
       setAssets(assetsData);
+      setAssetsLoadError(null);
       
       // Load assets with current prices
       try {
@@ -149,7 +150,6 @@ function App() {
           })));
         }
       } catch (pricesError) {
-        console.log('Error loading assets with prices, using fallback:', pricesError);
         // Fallback to regular assets
         setAssetsWithPrices(assetsData.map(asset => ({
           ...asset,
@@ -160,6 +160,7 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading assets:', error);
+      setAssetsLoadError(error instanceof Error ? error.message : 'Unknown error');
       showToast('error', 'Failed to load assets: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setLoading(false);
@@ -224,7 +225,6 @@ function App() {
 
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${toastCounter}`;
-    console.log(`Creating toast with ID: ${id}`, { type, message });
     setToasts(prev => [...prev, { id, type, message }]);
     setToastCounter(prev => prev + 1);
     setTimeout(() => {
@@ -447,7 +447,9 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Analyze your portfolio performance and market trends</p>
               </div>
-              {assets.length === 0 ? (
+              {assetsLoadError ? (
+                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+              ) : assets.length === 0 ? (
                 <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
               ) : (
                 <AnalyticsPage onAddAsset={() => setCurrentPage('coins')} />
@@ -463,7 +465,9 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
               </div>
-              {assets.length === 0 ? (
+              {assetsLoadError ? (
+                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+              ) : assets.length === 0 ? (
                 <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
               ) : (
                 <VaRDashboard onAddAsset={() => setCurrentPage('coins')} />
@@ -479,7 +483,9 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Optimize your portfolio with Mean-Variance Optimization and Black-Litterman models</p>
               </div>
-              {assets.length === 0 ? (
+              {assetsLoadError ? (
+                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+              ) : assets.length === 0 ? (
                 <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
               ) : (
                 <PortfolioRebalancingDashboard onAddAsset={() => setCurrentPage('coins')} />

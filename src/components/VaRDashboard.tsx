@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL } from '../config';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { AlertTriangle, TrendingUp, TrendingDown, BarChart3, Shield, Target, Activity, DollarSign, Package, RefreshCw } from 'lucide-react';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 interface VaRCalculation {
   id?: number;
@@ -61,11 +61,7 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
   const [timeHorizon, setTimeHorizon] = useState(1);
   const [activeTab, setActiveTab] = useState('overview');
 
-  useEffect(() => {
-    calculateVaR();
-  }, [confidenceLevel, timeHorizon]);
-
-  const calculateVaR = async () => {
+  const calculateVaR = useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -117,7 +113,12 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [confidenceLevel, timeHorizon]);
+
+  // Recalculate whenever the confidence level or horizon changes
+  useEffect(() => {
+    calculateVaR();
+  }, [calculateVaR]);
 
   const getRiskLevelColor = (riskLevel: string) => {
     switch (riskLevel?.toUpperCase()) {

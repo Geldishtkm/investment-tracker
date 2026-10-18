@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Lock, User, Mail, ArrowRight, Sparkles, UserPlus, CheckCircle, Shield, Copy } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Mail, ArrowRight, Sparkles, UserPlus, CheckCircle } from 'lucide-react';
 import { RegisterCredentials } from '../types';
 import { authService } from '../services/authService';
 import VerifyEmailPage from './VerifyEmailPage';

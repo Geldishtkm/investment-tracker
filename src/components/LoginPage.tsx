@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Lock, User, ArrowRight, Sparkles, Shield, Zap, Smartphone } from 'lucide-react';
-import { LoginCredentials } from '../types';
+import { LoginCredentials, MfaSetupResponse } from '../types';
 import { authService, AuthError } from '../services/authService';
 import VerifyEmailPage from './VerifyEmailPage';
 
@@ -23,7 +23,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
   const [mfaCode, setMfaCode] = useState('');
   const [mfaUsername, setMfaUsername] = useState('');
   const [showMfaSetup, setShowMfaSetup] = useState(false);
-  const [mfaSetup, setMfaSetup] = useState<any>(null);
+  const [mfaSetup, setMfaSetup] = useState<MfaSetupResponse | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,12 +37,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       if (authResponse.requiresMfa) {
         setRequiresMfa(true);
         setMfaUsername(credentials.username);
-        console.log('MFA required for user:', credentials.username);
         return;
       }
       
       // Token is already saved by authService.login(), no need to call saveToken again
-      console.log('Login successful for user:', authResponse.username);
       
       // Show MFA setup option after successful login
       setShowMfaSetup(true);
@@ -86,7 +84,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
       if (mfaResponse.success && mfaResponse.token) {
         // Save the token and complete login
         authService.saveToken(mfaResponse.token);
-        console.log('MFA verification successful, login completed');
         onLoginSuccess();
       } else {
         setError(mfaResponse.message || 'MFA verification failed');
@@ -342,7 +339,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                       const response = await authService.setupMfa(credentials.username, credentials.password);
                       if (response.success) {
                         setMfaSetup(response);
-                        console.log('MFA setup successful:', response);
                       }
                     } catch (error) {
                       console.error('MFA setup failed:', error);

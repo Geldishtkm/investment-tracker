@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL } from '../config';
 import { 
   XAxis, 
   YAxis, 
@@ -16,20 +17,12 @@ interface PriceHistoryChartProps {
   onClose: () => void;
 }
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
 const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onClose }) => {
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<number>(30); // days
-
-  // Fetch price history when coin changes
-  useEffect(() => {
-    if (selectedCoin) {
-      fetchPriceHistory();
-    }
-  }, [selectedCoin, timeRange]);
 
   // Add loading timeout to prevent infinite loading
   useEffect(() => {
@@ -43,7 +36,7 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
     }
   }, [loading]);
 
-  const fetchPriceHistory = async () => {
+  const fetchPriceHistory = useCallback(async () => {
     if (!selectedCoin) return;
 
     try {
@@ -71,7 +64,14 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCoin, timeRange]);
+
+  // Fetch price history when the coin or time range changes
+  useEffect(() => {
+    if (selectedCoin) {
+      fetchPriceHistory();
+    }
+  }, [selectedCoin, fetchPriceHistory]);
 
   const handleRefresh = () => {
     fetchPriceHistory();
@@ -101,7 +101,7 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
     }).format(price);
   };
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string | number }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-gray-800 border border-gray-600 rounded-lg p-3 shadow-lg">

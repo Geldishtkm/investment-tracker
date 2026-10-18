@@ -27,6 +27,35 @@ export interface RegisterCredentials {
   password: string;
 }
 
+/** One row of the analytics endpoint's asset breakdown. */
+export interface AssetBreakdownItem {
+  id: number;
+  name: string;
+  quantity: number;
+  currentPrice: number;
+  purchasePrice: number;
+  currentValue: number;
+  initialInvestment: number;
+  individualRoi: number;
+}
+
+/** Response of GET /api/assets/analytics. Risk fields are present only when riskMetricsAvailable. */
+export interface PortfolioAnalytics {
+  totalValue: number;
+  totalInitialInvestment: number;
+  totalAssets: number;
+  roi: number | null;
+  sharpeRatio?: number;
+  volatility?: number;
+  maxDrawdown?: number;
+  beta?: number;
+  diversificationScore?: number;
+  assetBreakdown: AssetBreakdownItem[];
+  riskMetricsAvailable: boolean;
+  riskMetricsMessage?: string;
+  riskMetricsCode?: string;
+}
+
 export interface RegisterResponse {
   message: string;
   requiresVerification: boolean;
