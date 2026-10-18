@@ -7,3 +7,7 @@ target/
 *.tmp
 *.bat
 *.exe
+
+# Local secrets
+.env
+.env.*

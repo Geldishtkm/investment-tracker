@@ -9,7 +9,8 @@ healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
 
+# Secrets (JWT_SECRET, DB_URL, DB_USERNAME, DB_PASSWORD) are set in the
+# Railway dashboard under service Variables, never in this file.
 [deploy.envs]
 SPRING_PROFILES_ACTIVE = "prod"
-JWT_SECRET = "railway-secret-key-123"
 PORT = "8080"
