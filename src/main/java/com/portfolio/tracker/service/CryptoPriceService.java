@@ -1,155 +1,164 @@
 package com.portfolio.tracker.service;
 
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-import java.util.Map;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
- * Service for fetching cryptocurrency prices and details from external APIs
- * Includes caching mechanisms to reduce API calls and improve performance
+ * Current cryptocurrency market data from CoinGecko: the top coins list (refreshed on a schedule)
+ * and spot prices. Spot prices for several coins are fetched in one batched /simple/price call,
+ * reused for a short TTL, and taken from the top coins list when it already has them. When
+ * CoinGecko rate limits us, previously fetched values are served.
  */
 @Service
 public class CryptoPriceService {
 
     private static final Logger logger = LoggerFactory.getLogger(CryptoPriceService.class);
-    
-    // API endpoints
-    private static final String TOP_COINS_URL = "https://api.coingecko.com/api/v3/coins/markets";
-    private static final String SIMPLE_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price";
-    private static final String COIN_DETAILS_URL = "https://api.coingecko.com/api/v3/coins/";
-    
+
     // Cache configuration
     private static final long CACHE_DURATION_MS = 10 * 60 * 1000L; // 10 minutes
     private static final int TOP_COINS_LIMIT = 100;
-    
-    // API parameters
     private static final String CURRENCY_USD = "usd";
-    private static final String ORDER_MARKET_CAP = "market_cap_desc";
-    private static final String SPARKLINE_FALSE = "false";
+    // CoinGecko accepts many IDs per /simple/price call; stay well under URL length limits
+    private static final int MAX_IDS_PER_BATCH = 200;
 
-    private final RestTemplate restTemplate;
+    private final CoinGeckoClient coinGecko;
+    private final Duration spotPriceTtl;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     // Cache for top coins with timestamp tracking
-    private List<Map<String, Object>> cachedTopCoins;
-    private long lastCacheTime = 0;
+    private volatile List<Map<String, Object>> cachedTopCoins;
+    private volatile long lastCacheTime = 0;
 
-    public CryptoPriceService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    private record SpotPrice(double usd, Instant fetchedAt) {
+    }
+
+    private final Map<String, SpotPrice> spotPrices = new ConcurrentHashMap<>();
+
+    public CryptoPriceService(CoinGeckoClient coinGecko,
+                              @Value("${coingecko.spot-price-ttl-seconds}") long spotPriceTtlSeconds) {
+        this.coinGecko = coinGecko;
+        this.spotPriceTtl = Duration.ofSeconds(spotPriceTtlSeconds);
         logger.info("CryptoPriceService initialized with cache duration: {} ms", CACHE_DURATION_MS);
     }
 
     /**
-     * Scheduled task to refresh the top coins cache every 10 minutes
+     * Scheduled task to refresh the top coins cache every 10 minutes. On failure (including a
+     * rate limit) the previous list is kept.
      */
     @Scheduled(fixedRate = CACHE_DURATION_MS)
-    public void refreshCache() {
+    public synchronized void refreshCache() {
         try {
-            logger.debug("Refreshing top coins cache...");
-            
-            String url = buildTopCoinsUrl();
-            logger.info("Fetching from CoinGecko URL: {}", url);
-            
-            ResponseEntity<List<Map<String, Object>>> response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                null,
-                new ParameterizedTypeReference<>() {}
-            );
-
-            if (response.getBody() != null) {
-                List<Map<String, Object>> coins = response.getBody();
-                logger.info("Received {} coins from CoinGecko", coins.size());
-                
-                // Prices are requested in USD (vs_currency=usd), so they are cached as returned
-                cachedTopCoins = coins;
-                lastCacheTime = System.currentTimeMillis();
-                logger.info("Successfully refreshed cache with {} coins", cachedTopCoins.size());
-            } else {
-                logger.warn("Received empty response when refreshing cache");
+            String body = coinGecko.get(String.format(
+                    "/coins/markets?vs_currency=%s&order=market_cap_desc&per_page=%d&page=1&sparkline=false&locale=en",
+                    CURRENCY_USD, TOP_COINS_LIMIT));
+            List<Map<String, Object>> coins = objectMapper.readValue(body, new TypeReference<>() {});
+            if (coins == null || coins.isEmpty()) {
+                logger.warn("Received empty response when refreshing top coins");
+                return;
             }
-
+            cachedTopCoins = coins;
+            lastCacheTime = System.currentTimeMillis();
+            logger.info("Successfully refreshed cache with {} coins", coins.size());
+        } catch (CoinGeckoClient.RateLimitedException e) {
+            logger.warn("Top coins not refreshed: {}; keeping the cached list", e.getMessage());
         } catch (Exception e) {
-            logger.error("Failed to refresh top coins cache: {}", e.getMessage(), e);
-            // Don't clear existing cache on failure - keep using stale data
+            logger.error("Failed to refresh top coins cache: {}", e.getMessage());
         }
     }
 
     /**
      * Get the top 100 cryptocurrencies by market cap
-     * @return list of top coins with their market data
-     * @throws RuntimeException if both API and cache fail
+     * @return list of top coins with their market data (possibly stale if CoinGecko is unavailable)
+     * @throws RuntimeException if CoinGecko is unavailable and nothing has been cached yet
      */
     public List<Map<String, Object>> getTopCoins() {
-        long now = System.currentTimeMillis();
-        
-        // Check if cache is valid
-        if (isCacheValid(now)) {
-            logger.debug("Returning {} coins from cache", cachedTopCoins.size());
+        if (isCacheValid(System.currentTimeMillis())) {
             return cachedTopCoins;
         }
-
-        // Cache expired or empty, try to refresh
-        logger.debug("Cache expired, attempting to refresh...");
-        refreshCache();
-        
-        if (cachedTopCoins == null || cachedTopCoins.isEmpty()) {
-            logger.error("Failed to load top coins from API and cache is empty");
-            throw new RuntimeException("Unable to fetch cryptocurrency data");
+        synchronized (this) {
+            // Another request may have refreshed it while we waited
+            if (!isCacheValid(System.currentTimeMillis())) refreshCache();
         }
-        
+        if (cachedTopCoins == null || cachedTopCoins.isEmpty()) {
+            throw new RuntimeException("Cryptocurrency data is temporarily unavailable. Please try again shortly.");
+        }
         return cachedTopCoins;
+    }
+
+    /**
+     * Current USD prices for several coins using at most one CoinGecko call per batch of IDs.
+     * Prices are taken from the cached top coins list or the spot price cache when fresh enough.
+     * @return price per CoinGecko ID; IDs CoinGecko doesn't know (or can't price right now and
+     *         were never priced before) are absent
+     */
+    public Map<String, Double> getPricesInUSD(Collection<String> coinIds) {
+        Instant now = Instant.now();
+        Map<String, Double> result = new LinkedHashMap<>();
+        Set<String> wanted = coinIds.stream()
+                .filter(Objects::nonNull)
+                .map(id -> id.trim().toLowerCase(Locale.ROOT))
+                .filter(id -> !id.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        List<String> toFetch = new ArrayList<>();
+        Map<String, Double> topCoinPrices = freshTopCoinPrices();
+        for (String id : wanted) {
+            SpotPrice spot = spotPrices.get(id);
+            if (spot != null && spot.fetchedAt().plus(spotPriceTtl).isAfter(now)) {
+                result.put(id, spot.usd());
+            } else if (topCoinPrices.containsKey(id)) {
+                result.put(id, topCoinPrices.get(id));
+            } else {
+                toFetch.add(id);
+            }
+        }
+
+        for (int start = 0; start < toFetch.size(); start += MAX_IDS_PER_BATCH) {
+            List<String> batch = toFetch.subList(start, Math.min(start + MAX_IDS_PER_BATCH, toFetch.size()));
+            try {
+                Map<String, Double> fetched = fetchSimplePrices(batch);
+                fetched.forEach((id, price) -> spotPrices.put(id, new SpotPrice(price, now)));
+                result.putAll(fetched);
+            } catch (Exception e) {
+                logger.warn("Batch price fetch for {} coin(s) failed ({}); using last known prices", batch.size(), e.getMessage());
+                for (String id : batch) {
+                    SpotPrice stale = spotPrices.get(id);
+                    if (stale != null) result.put(id, stale.usd());
+                }
+            }
+        }
+        return result;
     }
 
     /**
      * Get current USD price for a specific cryptocurrency
      * @param coinId the cryptocurrency identifier (e.g., bitcoin, ethereum)
      * @return current price in USD
-     * @throws RuntimeException if price cannot be fetched or parsed
+     * @throws RuntimeException if the price is unavailable
      */
     public double getCryptoPriceInUSD(String coinId) {
         if (coinId == null || coinId.trim().isEmpty()) {
             throw new IllegalArgumentException("Coin ID cannot be null or empty");
         }
-
-        try {
-            String url = buildSimplePriceUrl(coinId);
-            logger.debug("Fetching price for coin: {}", coinId);
-            
-            ResponseEntity<Map<String, Map<String, Object>>> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    null,
-                    new ParameterizedTypeReference<>() {}
-            );
-
-            Map<String, Map<String, Object>> priceMap = response.getBody();
-            if (priceMap == null || !priceMap.containsKey(coinId)) {
-                throw new RuntimeException("Price data not found for coin: " + coinId);
-            }
-
-            Object priceObj = priceMap.get(coinId).get(CURRENCY_USD);
-            if (priceObj instanceof Number) {
-                double price = ((Number) priceObj).doubleValue();
-                logger.debug("Retrieved price for {}: ${}", coinId, price);
-                return price;
-            } else {
-                throw new RuntimeException("Invalid price format for coin: " + coinId);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Failed to get price for coin {}: {}", coinId, e.getMessage());
-            throw new RuntimeException("Failed to fetch price for " + coinId + ": " + e.getMessage(), e);
+        Double price = getPricesInUSD(List.of(coinId)).get(coinId.trim().toLowerCase(Locale.ROOT));
+        if (price == null) {
+            throw new RuntimeException("Price for " + coinId + " is unavailable");
         }
+        return price;
     }
 
     /**
@@ -158,38 +167,58 @@ public class CryptoPriceService {
      * @return map containing coin details (id, symbol, name, image)
      * @throws RuntimeException if coin details cannot be fetched
      */
-    @SuppressWarnings("unchecked")
     public Map<String, Object> getCoinDetails(String coinId) {
         if (coinId == null || coinId.trim().isEmpty()) {
             throw new IllegalArgumentException("Coin ID cannot be null or empty");
         }
+        String id = coinId.trim().toLowerCase(Locale.ROOT);
+
+        // The cached top coins list already has these fields for the most common coins
+        if (cachedTopCoins != null) {
+            for (Map<String, Object> coin : cachedTopCoins) {
+                if (id.equals(coin.get("id"))) {
+                    return Map.of("id", coin.get("id"), "symbol", coin.get("symbol"),
+                            "name", coin.get("name"), "image", Objects.toString(coin.get("image"), ""));
+                }
+            }
+        }
 
         try {
-            String url = COIN_DETAILS_URL + coinId;
-            logger.debug("Fetching details for coin: {}", coinId);
-            
-            Map<String, Object> response = restTemplate.getForObject(url, Map.class);
-            if (response == null) {
-                throw new RuntimeException("Coin details not found for: " + coinId);
-            }
-
-            Map<String, Object> imageMap = (Map<String, Object>) response.get("image");
-            String imageUrl = imageMap != null ? (String) imageMap.get("large") : null;
-
-            Map<String, Object> details = Map.of(
-                    "id", response.get("id"),
-                    "symbol", response.get("symbol"),
-                    "name", response.get("name"),
-                    "image", imageUrl != null ? imageUrl : ""
-            );
-            
-            logger.debug("Retrieved details for coin: {}", coinId);
-            return details;
-            
+            JsonNode response = objectMapper.readTree(coinGecko.get("/coins/" + encode(id)
+                    + "?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false"));
+            return Map.of(
+                    "id", response.path("id").asText(),
+                    "symbol", response.path("symbol").asText(),
+                    "name", response.path("name").asText(),
+                    "image", response.path("image").path("large").asText(""));
         } catch (Exception e) {
-            logger.error("Failed to get details for coin {}: {}", coinId, e.getMessage());
-            throw new RuntimeException("Failed to fetch details for " + coinId + ": " + e.getMessage(), e);
+            logger.error("Failed to get details for coin {}: {}", id, e.getMessage());
+            throw new RuntimeException("Failed to fetch details for " + id + ": " + e.getMessage(), e);
         }
+    }
+
+    private Map<String, Double> fetchSimplePrices(List<String> ids) throws Exception {
+        String joined = ids.stream().map(CryptoPriceService::encode).collect(Collectors.joining(","));
+        JsonNode body = objectMapper.readTree(coinGecko.get("/simple/price?ids=" + joined + "&vs_currencies=" + CURRENCY_USD));
+        Map<String, Double> prices = new LinkedHashMap<>();
+        for (String id : ids) {
+            JsonNode usd = body.path(id).path(CURRENCY_USD);
+            if (usd.isNumber() && usd.asDouble() > 0) prices.put(id, usd.asDouble());
+        }
+        logger.debug("Fetched {} of {} spot prices in one batch", prices.size(), ids.size());
+        return prices;
+    }
+
+    /** Current prices from the top coins list, if that list is still fresh. */
+    private Map<String, Double> freshTopCoinPrices() {
+        Map<String, Double> prices = new HashMap<>();
+        if (!isCacheValid(System.currentTimeMillis())) return prices;
+        for (Map<String, Object> coin : cachedTopCoins) {
+            if (coin.get("id") instanceof String id && coin.get("current_price") instanceof Number p && p.doubleValue() > 0) {
+                prices.put(id, p.doubleValue());
+            }
+        }
+        return prices;
     }
 
     /**
@@ -198,26 +227,11 @@ public class CryptoPriceService {
      * @return true if cache is valid, false otherwise
      */
     private boolean isCacheValid(long currentTime) {
-        return cachedTopCoins != null && 
-               !cachedTopCoins.isEmpty() && 
-               (currentTime - lastCacheTime) <= CACHE_DURATION_MS;
+        List<Map<String, Object>> coins = cachedTopCoins;
+        return coins != null && !coins.isEmpty() && (currentTime - lastCacheTime) <= CACHE_DURATION_MS;
     }
 
-    /**
-     * Build the URL for fetching top coins
-     * @return complete URL with query parameters
-     */
-    private String buildTopCoinsUrl() {
-        return String.format("%s?vs_currency=%s&order=%s&per_page=%d&page=1&sparkline=%s&locale=en",
-                TOP_COINS_URL, CURRENCY_USD, ORDER_MARKET_CAP, TOP_COINS_LIMIT, SPARKLINE_FALSE);
-    }
-
-    /**
-     * Build the URL for fetching simple price data
-     * @param coinId the cryptocurrency identifier
-     * @return complete URL with query parameters
-     */
-    private String buildSimplePriceUrl(String coinId) {
-        return String.format("%s?ids=%s&vs_currencies=%s", SIMPLE_PRICE_URL, coinId, CURRENCY_USD);
+    private static String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

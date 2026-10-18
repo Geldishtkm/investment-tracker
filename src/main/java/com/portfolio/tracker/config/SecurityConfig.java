@@ -3,6 +3,7 @@ package com.portfolio.tracker.config;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -60,15 +61,17 @@ public class SecurityConfig {
                 )
             )
             .authorizeHttpRequests(auth -> auth
-                // Public endpoints (no authentication required)
+                // Public endpoints (no authentication required). Market data is read-only for
+                // anonymous users; forced cache refreshes need a login so they can't exhaust the
+                // CoinGecko rate limit
                 .requestMatchers(mvcMatcherBuilder.pattern("/")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/health")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/ping")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/error")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/auth/**")).permitAll()
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/auth/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/crypto/**")).permitAll()
-                .requestMatchers(mvcMatcherBuilder.pattern("/api/price-history/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern(HttpMethod.GET, "/api/crypto/**")).permitAll()
+                .requestMatchers(mvcMatcherBuilder.pattern(HttpMethod.GET, "/api/price-history/**")).permitAll()
 
                 // MFA steps of the login flow run before the user has a token
                 .requestMatchers(mvcMatcherBuilder.pattern("/api/security/mfa/setup")).permitAll()

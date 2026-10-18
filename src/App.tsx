@@ -129,6 +129,14 @@ function App() {
     try {
       setLoading(true);
       
+      // Bring stored prices up to date first (one batched CoinGecko request on the backend).
+      // If market data is unavailable the portfolio still loads with the last known prices.
+      try {
+        await assetService.refreshPrices();
+      } catch (refreshError) {
+        console.warn('Price refresh skipped:', refreshError);
+      }
+
       const assetsData = await assetService.getAllAssets();
       setAssets(assetsData);
       setAssetsLoadError(null);

@@ -45,8 +45,6 @@ public class JwtFilter extends OncePerRequestFilter {
                requestUri.startsWith("/ping") ||
                requestUri.startsWith("/auth/") ||
                requestUri.startsWith("/api/auth/") ||
-               requestUri.startsWith("/api/crypto/") ||
-               requestUri.startsWith("/api/price-history/") ||
                requestUri.startsWith("/dist/") ||
                requestUri.startsWith("/favicon.ico") ||
                requestUri.startsWith("/swagger-ui/") ||

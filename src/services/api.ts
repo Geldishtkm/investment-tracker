@@ -121,24 +121,18 @@ export const assetService = {
     }
   },
 
-  getCryptoPrice: async (coinId: string): Promise<number> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/crypto/price/${coinId}`, {
-        headers: {
-          ...authService.getAuthHeader()
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch crypto price for ${coinId}: ${response.status} ${response.statusText}`);
+  // Update all asset prices from CoinGecko in one batched backend call
+  refreshPrices: async (): Promise<{ updated: number; unpriced: string[] }> => {
+    const response = await fetch(`${API_BASE_URL}/api/assets/refresh-prices`, {
+      method: 'POST',
+      headers: {
+        ...authService.getAuthHeader()
       }
-      
-      const data = await response.json();
-      return typeof data === 'number' ? data : data.price;
-    } catch (error) {
-      console.error(`Error fetching crypto price for ${coinId}:`, error);
-      throw error;
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to refresh prices: ${response.status}`);
     }
+    return response.json();
   },
 
   getTopCoins: async (): Promise<Coin[]> => {

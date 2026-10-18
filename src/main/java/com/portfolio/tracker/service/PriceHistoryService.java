@@ -4,55 +4,65 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.tracker.analytics.AnalyticsProperties;
 import com.portfolio.tracker.analytics.PortfolioDataException;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
+import com.portfolio.tracker.model.PriceHistoryCacheEntry;
+import com.portfolio.tracker.repository.PriceHistoryCacheRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.*;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Fetches and caches daily cryptocurrency price history from CoinGecko for charts and for the
- * risk and optimization calculations. Only real market data is returned: when CoinGecko has no
- * data for a coin the caller gets an error instead of synthetic prices.
+ * Daily cryptocurrency price history from CoinGecko for charts and the risk calculations.
+ *
+ * Each coin is fetched once as a full year of daily prices and every shorter window (charts,
+ * VaR lookback) is cut from that, so one CoinGecko call serves all callers. Results are cached in
+ * memory and in the database (surviving restarts) and reused until the TTL expires. Concurrent
+ * requests for the same coin share a single in-flight call. If CoinGecko rate limits us (HTTP 429)
+ * or is unreachable, the last saved history is served instead of an error, however old it is.
+ * Only real market data is returned; there are no synthetic fallbacks.
  */
 @Service
 public class PriceHistoryService {
 
     private static final Logger logger = LoggerFactory.getLogger(PriceHistoryService.class);
 
-    // API configuration
-    private static final String COINGECKO_API_URL_TEMPLATE =
-            "https://api.coingecko.com/api/v3/coins/%s/market_chart?vs_currency=usd&days=%d&interval=daily";
-
-    // Cache configuration
-    private static final int MAX_CACHE_SIZE = 100; // Maximum number of cached entries
-    private static final String CACHE_KEY_SEPARATOR = "_";
+    private static final String VS_CURRENCY = "usd";
     // CoinGecko's public API serves at most one year of history
     private static final int MAX_DAYS = 365;
+    private static final long DAY_MS = Duration.ofDays(1).toMillis();
 
-    private final Map<String, CachedHistory> priceHistoryCache = new ConcurrentHashMap<>();
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final CoinGeckoClient coinGecko;
+    private final PriceHistoryCacheRepository cacheRepository;
     private final AnalyticsProperties properties;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public PriceHistoryService(AnalyticsProperties properties) {
+    private final Map<String, CachedHistory> memoryCache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<CachedHistory>> inFlight = new ConcurrentHashMap<>();
+    // IDs CoinGecko said don't exist, so repeated lookups of a bad ID don't each cost an API call
+    private final Map<String, Instant> unknownCoins = new ConcurrentHashMap<>();
+
+    public PriceHistoryService(CoinGeckoClient coinGecko,
+                               PriceHistoryCacheRepository cacheRepository,
+                               AnalyticsProperties properties) {
+        this.coinGecko = coinGecko;
+        this.cacheRepository = cacheRepository;
         this.properties = properties;
     }
 
+    /** A year of [timestamp ms, price] points and when they were fetched. */
     private record CachedHistory(List<double[]> points, Instant fetchedAt) {
     }
 
     /**
-     * Get price history for a cryptocurrency, using cache if available
-     * @param coinId the CoinGecko coin ID
-     * @param days number of days of history to retrieve
-     * @return list of price data points [timestamp, price]
+     * Price history for the last {@code days} days, served from cache when possible.
+     * @return list of [timestamp ms, price] points, oldest first
+     * @throws PortfolioDataException if there is no data and CoinGecko can't provide it right now
      */
     public List<double[]> getPriceHistory(String coinId, int days) {
         if (coinId == null || coinId.trim().isEmpty()) {
@@ -61,16 +71,7 @@ public class PriceHistoryService {
         if (days <= 0 || days > MAX_DAYS) {
             throw new IllegalArgumentException("Days must be between 1 and " + MAX_DAYS);
         }
-
-        String cacheKey = buildCacheKey(coinId, days);
-        CachedHistory cached = priceHistoryCache.get(cacheKey);
-        if (cached != null && !isExpired(cached)) {
-            logger.debug("Returning {} data points from cache for {} ({} days)",
-                       cached.points().size(), coinId, days);
-            return new ArrayList<>(cached.points()); // Return copy to prevent modification
-        }
-
-        return fetchAndCachePriceHistory(coinId, days);
+        return lastDays(load(coinId.trim().toLowerCase(Locale.ROOT), false).points(), days);
     }
 
     /**
@@ -79,15 +80,7 @@ public class PriceHistoryService {
      * @throws PortfolioDataException if CoinGecko has no history for the coin
      */
     public SortedMap<LocalDate, Double> getDailyPrices(String coinId, int days) {
-        List<double[]> points;
-        try {
-            points = getPriceHistory(coinId, Math.min(days, MAX_DAYS));
-        } catch (PortfolioDataException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
-                    "Price history for " + coinId + " is temporarily unavailable. Please try again shortly.");
-        }
+        List<double[]> points = getPriceHistory(coinId, Math.min(days, MAX_DAYS));
         SortedMap<LocalDate, Double> daily = new TreeMap<>();
         for (double[] point : points) {
             LocalDate date = Instant.ofEpochMilli((long) point[0]).atZone(ZoneOffset.UTC).toLocalDate();
@@ -101,158 +94,204 @@ public class PriceHistoryService {
     }
 
     /**
-     * Fetch price history from API and store in cache
-     * @param coinId the CoinGecko coin ID
-     * @param days number of days of history to retrieve
-     * @return list of price data points [timestamp, price]
-     * @throws PortfolioDataException if the coin is unknown or CoinGecko cannot be reached
+     * Fetch fresh history now, bypassing the TTL (still subject to CoinGecko's rate limit).
+     * @return true if fresh data was fetched, false if saved data was kept because CoinGecko was unavailable
      */
-    public List<double[]> fetchAndCachePriceHistory(String coinId, int days) {
-        String url = String.format(COINGECKO_API_URL_TEMPLATE, coinId, days);
-        logger.debug("Fetching price history for {} over {} days", coinId, days);
-        try {
-            String response = restTemplate.getForObject(url, String.class);
-            if (response == null || response.trim().isEmpty()) {
-                throw new IllegalStateException("Empty response");
-            }
-
-            List<double[]> priceHistory = parsePriceHistoryResponse(response);
-            manageCacheSize();
-            priceHistoryCache.put(buildCacheKey(coinId, days), new CachedHistory(priceHistory, Instant.now()));
-
-            logger.info("Successfully cached {} data points for {} ({} days)",
-                       priceHistory.size(), coinId, days);
-            return new ArrayList<>(priceHistory);
-        } catch (HttpClientErrorException.NotFound e) {
-            throw new PortfolioDataException(PortfolioDataException.Reason.UNKNOWN_ASSET,
-                    "CoinGecko has no coin with ID \"" + coinId + "\".");
-        } catch (Exception e) {
-            logger.error("Error fetching price history for {} ({} days): {}", coinId, days, e.getMessage());
-            // Serve stale data rather than nothing if CoinGecko is rate limiting us
-            CachedHistory stale = priceHistoryCache.get(buildCacheKey(coinId, days));
-            if (stale != null) {
-                logger.warn("Using cached price history for {} from {}", coinId, stale.fetchedAt());
-                return new ArrayList<>(stale.points());
-            }
-            throw new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
-                    "Price history for " + coinId + " is temporarily unavailable. Please try again shortly.");
-        }
-    }
-
-    /**
-     * Parse the API response to extract price history data
-     * @param response JSON response from the API
-     * @return list of price data points [timestamp, price]
-     */
-    private List<double[]> parsePriceHistoryResponse(String response) throws Exception {
-        JsonNode root = objectMapper.readTree(response);
-        JsonNode pricesNode = root.path("prices");
-
-        if (!pricesNode.isArray()) {
-            throw new RuntimeException("Invalid response format: prices array not found");
-        }
-
-        List<double[]> priceHistory = new ArrayList<>();
-        for (JsonNode entry : pricesNode) {
-            if (entry.isArray() && entry.size() >= 2) {
-                try {
-                    double timestamp = entry.get(0).asDouble();
-                    double price = entry.get(1).asDouble();
-                    priceHistory.add(new double[]{timestamp, price});
-                } catch (Exception e) {
-                    logger.warn("Skipping invalid price entry: {}", entry.toString());
-                }
-            }
-        }
-
-        return priceHistory;
-    }
-
-    /**
-     * Refresh price history for a specific coin and time period
-     * @param coinId the CoinGecko coin ID
-     * @param days number of days of history to retrieve
-     */
-    public void refreshPriceHistory(String coinId, int days) {
+    public boolean refreshPriceHistory(String coinId) {
         if (coinId == null || coinId.trim().isEmpty()) {
             logger.warn("Cannot refresh price history: coin ID is null or empty");
-            return;
+            return false;
         }
-
-        logger.info("Refreshing price history for {} ({} days)", coinId, days);
-        priceHistoryCache.remove(buildCacheKey(coinId, days));
-        fetchAndCachePriceHistory(coinId, days);
+        String id = coinId.trim().toLowerCase(Locale.ROOT);
+        Instant before = Optional.ofNullable(memoryCache.get(id)).map(CachedHistory::fetchedAt).orElse(Instant.EPOCH);
+        return load(id, true).fetchedAt().isAfter(before);
     }
 
-    /**
-     * Get cache status for a specific coin
-     * @param coinId the CoinGecko coin ID
-     * @return map containing cache keys and data point counts for the coin
-     */
+    /** Cache details for one coin. */
     public Map<String, Object> getCacheStatus(String coinId) {
         if (coinId == null || coinId.trim().isEmpty()) {
             return Collections.emptyMap();
         }
-
-        Map<String, Object> status = new HashMap<>();
-        String prefix = coinId.toLowerCase() + CACHE_KEY_SEPARATOR;
-        for (Map.Entry<String, CachedHistory> entry : priceHistoryCache.entrySet()) {
-            if (entry.getKey().startsWith(prefix)) {
-                status.put(entry.getKey(), entry.getValue().points().size());
-            }
+        String id = coinId.trim().toLowerCase(Locale.ROOT);
+        CachedHistory cached = memoryCache.get(id);
+        if (cached == null) cached = readFromDatabase(id);
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("coinId", id);
+        status.put("cached", cached != null);
+        if (cached != null) {
+            status.put("dataPoints", cached.points().size());
+            status.put("fetchedAt", cached.fetchedAt().toString());
+            status.put("ageMinutes", Duration.between(cached.fetchedAt(), Instant.now()).toMinutes());
+            status.put("fresh", !isExpired(cached));
         }
-
-        logger.debug("Cache status for {}: {} entries", coinId, status.size());
         return status;
     }
 
-    /**
-     * Get overall service cache status
-     * @return map containing all cache keys and their data point counts
-     */
+    /** Overall cache and rate limit status. */
     public Map<String, Object> getServiceStatus() {
-        Map<String, Object> status = new HashMap<>();
-        for (Map.Entry<String, CachedHistory> entry : priceHistoryCache.entrySet()) {
-            status.put(entry.getKey(), entry.getValue().points().size());
-        }
-
-        logger.debug("Service cache status: {} total entries", status.size());
+        Map<String, Object> coins = new TreeMap<>();
+        memoryCache.forEach((id, cached) -> coins.put(id, Map.of(
+                "dataPoints", cached.points().size(),
+                "ageMinutes", Duration.between(cached.fetchedAt(), Instant.now()).toMinutes(),
+                "fresh", !isExpired(cached))));
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("cacheTtlMinutes", properties.getPriceCacheTtlMinutes());
+        status.put("rateLimitedForSeconds", coinGecko.secondsUntilAvailable());
+        status.put("apiKeyConfigured", coinGecko.hasApiKey());
+        status.put("persistedCoins", cacheRepository.count());
+        status.put("coins", coins);
         return status;
     }
 
-    /**
-     * Clear all cached data
-     */
+    /** Clear the in-memory cache (the database copy is kept as the stale-data fallback). */
     public void clearCache() {
-        int size = priceHistoryCache.size();
-        priceHistoryCache.clear();
-        logger.info("Cleared cache with {} entries", size);
+        int size = memoryCache.size();
+        memoryCache.clear();
+        logger.info("Cleared in-memory price history cache with {} entries", size);
+    }
+
+    private CachedHistory load(String id, boolean forceRefresh) {
+        Instant unknownSince = unknownCoins.get(id);
+        if (unknownSince != null) {
+            if (unknownSince.plus(Duration.ofMinutes(properties.getPriceCacheTtlMinutes())).isAfter(Instant.now())) {
+                throw toDataException(id, HttpClientErrorException.create(
+                        org.springframework.http.HttpStatus.NOT_FOUND, "Not Found", null, null, null));
+            }
+            unknownCoins.remove(id);
+        }
+        CachedHistory cached = memoryCache.get(id);
+        if (cached == null) {
+            cached = readFromDatabase(id);
+            if (cached != null) memoryCache.put(id, cached);
+        }
+        if (!forceRefresh && cached != null && !isExpired(cached)) {
+            return cached;
+        }
+
+        // Only one CoinGecko call per coin at a time; concurrent callers wait for it
+        CompletableFuture<CachedHistory> mine = new CompletableFuture<>();
+        CompletableFuture<CachedHistory> running = inFlight.putIfAbsent(id, mine);
+        if (running != null) {
+            return awaitOrStale(running, cached);
+        }
+        try {
+            CachedHistory fresh = fetchFromCoinGecko(id);
+            memoryCache.put(id, fresh);
+            writeToDatabase(id, fresh);
+            mine.complete(fresh);
+            return fresh;
+        } catch (RuntimeException e) {
+            PortfolioDataException failure = toDataException(id, e);
+            if (failure.getReason() == PortfolioDataException.Reason.UNKNOWN_ASSET) {
+                unknownCoins.put(id, Instant.now());
+            }
+            mine.completeExceptionally(failure);
+            if (cached != null && failure.getReason() != PortfolioDataException.Reason.UNKNOWN_ASSET) {
+                logger.warn("Serving saved price history for {} from {} ({})", id, cached.fetchedAt(), e.getMessage());
+                return cached;
+            }
+            throw failure;
+        } finally {
+            inFlight.remove(id, mine);
+        }
+    }
+
+    private CachedHistory awaitOrStale(CompletableFuture<CachedHistory> running, CachedHistory stale) {
+        try {
+            return running.join();
+        } catch (CompletionException e) {
+            if (stale != null) return stale;
+            if (e.getCause() instanceof PortfolioDataException pde) throw pde;
+            throw e;
+        }
+    }
+
+    private CachedHistory fetchFromCoinGecko(String id) {
+        String path = "/coins/" + java.net.URLEncoder.encode(id, java.nio.charset.StandardCharsets.UTF_8) + "/market_chart?vs_currency=" + VS_CURRENCY + "&days=" + MAX_DAYS + "&interval=daily";
+        logger.debug("Fetching price history for {}", id);
+        String body = coinGecko.get(path);
+        List<double[]> points = parsePrices(body);
+        if (points.isEmpty()) {
+            throw new IllegalStateException("CoinGecko returned no prices");
+        }
+        logger.info("Fetched {} daily prices for {} from CoinGecko", points.size(), id);
+        return new CachedHistory(points, Instant.now());
+    }
+
+    private PortfolioDataException toDataException(String id, RuntimeException e) {
+        if (e instanceof HttpClientErrorException.NotFound) {
+            return new PortfolioDataException(PortfolioDataException.Reason.UNKNOWN_ASSET,
+                    "CoinGecko has no coin with ID \"" + id + "\".");
+        }
+        if (e instanceof CoinGeckoClient.RateLimitedException rl) {
+            return new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
+                    "CoinGecko is rate limiting requests and there is no saved price history for " + id
+                            + " yet. Please try again in " + rl.getRetryAfterSeconds() + " seconds.");
+        }
+        logger.error("Error fetching price history for {}: {}", id, e.getMessage());
+        return new PortfolioDataException(PortfolioDataException.Reason.MARKET_DATA_UNAVAILABLE,
+                "Price history for " + id + " is temporarily unavailable. Please try again shortly.");
+    }
+
+    private List<double[]> parsePrices(String json) {
+        try {
+            JsonNode prices = objectMapper.readTree(json).path("prices");
+            List<double[]> points = new ArrayList<>();
+            for (JsonNode entry : prices) {
+                if (entry.isArray() && entry.size() >= 2 && entry.get(0).isNumber() && entry.get(1).isNumber()) {
+                    points.add(new double[]{entry.get(0).asDouble(), entry.get(1).asDouble()});
+                }
+            }
+            return points;
+        } catch (Exception e) {
+            throw new IllegalStateException("Invalid price history response: " + e.getMessage(), e);
+        }
+    }
+
+    /** Points within the last {@code days} days of the series (by its own latest timestamp). */
+    private static List<double[]> lastDays(List<double[]> points, int days) {
+        if (points.isEmpty()) return new ArrayList<>();
+        double cutoff = points.get(points.size() - 1)[0] - days * (double) DAY_MS;
+        List<double[]> out = new ArrayList<>();
+        for (double[] p : points) {
+            if (p[0] >= cutoff) out.add(p.clone());
+        }
+        return out;
     }
 
     private boolean isExpired(CachedHistory cached) {
-        return cached.fetchedAt().plusSeconds(properties.getPriceCacheTtlMinutes() * 60).isBefore(Instant.now());
+        return cached.fetchedAt().plus(Duration.ofMinutes(properties.getPriceCacheTtlMinutes())).isBefore(Instant.now());
     }
 
-    /**
-     * Build cache key for a coin and time period
-     * @param coinId the CoinGecko coin ID
-     * @param days number of days
-     * @return cache key string
-     */
-    private String buildCacheKey(String coinId, int days) {
-        return coinId.toLowerCase() + CACHE_KEY_SEPARATOR + days;
+    private CachedHistory readFromDatabase(String id) {
+        try {
+            return cacheRepository.findById(new PriceHistoryCacheEntry.Key(id, VS_CURRENCY))
+                    .map(entry -> new CachedHistory(parseStoredPoints(entry.getPointsJson()),
+                            entry.getFetchedAt().toInstant(ZoneOffset.UTC)))
+                    .orElse(null);
+        } catch (Exception e) {
+            logger.warn("Could not read saved price history for {}: {}", id, e.getMessage());
+            return null;
+        }
     }
 
-    /**
-     * Manage cache size to prevent memory issues
-     * Removes the oldest entries if cache exceeds maximum size
-     */
-    private void manageCacheSize() {
-        if (priceHistoryCache.size() < MAX_CACHE_SIZE) return;
-        List<Map.Entry<String, CachedHistory>> byAge = new ArrayList<>(priceHistoryCache.entrySet());
-        byAge.sort(Comparator.comparing(e -> e.getValue().fetchedAt()));
-        int toRemove = priceHistoryCache.size() - MAX_CACHE_SIZE / 2;
-        for (int i = 0; i < toRemove; i++) priceHistoryCache.remove(byAge.get(i).getKey());
-        logger.info("Cache size limit reached, removed {} old entries", toRemove);
+    private void writeToDatabase(String id, CachedHistory history) {
+        try {
+            cacheRepository.save(new PriceHistoryCacheEntry(id, VS_CURRENCY,
+                    objectMapper.writeValueAsString(history.points()),
+                    LocalDateTime.ofInstant(history.fetchedAt(), ZoneOffset.UTC)));
+        } catch (Exception e) {
+            // The in-memory copy still works; persistence is only the restart/stale fallback
+            logger.warn("Could not save price history for {}: {}", id, e.getMessage());
+        }
+    }
+
+    private List<double[]> parseStoredPoints(String json) {
+        try {
+            double[][] stored = objectMapper.readValue(json, double[][].class);
+            return new ArrayList<>(Arrays.asList(stored));
+        } catch (Exception e) {
+            throw new IllegalStateException("Corrupt saved price history: " + e.getMessage(), e);
+        }
     }
 }

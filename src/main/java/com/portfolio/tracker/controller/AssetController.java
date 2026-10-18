@@ -4,6 +4,7 @@ import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.analytics.PortfolioDataException;
 import com.portfolio.tracker.service.RiskMetricsService;
+import com.portfolio.tracker.service.AssetPriceRefreshService;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.UserService;
 
@@ -33,12 +34,29 @@ public class AssetController {
     private final AssetService assetService;
     private final UserService userService;
     private final RiskMetricsService riskMetricsService;
+    private final AssetPriceRefreshService priceRefreshService;
 
     @Autowired
-    public AssetController(AssetService assetService, UserService userService, RiskMetricsService riskMetricsService) {
+    public AssetController(AssetService assetService, UserService userService,
+                           RiskMetricsService riskMetricsService, AssetPriceRefreshService priceRefreshService) {
         this.assetService = assetService;
         this.userService = userService;
         this.riskMetricsService = riskMetricsService;
+        this.priceRefreshService = priceRefreshService;
+    }
+
+    /**
+     * Update the current price of all the user's assets with one batched CoinGecko request.
+     * Cached prices are used when fresh, and last known prices if CoinGecko is rate limiting.
+     */
+    @PostMapping("/refresh-prices")
+    public ResponseEntity<?> refreshPrices(Authentication authentication) {
+        User user = userService.findByUsername(authentication.getName());
+        AssetPriceRefreshService.Result result = priceRefreshService.refreshPrices(user);
+        return ResponseEntity.ok(Map.of(
+            "updated", result.updated(),
+            "unpriced", result.unpriced()
+        ));
     }
 
     /**

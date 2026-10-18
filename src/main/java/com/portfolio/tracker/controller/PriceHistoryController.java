@@ -52,30 +52,21 @@ public class PriceHistoryController {
     }
 
     /**
-     * Force refresh the price history cache for a specific coin
+     * Force refresh the price history cache for a specific coin (requires login)
      * @param coinId The cryptocurrency identifier
-     * @param days Number of days of history to refresh (default: 90)
-     * @return Success message
+     * @return whether fresh data was fetched
      */
     @PostMapping("/refresh/{coinId}")
-    public ResponseEntity<?> refreshCache(
-            @PathVariable String coinId,
-            @RequestParam(defaultValue = "90") int days
-    ) {
-        try {
-            if (coinId == null || coinId.trim().isEmpty()) {
-                return ResponseEntity.badRequest().body("Coin ID is required");
-            }
-            if (days <= 0 || days > 365) {
-                return ResponseEntity.badRequest().body("Days must be between 1 and 365");
-            }
-            
-            priceHistoryService.refreshPriceHistory(coinId, days);
-            return ResponseEntity.ok(Map.of("message", "Cache refreshed successfully for " + coinId));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Failed to refresh cache for " + coinId + ": " + e.getMessage()));
+    public ResponseEntity<?> refreshCache(@PathVariable String coinId) {
+        if (coinId == null || coinId.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Coin ID is required"));
         }
+        boolean refreshed = priceHistoryService.refreshPriceHistory(coinId);
+        return ResponseEntity.ok(Map.of(
+                "refreshed", refreshed,
+                "message", refreshed
+                        ? "Fetched fresh price history for " + coinId
+                        : "CoinGecko is unavailable or rate limiting; keeping the saved price history for " + coinId));
     }
 
     /**

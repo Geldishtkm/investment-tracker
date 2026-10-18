@@ -6,7 +6,6 @@ import com.portfolio.tracker.analytics.PortfolioDataException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.*;
@@ -21,16 +20,13 @@ public class CoinMarketDataService {
 
     private static final Logger logger = LoggerFactory.getLogger(CoinMarketDataService.class);
 
-    private static final String SEARCH_URL = "https://api.coingecko.com/api/v3/search";
-    private static final String MARKETS_URL = "https://api.coingecko.com/api/v3/coins/markets";
-
-    private final RestTemplate restTemplate;
+    private final CoinGeckoClient coinGecko;
     private final CryptoPriceService cryptoPriceService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, String> resolvedIds = new ConcurrentHashMap<>();
 
-    public CoinMarketDataService(RestTemplate restTemplate, CryptoPriceService cryptoPriceService) {
-        this.restTemplate = restTemplate;
+    public CoinMarketDataService(CoinGeckoClient coinGecko, CryptoPriceService cryptoPriceService) {
+        this.coinGecko = coinGecko;
         this.cryptoPriceService = cryptoPriceService;
     }
 
@@ -68,13 +64,14 @@ public class CoinMarketDataService {
         List<String> toFetch = coinIds.stream().filter(id -> !caps.containsKey(id)).toList();
         if (toFetch.isEmpty()) return caps;
 
-        String url = UriComponentsBuilder.fromHttpUrl(MARKETS_URL)
+        String path = UriComponentsBuilder.fromPath("/coins/markets")
                 .queryParam("vs_currency", "usd")
                 .queryParam("ids", String.join(",", toFetch))
                 .queryParam("per_page", toFetch.size())
+                .encode()
                 .toUriString();
         try {
-            JsonNode markets = objectMapper.readTree(restTemplate.getForObject(url, String.class));
+            JsonNode markets = objectMapper.readTree(coinGecko.get(path));
             for (JsonNode coin : markets) {
                 JsonNode cap = coin.get("market_cap");
                 if (cap != null && cap.isNumber() && cap.asDouble() > 0) {
@@ -112,9 +109,9 @@ public class CoinMarketDataService {
     }
 
     private Optional<String> searchCoinGecko(String key) {
-        String url = UriComponentsBuilder.fromHttpUrl(SEARCH_URL).queryParam("query", key).toUriString();
+        String path = UriComponentsBuilder.fromPath("/search").queryParam("query", key).encode().toUriString();
         try {
-            JsonNode coins = objectMapper.readTree(restTemplate.getForObject(url, String.class)).path("coins");
+            JsonNode coins = objectMapper.readTree(coinGecko.get(path)).path("coins");
             JsonNode best = null;
             for (JsonNode coin : coins) {
                 if (!matches(key, coin.path("id").asText(), coin.path("name").asText(), coin.path("symbol").asText())) {

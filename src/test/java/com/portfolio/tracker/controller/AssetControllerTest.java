@@ -6,6 +6,7 @@ import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.service.RiskMetricsService;
+import com.portfolio.tracker.service.AssetPriceRefreshService;
 import com.portfolio.tracker.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +48,9 @@ class AssetControllerTest {
 
     @Mock
     private RiskMetricsService riskMetricsService;
+
+    @Mock
+    private AssetPriceRefreshService priceRefreshService;
 
     @InjectMocks
     private AssetController assetController;
