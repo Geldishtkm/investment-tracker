@@ -17,6 +17,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { assetService } from '../services/api';
+import PortfolioEmptyState from './PortfolioEmptyState';
 import { authService } from '../services/authService';
 import { AssetWithPrice } from '../types';
 
@@ -56,7 +57,12 @@ interface PortfolioRebalancing {
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
 
-const PortfolioRebalancingDashboard: React.FC = () => {
+interface PortfolioRebalancingDashboardProps {
+  /** Opens the add-asset flow; shown when the portfolio is empty. */
+  onAddAsset: () => void;
+}
+
+const PortfolioRebalancingDashboard: React.FC<PortfolioRebalancingDashboardProps> = ({ onAddAsset }) => {
   const [rebalancing, setRebalancing] = useState<PortfolioRebalancing | null>(null);
   const [riskTolerance, setRiskTolerance] = useState(0.5);
   const [loading, setLoading] = useState(false);
@@ -139,6 +145,11 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       if (!response.ok) {
         // The backend explains data problems (e.g. no assets, too little history) in "error"
         const body = await response.json().catch(() => null);
+        if (body?.code === 'NO_ASSETS') {
+          // Assets were removed elsewhere: show the empty-portfolio state, not an error
+          setPortfolioAssets([]);
+          return;
+        }
         throw new Error(body?.error || `HTTP ${response.status}`);
       }
 
@@ -175,6 +186,11 @@ const PortfolioRebalancingDashboard: React.FC = () => {
       if (!response.ok) {
         // The backend explains data problems (e.g. no assets, too little history) in "error"
         const body = await response.json().catch(() => null);
+        if (body?.code === 'NO_ASSETS') {
+          // Assets were removed elsewhere: show the empty-portfolio state, not an error
+          setPortfolioAssets([]);
+          return;
+        }
         throw new Error(body?.error || `HTTP ${response.status}`);
       }
 
@@ -219,15 +235,20 @@ const PortfolioRebalancingDashboard: React.FC = () => {
     );
   }
 
+  if (!loading && !error && portfolioAssets.length === 0) {
+    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
+  }
+
   if (!rebalancing || portfolioAssets.length === 0) {
+    // Portfolio data could not be loaded (a real failure, so offer a retry)
     return (
       <div className="min-h-screen bg-black p-6">
         <div className="text-center">
           <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
             <Target className="w-12 h-12 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-4">No Portfolio Data</h2>
-          <p className="text-gray-300 mb-6">Add some assets to your portfolio to start rebalancing.</p>
+          <h2 className="text-2xl font-bold text-white mb-4">Couldn't load your portfolio</h2>
+          <p className="text-gray-300 mb-6">{error || 'Something went wrong while loading your assets.'}</p>
           <button
             onClick={loadPortfolioData}
             className="px-6 py-3 bg-gray-800 text-white rounded-xl font-medium hover:bg-gray-700 transition-all duration-300"

@@ -5,6 +5,7 @@ import { Asset, AssetWithPrice, User } from './types';
 import AssetCard from './components/AssetCard';
 import PortfolioSummary from './components/PortfolioSummary';
 import EmptyState from './components/EmptyState';
+import PortfolioEmptyState from './components/PortfolioEmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
 import VaRDashboard from './components/VaRDashboard';
@@ -446,7 +447,11 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Analyze your portfolio performance and market trends</p>
               </div>
-              <AnalyticsPage />
+              {assets.length === 0 ? (
+                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
+              ) : (
+                <AnalyticsPage onAddAsset={() => setCurrentPage('coins')} />
+              )}
             </div>
           )}
           
@@ -458,7 +463,11 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
               </div>
-              <VaRDashboard />
+              {assets.length === 0 ? (
+                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
+              ) : (
+                <VaRDashboard onAddAsset={() => setCurrentPage('coins')} />
+              )}
             </div>
           )}
 
@@ -470,7 +479,11 @@ function App() {
                 </h2>
                 <p className="text-gray-400">Optimize your portfolio with Mean-Variance Optimization and Black-Litterman models</p>
               </div>
-              <PortfolioRebalancingDashboard />
+              {assets.length === 0 ? (
+                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
+              ) : (
+                <PortfolioRebalancingDashboard onAddAsset={() => setCurrentPage('coins')} />
+              )}
             </div>
           )}
 

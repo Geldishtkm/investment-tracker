@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PortfolioEmptyState from './PortfolioEmptyState';
 import { assetService } from '../services/api';
 import {
   TrendingUp,
@@ -39,11 +40,17 @@ interface RiskMetrics {
   diversificationScore: number;
 }
 
-const AnalyticsPage: React.FC = () => {
+interface AnalyticsPageProps {
+  /** Opens the add-asset flow; shown when the portfolio is empty. */
+  onAddAsset: () => void;
+}
+
+const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
   const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
   const [performance, setPerformance] = useState<AssetPerformance[]>([]);
   const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
   const [riskMessage, setRiskMessage] = useState<string | null>(null);
+  const [portfolioEmpty, setPortfolioEmpty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,8 +76,16 @@ const AnalyticsPage: React.FC = () => {
         diversificationScore = 0,
         assetBreakdown = [],
         riskMetricsAvailable = false,
-        riskMetricsMessage = null
+        riskMetricsMessage = null,
+        riskMetricsCode = null
       } = analyticsData;
+
+      // An empty portfolio is a normal state: show onboarding instead of zeroed metrics
+      if (totalAssets === 0 || riskMetricsCode === 'NO_ASSETS') {
+        setPortfolioEmpty(true);
+        return;
+      }
+      setPortfolioEmpty(false);
       
       const portfolioMetrics: PortfolioMetrics = {
         totalValue,
@@ -172,6 +187,10 @@ const AnalyticsPage: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (portfolioEmpty) {
+    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
   }
 
   if (error) {

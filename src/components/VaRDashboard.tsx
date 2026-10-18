@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PortfolioEmptyState from './PortfolioEmptyState';
 import { AlertTriangle, TrendingUp, TrendingDown, BarChart3, Shield, Target, Activity, DollarSign, Package, RefreshCw } from 'lucide-react';
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://invtracker-s5ain.ondigitalocean.app';
@@ -45,11 +46,17 @@ interface VaRSummary {
   };
 }
 
-const VaRDashboard: React.FC = () => {
+interface VaRDashboardProps {
+  /** Opens the add-asset flow; shown when the portfolio turns out to be empty. */
+  onAddAsset: () => void;
+}
+
+const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
   const [varCalculation, setVarCalculation] = useState<VaRCalculation | null>(null);
   const [varSummary, setVarSummary] = useState<VaRSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [portfolioEmpty, setPortfolioEmpty] = useState(false);
   const [confidenceLevel, setConfidenceLevel] = useState(0.95);
   const [timeHorizon, setTimeHorizon] = useState(1);
   const [activeTab, setActiveTab] = useState('overview');
@@ -78,10 +85,16 @@ const VaRDashboard: React.FC = () => {
       });
 
       if (!response.ok) {
-        // The backend explains data problems (e.g. an empty portfolio) in the "error" field
+        // The backend explains data problems in the "error" field
         const body = await response.json().catch(() => null);
+        if (body?.code === 'NO_ASSETS') {
+          // An empty portfolio is a normal state, not an error
+          setPortfolioEmpty(true);
+          return;
+        }
         throw new Error(body?.error || `Failed to calculate VaR (HTTP ${response.status})`);
       }
+      setPortfolioEmpty(false);
 
       const data = await response.json();
       setVarSummary(data);
@@ -138,6 +151,10 @@ const VaRDashboard: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (portfolioEmpty) {
+    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
   }
 
   if (error) {
