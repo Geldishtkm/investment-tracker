@@ -430,29 +430,73 @@ class TraderScoringTest {
             assertFalse(component(e, "disposition").available(), "a lot with an unknown buy date has no hold time");
         }
 
-        @Test
-        @DisplayName("FOMO: a buy after a +20% week counts; a buy in a flat market doesn't")
-        void fomo() {
-            LocalDate surgeDay = TODAY.minusDays(40), calmDay = TODAY.minusDays(100);
+        /** One dated buy of 10% of a $10,000 bankroll at the given price, the day after a $100 close. */
+        private Evaluation singleBuy(double price, double qty) {
             Map<LocalDate, Double> overrides = new HashMap<>();
-            overrides.put(surgeDay, 120.0); // 7 days earlier the price was 100: +20%
-            Map<String, SortedMap<LocalDate, Double>> p = Map.of("btc", prices(overrides));
-            List<TradeEvent> trades = List.of(buy(1, "btc", 1, 120, surgeDay), buy(2, "btc", 1, 100, calmDay));
-
-            Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, trades, p, Map.of(), null));
-            Component c = component(e, "fomo");
-            assertEquals(0.5, c.value(), EPS);
-            assertEquals(0.0, c.score(), EPS);
-            assertTrue(flag(e, "fomo").orElseThrow().detail().startsWith("1 of 2 buys came after a 7-day rally"));
+            overrides.put(TODAY.minusDays(11), 100.0);
+            List<TradeEvent> trades = List.of(buy(1, "btc", qty, price, TODAY.minusDays(10)));
+            return TraderScoring.evaluate(new Inputs(List.of(), null, null, "No price history.", trades,
+                    Map.of("btc", prices(overrides)), Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0));
         }
 
         @Test
-        @DisplayName("FOMO is unscored with fewer than two buys inside the price history")
+        @DisplayName("FOMO bands at full size: ≤+5% clean 50/50, +5–15% moderate 25/50, above +15% severe 0/50")
+        void fomoBands() {
+            assertEquals(50.0, component(singleBuy(104, 10), "fomo").points(), 1e-9);      // +4%
+            assertEquals(25.0, component(singleBuy(110, 1000.0 / 110), "fomo").points(), 1e-9); // +10%, 10% of capital
+            Evaluation pump = singleBuy(130, 1000.0 / 130);                                  // +30%, 10% of capital
+            assertEquals(0.0, component(pump, "fomo").points(), 1e-9);
+            Flag f = flag(pump, "fomo").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertEquals("Severe FOMO Chase", f.title());
+            assertTrue(f.detail().contains("after a +30.0% run-up in 24 hours (previous day's close)"), f.detail());
+            assertEquals(1.0, TraderScoring.fomoBandScore(0.05), EPS);
+            assertEquals(0.5, TraderScoring.fomoBandScore(0.15), EPS);
+            assertEquals(0.0, TraderScoring.fomoBandScore(0.1501), EPS);
+        }
+
+        @Test
+        @DisplayName("A chase costs in proportion to its size: 1% of capital barely, 10% or more in full")
+        void fomoSizeWeighted() {
+            assertEquals(45.0, component(singleBuy(130, 100.0 / 130), "fomo").points(), 1e-6);  // 1% into +30%
+            assertEquals(25.0, component(singleBuy(130, 500.0 / 130), "fomo").points(), 1e-6);  // 5% into +30%
+            assertEquals(0.0, component(singleBuy(130, 2500.0 / 130), "fomo").points(), 1e-6); // 25% into +30%
+            assertEquals(Severity.MEDIUM, flag(singleBuy(130, 100.0 / 130), "fomo").orElseThrow().severity());
+        }
+
+        @Test
+        @DisplayName("Hourly prices catch an intraday pump that daily closes miss, at the moment the buy was placed")
+        void fomoUsesExecutionTime() {
+            java.time.Instant placed = TODAY.atTime(15, 0).toInstant(java.time.ZoneOffset.UTC);
+            NavigableMap<java.time.Instant, Double> hourly = new TreeMap<>();
+            for (int h = 168; h >= 0; h--) {
+                java.time.Instant at = placed.minus(java.time.Duration.ofHours(h));
+                hourly.put(at, h > 3 ? 100.0 : 130.0);   // flat, then a +30% spike in the last 3 hours
+            }
+            TradeEvent pumpBuy = new TradeEvent(1, "btc", "btc", Side.BUY, 1000.0 / 130, 130, TODAY, true, false, placed);
+            // Daily closes don't show it: yesterday's close was 130 too (as if the spike were already in the close)
+            Map<LocalDate, Double> overrides = new HashMap<>();
+            overrides.put(TODAY.minusDays(1), 130.0);
+            SortedMap<LocalDate, Double> daily = prices(overrides);
+            daily.remove(TODAY); // and today's close doesn't exist yet
+            Inputs in = new Inputs(List.of(), null, null, "No price history.", List.of(pumpBuy), Map.of("btc", daily),
+                    Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0, null, Map.of("btc", hourly));
+            Evaluation e = TraderScoring.evaluate(in);
+            assertEquals(0.0, component(e, "fomo").points(), 1e-9);
+            assertTrue(flag(e, "fomo").orElseThrow().detail().contains("+30.0% run-up in 24 hours (hourly prices)"));
+
+            // Without hourly data the same buy falls back to the previous close and sees no run-up
+            Inputs daily0 = new Inputs(List.of(), null, null, "No price history.", List.of(pumpBuy), Map.of("btc", daily),
+                    Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0);
+            assertEquals(50.0, component(TraderScoring.evaluate(daily0), "fomo").points(), 1e-9);
+        }
+
+        @Test
+        @DisplayName("One buy is enough to judge; without price history around it, FOMO is left out")
         void fomoNeedsTrades() {
-            List<TradeEvent> trades = List.of(buy(1, "btc", 1, 100, TODAY.minusDays(10)),
-                    buy(2, "btc", 1, 100, TODAY.minusDays(900))); // older than the history
-            Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, trades,
-                    Map.of("btc", prices(Map.of())), Map.of(), null));
+            assertTrue(component(singleBuy(104, 10), "fomo").available());
+            List<TradeEvent> trades = List.of(buy(1, "btc", 1, 100, TODAY.minusDays(400)));
+            Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of("btc", prices(Map.of())), Map.of(), null));
             assertFalse(component(e, "fomo").available());
         }
 
@@ -677,29 +721,6 @@ class TraderScoringTest {
             // Current value counts when the portfolio has grown past what was invested
             Inputs grown = inputs(List.of(new Holding("btc", "btc", 4000)), null, null, List.of(churn.get(0)), Map.of(), Map.of(), null);
             assertEquals(4000.0, TraderScoring.sizing(grown).capitalBase(), EPS);
-        }
-
-        @Test
-        @DisplayName("FOMO is weighted by size: dust rally-buys aren't penalized, a big speculative one escalates")
-        void fomoBySize() {
-            LocalDate surgeDay = TODAY.minusDays(40), calmDay = TODAY.minusDays(100);
-            Map<LocalDate, Double> overrides = new HashMap<>();
-            overrides.put(surgeDay, 120.0);
-            SortedMap<LocalDate, Double> history = prices(overrides);
-
-            List<TradeEvent> dust = List.of(buy(1, "pepe", 0.05, 120, surgeDay), buy(2, "pepe", 1000, 100, calmDay));
-            Evaluation small = TraderScoring.evaluate(sized(dust, Map.of("pepe", MICRO), Map.of("pepe", history)));
-            assertEquals(0.0, component(small, "fomo").value(), EPS);
-            assertEquals(1.0, component(small, "fomo").score(), EPS);
-            assertEquals(Severity.INFO, flag(small, "fomo").orElseThrow().severity());
-
-            List<TradeEvent> big = List.of(buy(1, "pepe", 3, 120, surgeDay), buy(2, "btc", 10, 100, calmDay));
-            Evaluation large = TraderScoring.evaluate(sized(big, Map.of("pepe", MICRO, "btc", LARGE_CAP),
-                    Map.of("pepe", history, "btc", prices(Map.of()))));
-            assertEquals(2.0, component(large, "fomo").value(), 1e-9); // (4 + 0) / 2 buys
-            Flag f = flag(large, "fomo").orElseThrow();
-            assertEquals(Severity.HIGH, f.severity());
-            assertTrue(f.detail().contains("Position sizing: the largest put 26.5% of your capital into pepe, a micro-cap asset"), f.detail());
         }
 
         @Test

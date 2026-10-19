@@ -34,12 +34,14 @@ public class BehavioralAnalyticsService {
     private final CoinMarketDataService coinMarketDataService;
     private final AnalyticsProperties properties;
     private final AssetPriceRefreshService priceRefreshService;
+    private final CryptoPriceService cryptoPriceService;
 
     public BehavioralAnalyticsService(AssetService assetService, TradeService tradeService,
                                       PortfolioDataService portfolioDataService, PriceHistoryService priceHistoryService,
                                       CoinMarketDataService coinMarketDataService, AnalyticsProperties properties,
-                                      AssetPriceRefreshService priceRefreshService) {
+                                      AssetPriceRefreshService priceRefreshService, CryptoPriceService cryptoPriceService) {
         this.priceRefreshService = priceRefreshService;
+        this.cryptoPriceService = cryptoPriceService;
         this.assetService = assetService;
         this.tradeService = tradeService;
         this.portfolioDataService = portfolioDataService;
@@ -110,7 +112,8 @@ public class BehavioralAnalyticsService {
             if (id == null) continue; // a coin CoinGecko doesn't know can't be compared with the market
             events.add(new TraderScoring.TradeEvent(t.getId(), id, t.getAssetName(),
                     t.getSide() == Trade.Side.BUY ? TraderScoring.Side.BUY : TraderScoring.Side.SELL,
-                    t.getQuantity(), t.getPrice(), t.getTradeDate(), t.isDateKnown(), t.getSource() == Trade.Source.IMPORTED));
+                    t.getQuantity(), t.getPrice(), t.getTradeDate(), t.isDateKnown(), t.getSource() == Trade.Source.IMPORTED,
+                    executedAt(t)));
         }
         Set<String> tradedCoins = new LinkedHashSet<>();
         for (TraderScoring.TradeEvent e : events) tradedCoins.add(e.coinId());
@@ -132,7 +135,8 @@ public class BehavioralAnalyticsService {
         Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
                 historyReason, events, dailyPrices, currentPrices, market.volumes(), null,
                 properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns,
-                market.marketCaps(), user.getInitialBankroll() == null ? null : user.getInitialBankroll().doubleValue(), recentMarket));
+                market.marketCaps(), user.getInitialBankroll() == null ? null : user.getInitialBankroll().doubleValue(), recentMarket,
+                hourlyPrices(tradedCoins)));
         // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
         boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
         return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));
@@ -164,6 +168,45 @@ public class BehavioralAnalyticsService {
             logger.debug("Ethereum history unavailable for the market benchmark: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * When a trade was placed: its recording time, if it was recorded on its own trade date (UTC). Backdated
+     * and imported trades have no known time of day.
+     */
+    static Instant executedAt(Trade t) {
+        if (t.getCreatedAt() == null || !t.isDateKnown() || t.getSource() == Trade.Source.IMPORTED) return null;
+        Instant created = t.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant();
+        return created.atZone(ZoneOffset.UTC).toLocalDate().equals(t.getTradeDate()) ? created : null;
+    }
+
+    /**
+     * Hourly prices over the last week for the traded coins, from the cached top-500 market list (its 7-day
+     * sparkline ends at the list's last update). No extra CoinGecko calls; coins outside the list have none.
+     */
+    private Map<String, NavigableMap<Instant, Double>> hourlyPrices(Set<String> coins) {
+        Map<String, NavigableMap<Instant, Double>> out = new HashMap<>();
+        if (coins.isEmpty()) return out;
+        try {
+            for (Map<String, Object> coin : cryptoPriceService.getTopCoins()) {
+                String id = String.valueOf(coin.get("id"));
+                if (!coins.contains(id)) continue;
+                if (!(coin.get("sparkline_in_7d") instanceof Map<?, ?> spark) || !(spark.get("price") instanceof List<?> prices)
+                        || !(coin.get("last_updated") instanceof String updated)) continue;
+                Instant end = Instant.parse(updated);
+                NavigableMap<Instant, Double> series = new TreeMap<>();
+                int n = prices.size();
+                for (int i = 0; i < n; i++) {
+                    if (prices.get(i) instanceof Number price && price.doubleValue() > 0) {
+                        series.put(end.minus(java.time.Duration.ofHours(n - 1L - i)), price.doubleValue());
+                    }
+                }
+                if (!series.isEmpty()) out.put(id, series);
+            }
+        } catch (Exception e) {
+            logger.debug("Hourly prices unavailable for FOMO checks: {}", e.getMessage());
+        }
+        return out;
     }
 
     /** Each holding's daily returns, in holding order, or null if a holding isn't in the snapshot. */

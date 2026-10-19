@@ -33,8 +33,10 @@ public final class TraderScoring {
     static final double IMPULSIVE_DAY_SHARE = 0.75;
 
     // Behavioral detection thresholds
-    static final double FOMO_RUN_UP = 0.15;          // bought after a 7-day rally of at least +15%
-    static final int FOMO_LOOKBACK_DAYS = 7;
+    // FOMO: the buy's execution price against the price 24 hours before it
+    static final double FOMO_CLEAN_RUN_UP = 0.05;    // up to +5%: a clean entry (full credit)
+    static final double FOMO_RUN_UP = 0.15;          // +5% to +15%: a moderate chase (half); above +15%: a severe chase (none)
+    static final double FOMO_FULL_SIZE_SHARE = 0.10; // a chase's penalty grows with its size, in full from 10% of capital
     static final double PANIC_DROP = -0.08;          // sold on a day the coin fell 8% or more in 24h...
     static final int PANIC_WINDOW_DAYS = 3;          // ...at the lowest price within ±3 days
     static final double PANIC_TROUGH_TOLERANCE = 0.01;
@@ -71,8 +73,14 @@ public final class TraderScoring {
     public enum Severity { HIGH, MEDIUM, LOW, INFO }
 
     /** One ledger trade; imported trades are holdings from before the ledger, with unknown dates. */
+    /** executedAt: when the trade was placed, if known to the hour (null for backdated or imported trades). */
     public record TradeEvent(long id, String coinId, String name, Side side, double quantity, double price,
-                             LocalDate date, boolean dateKnown, boolean imported) {
+                             LocalDate date, boolean dateKnown, boolean imported, java.time.Instant executedAt) {
+        public TradeEvent(long id, String coinId, String name, Side side, double quantity, double price,
+                          LocalDate date, boolean dateKnown, boolean imported) {
+            this(id, coinId, name, side, quantity, price, date, dateKnown, imported, null);
+        }
+
         double notional() { return quantity * price; }
     }
 
@@ -94,6 +102,8 @@ public final class TraderScoring {
      *                                 all buys)
      * @param recentMarketReturns      the market's (50/50 BTC/ETH) daily returns over the same most recent days as
      *                                 the end of portfolioReturns, for the 7-day beta; null to use benchmarkReturns
+     * @param hourlyPrices             recent hourly prices per coin (the last week), to price a buy's run-up at the
+     *                                 moment it was placed; empty when unavailable
      * @param riskTargetVolatility     no longer scored; kept so callers don't change
      */
     public record Inputs(List<Holding> holdings,
@@ -111,7 +121,20 @@ public final class TraderScoring {
                          double[][] assetReturns,
                          Map<String, Double> marketCaps,
                          Double initialBankroll,
-                         double[] recentMarketReturns) {
+                         double[] recentMarketReturns,
+                         Map<String, NavigableMap<java.time.Instant, Double>> hourlyPrices) {
+
+        /** Inputs without hourly prices: run-ups are judged against the previous day's close. */
+        public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
+                      String historyUnavailableReason, List<TradeEvent> trades,
+                      Map<String, SortedMap<LocalDate, Double>> dailyPrices, Map<String, Double> currentPrices,
+                      Map<String, Double> dailyVolumes, Double riskTargetVolatility, double riskFreeRate,
+                      int periodsPerYear, LocalDate today, double[][] assetReturns, Map<String, Double> marketCaps,
+                      Double initialBankroll, double[] recentMarketReturns) {
+            this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
+                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, assetReturns,
+                    marketCaps, initialBankroll, recentMarketReturns, Map.of());
+        }
 
         /** Inputs without per-holding returns: diversification is then judged on concentration alone. */
         public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
@@ -296,7 +319,7 @@ public final class TraderScoring {
             case "independent-bets" -> "Combine coins that don't move together: " + fmt1(v) + " independent bets → 4.";
             case "position-sizing" -> "Reduce your largest position (" + pct0(v) + " of capital) to 15% or less.";
             case "disposition" -> "Don't hold losers longer than winners (now " + fmt1(v) + "×): set an exit before each buy.";
-            case "fomo" -> "Avoid buying right after a 15%+ weekly rally, or keep those buys small.";
+            case "fomo" -> "Avoid buying after a 5%+ run-up in 24 hours; if you chase, keep it to 1–2% of capital.";
             case "panic" -> "Avoid selling during sharp one-day drops; set exit levels in advance.";
             case "speculative-accumulation" -> "Keep buys of micro-cap and very volatile coins small and within a fixed budget.";
             case "deployment-pacing" -> "Deploy at most 25% of capital on any single day (busiest so far: " + pct0(v) + ").";
@@ -627,52 +650,52 @@ public final class TraderScoring {
                     "Needs at least one winning and one losing sell with known buy and sell dates."));
         }
 
-        // FOMO chasing: buys made right after a sharp rally, weighted by how much capital each one committed
-        int evaluableBuys = 0, fomoBuys = 0;
-        double fomoRunUpSum = 0.0, fomoImpact = 0.0;
-        TradeSize largestFomo = null;
+        // FOMO chasing: each buy's execution price against the price 24 hours before it was placed (hourly prices
+        // for recent buys, else the previous day's close), banded and weighted by the buy's share of capital
+        List<FomoEntry> entries = new ArrayList<>();
         for (TradeEvent t : in.trades()) {
-            if (t.side() != Side.BUY || !t.dateKnown()) continue;
-            Double now = priceOn(in, t.coinId(), t.date());
-            Double before = priceOn(in, t.coinId(), t.date().minusDays(FOMO_LOOKBACK_DAYS));
-            if (now == null || before == null || before <= 0) continue;
-            evaluableBuys++;
-            double runUp = now / before - 1.0;
-            if (runUp >= FOMO_RUN_UP) {
-                fomoBuys++;
-                fomoRunUpSum += runUp;
-                TradeSize size = sizing.of(t);
-                fomoImpact += size.impact();
-                if (largestFomo == null || size.share() > largestFomo.share()) largestFomo = size;
-            }
+            if (t.side() != Side.BUY || !t.dateKnown() || t.imported()) continue;
+            FomoEntry entry = fomoEntry(in, t, sizing.of(t));
+            if (entry != null) entries.add(entry);
         }
-        if (evaluableBuys >= MIN_EVALUABLE_TRADES) {
-            double rate = fomoImpact / evaluableBuys;
-            out.add(component("fomo", "FOMO chasing", 50, rate, fomoBuys + " of " + evaluableBuys + " buys · size-weighted "
-                            + fmt2(rate), inv(rate, 0.0, 0.5),
-                    "Buys made after the coin rose " + pct0(FOMO_RUN_UP) + "+ in the previous " + FOMO_LOOKBACK_DAYS
-                            + " days, each counted by its share of capital (" + SIZING_RULE + "), per evaluable buy"));
-            if (fomoBuys > 0 && fomoImpact == 0.0) {
-                flags.add(new Flag("fomo", Severity.INFO, "behavior", "FOMO Buys Too Small to Matter",
-                        fomoBuys + " of " + evaluableBuys + " buys came after a rally of " + pct0(FOMO_RUN_UP)
-                                + " or more, but each was under " + pct0(DUST_SHARE) + " of your capital, so they aren't penalized.",
-                        "Small experiments are fine; keep rally-chasing buys this small if you make them at all."));
-            } else if (fomoBuys > 0) {
-                boolean oversized = largestFomo.share() >= FULL_IMPACT_SHARE;
-                Severity severity = rate >= 0.5 || (oversized && largestFomo.asset().speculative()) ? Severity.HIGH
-                        : rate >= 0.25 || oversized ? Severity.MEDIUM : Severity.LOW;
-                flags.add(new Flag("fomo", severity, "behavior", "FOMO Chasing Flagged",
-                        fomoBuys + " of " + evaluableBuys + " buys came after a " + FOMO_LOOKBACK_DAYS + "-day rally of "
-                                + pct0(FOMO_RUN_UP) + " or more (average +" + pct1(fomoRunUpSum / fomoBuys) + "). "
-                                + "Position sizing: the largest put " + pct1(largestFomo.share()) + " of your capital into "
-                                + largestFomo.trade().name() + (largestFomo.asset().speculative()
-                                        ? ", a " + largestFomo.asset().label() : "") + ".",
-                        "Wait for a pullback or scale in over several days instead of buying into a spike; "
-                                + "if you do chase, keep the position to 1–2% of capital and write down the entry reason first."));
+        if (!entries.isEmpty()) {
+            double worst = 0.0, totalPenalty = 0.0, totalWeight = 0.0;
+            FomoEntry worstEntry = null;
+            for (FomoEntry f : entries) {
+                totalPenalty += f.penalty();
+                totalWeight += f.weight();
+                if (f.penalty() > worst) {
+                    worst = f.penalty();
+                    worstEntry = f;
+                }
+            }
+            // The worst single chase, or the size-weighted average over all buys, whichever is worse
+            double penalty = Math.min(1.0, Math.max(worst, totalPenalty / Math.max(1.0, totalWeight)));
+            long severe = entries.stream().filter(f -> f.runUp() > FOMO_RUN_UP).count();
+            long moderate = entries.stream().filter(f -> f.runUp() > FOMO_CLEAN_RUN_UP && f.runUp() <= FOMO_RUN_UP).count();
+            out.add(component("fomo", "FOMO chasing", 50, penalty,
+                    entries.size() + " buy" + (entries.size() == 1 ? "" : "s") + " checked · " + severe + " severe, " + moderate + " moderate chase"
+                            + (moderate == 1 ? "" : "s"),
+                    1.0 - penalty,
+                    "Each buy's price against the price 24 hours before it: up to +5% is a clean entry, +5–15% a moderate chase "
+                            + "(half credit), above +15% a severe chase (none). A chase costs in proportion to its size, in full from "
+                            + pct0(FOMO_FULL_SIZE_SHARE) + " of capital; the worst single chase or the size-weighted average counts, "
+                            + "whichever is worse"));
+            if (worstEntry != null && worst > 0) {
+                TradeEvent t = worstEntry.size().trade();
+                boolean full = worstEntry.size().share() >= FOMO_FULL_SIZE_SHARE;
+                Severity severity = worstEntry.runUp() > FOMO_RUN_UP ? (full ? Severity.HIGH : Severity.MEDIUM)
+                        : full ? Severity.MEDIUM : Severity.LOW;
+                flags.add(new Flag("fomo", severity, "behavior", worstEntry.runUp() > FOMO_RUN_UP ? "Severe FOMO Chase" : "FOMO Chasing Flagged",
+                        "Bought " + t.name() + " at " + money(t.price()) + " after a " + signedPct1(worstEntry.runUp()) + " run-up in 24 hours ("
+                                + worstEntry.basis() + "), putting " + pct1(worstEntry.size().share()) + " of your capital into it"
+                                + (t.dateKnown() ? " on " + t.date() : "") + "."
+                                + (severe + moderate > 1 ? " " + (severe + moderate) + " buys chased a run-up in total." : ""),
+                        "Wait for a pullback or scale in over several days instead of buying into a spike; if you do chase, "
+                                + "keep it to 1–2% of capital and write down the entry reason first."));
             }
         } else {
-            out.add(unavailable("fomo", "FOMO chasing", 50, "Needs at least " + MIN_EVALUABLE_TRADES
-                    + " dated buys within the last year of price history."));
+            out.add(unavailable("fomo", "FOMO chasing", 50, "Needs a dated buy with price history around it."));
         }
 
         // Panic capitulation: selling into a sharp 24h fall, at the local low
@@ -710,6 +733,47 @@ public final class TraderScoring {
         speculativeAccumulationComponent(sizing, flags, out);
         deploymentPacingComponent(in, sizing, flags, out);
         return out;
+    }
+
+    /**
+     * One buy judged for FOMO: runUp is its execution price against the price 24 hours earlier; score is the band
+     * (1 clean, 0.5 moderate, 0 severe); weight the buy's size (in full from FOMO_FULL_SIZE_SHARE of capital);
+     * penalty = (1 − score) × weight.
+     */
+    record FomoEntry(TradeSize size, double runUp, double score, double weight, double penalty, String basis) {}
+
+    static FomoEntry fomoEntry(Inputs in, TradeEvent t, TradeSize size) {
+        double baseline = Double.NaN;
+        String basis = null;
+        NavigableMap<java.time.Instant, Double> hourly = in.hourlyPrices() == null ? null : in.hourlyPrices().get(t.coinId());
+        if (t.executedAt() != null && hourly != null && !hourly.isEmpty()) {
+            java.time.Instant dayBefore = t.executedAt().minus(java.time.Duration.ofHours(24));
+            Map.Entry<java.time.Instant, Double> point = hourly.floorEntry(dayBefore);
+            // Only use the hourly series when it actually covers the day before the buy
+            if (point != null && java.time.Duration.between(point.getKey(), dayBefore).toHours() <= 2) {
+                baseline = point.getValue();
+                basis = "hourly prices";
+            }
+        }
+        if (Double.isNaN(baseline)) {
+            Double close = priceOn(in, t.coinId(), t.date().minusDays(1));
+            if (close != null) {
+                baseline = close;
+                basis = "previous day's close";
+            }
+        }
+        if (!(baseline > 0) || !(t.price() > 0)) return null;
+        double runUp = t.price() / baseline - 1.0;
+        double score = fomoBandScore(runUp);
+        double weight = Math.min(1.0, size.share() / FOMO_FULL_SIZE_SHARE);
+        return new FomoEntry(size, runUp, score, weight, (1.0 - score) * weight, basis);
+    }
+
+    /** Clean entry (≤ +5%) 1, moderate chase (+5% to +15%) 0.5, severe chase (above +15%) 0. */
+    static double fomoBandScore(double runUp) {
+        if (runUp <= FOMO_CLEAN_RUN_UP) return 1.0;
+        if (runUp <= FOMO_RUN_UP) return 0.5;
+        return 0.0;
     }
 
     record Disposition(double ratio, double loserDays, double winnerDays, int losers, int winners) {}
