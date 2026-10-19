@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Circle, Lock, RefreshCw, Unlock } from 'lucide-react';
 import { ApiError, assetService } from '../services/api';
+import { useScore } from '../hooks/useScore';
 import { DiagnosticFlag, InstitutionalScore, ScoreCap, ScorePillar, TierGate } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import ScoreGauge from './institutional/ScoreGauge';
@@ -25,23 +26,10 @@ const MAX_STALE_RETRIES = 3;
 const SIZING_FLAGS = new Set(['position-sizing', 'speculative-accumulation', 'impulsive-deployment']);
 
 const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = ({ onAddAsset, refreshKey = 0 }) => {
-  const [data, setData] = useState<InstitutionalScore | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<ApiError | Error | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await assetService.getInstitutionalScore());
-    } catch (e) {
-      setError(e instanceof Error ? e : new Error('Failed to load the evaluation'));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  // Shared with the header: one request per trade, and the last score stays visible while it updates
+  const { data, updating, error, refresh } = useScore(refreshKey);
+  const loading = updating && !data;
+  const load = useCallback(() => refresh(true), [refresh]);
 
   // Saved history was used because CoinGecko was busy; the backend refetches it in the background,
   // so check again shortly (a few times at most) instead of leaving the user on old data
@@ -69,7 +57,7 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
 
   if (error instanceof ApiError && error.code === 'NO_ASSETS') return <PortfolioEmptyState onAddAsset={onAddAsset} />;
 
-  if (error || !data) {
+  if (!data) {
     const notEnough = error instanceof ApiError && error.code === 'INSUFFICIENT_HISTORY';
     return (
       <div className={`rounded-lg border bg-term-panel p-10 text-center ${notEnough ? 'border-term-line' : 'border-term-down/40'}`} role="alert">
@@ -92,9 +80,12 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
       {/* Scorecard */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel title={<Term term="TIS">Trader Index Score</Term>} id="tis"
-               actions={<button type="button" className={btn.ghost} onClick={() => void load()} aria-label="Re-evaluate">
-                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-               </button>}>
+               actions={<>
+                 {updating && <span className="text-[11px] text-term-accent" role="status">Updating…</span>}
+                 <button type="button" className={btn.ghost} onClick={() => void load()} aria-label="Re-evaluate" disabled={updating}>
+                   <RefreshCw size={14} className={updating ? 'animate-spin' : ''} />
+                 </button>
+               </>}>
           <ScoreGauge score={data.score} maxScore={data.maxScore} tier={data.tier}
                       provisional={data.provisional} pillarsScored={data.pillarsScored} />
           <div className="mt-4 grid grid-cols-3 gap-3 border-t border-term-line pt-3">

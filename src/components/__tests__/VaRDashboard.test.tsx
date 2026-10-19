@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
-import VaRDashboard, { VaRCalculation } from '../VaRDashboard';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import VaRDashboard, { VaRCalculation, resetVaRCache } from '../VaRDashboard';
 
 const auth = vi.hoisted(() => ({ authFetch: vi.fn() }));
 vi.mock('../../services/authService', () => ({ authService: auth }));
@@ -15,7 +15,7 @@ const calc = (overrides: Partial<VaRCalculation> = {}): VaRCalculation => ({
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
 
 describe('VaRDashboard', () => {
-  beforeEach(() => { auth.authFetch.mockReset(); });
+  beforeEach(() => { auth.authFetch.mockReset(); resetVaRCache(); });
 
   it('measures the whole account: coins plus riskless cash', async () => {
     auth.authFetch.mockResolvedValue(ok(calc()));
@@ -30,7 +30,8 @@ describe('VaRDashboard', () => {
     expect(cash).toHaveTextContent('riskless');
     const table = screen.getByRole('table', { name: 'Exposure breakdown' });
     // A −50% shock hits only the coins: $2,544.50, 25.4% of the account
-    expect(within(table).getAllByRole('row').at(-1)).toHaveTextContent('-$2,544.50');
+    const rows = within(table).getAllByRole('row');
+    expect(rows[rows.length - 1]).toHaveTextContent('-$2,544.50');
   });
 
   it('recalculates when positions change', async () => {
@@ -41,5 +42,20 @@ describe('VaRDashboard', () => {
     rerender(<VaRDashboard onAddAsset={() => {}} refreshKey={1} />);
     expect(await screen.findByText('coins $9,000 · cash $1,000')).toBeInTheDocument();
     expect(auth.authFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses a fresh result when the same inputs come back, and Recalculate always reruns', async () => {
+    auth.authFetch.mockResolvedValue(ok(calc()));
+    render(<VaRDashboard onAddAsset={() => {}} />);
+    await screen.findByTestId('var-account');
+    fireEvent.click(screen.getByRole('button', { name: '99%' }));
+    await screen.findByText(/1-day loss at 99%/);
+    fireEvent.click(screen.getByRole('button', { name: '95%' }));
+    await screen.findByText(/1-day loss at 95%/);
+    expect(auth.authFetch).toHaveBeenCalledTimes(2); // 95% again came from memory
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recalculate' }));
+    await screen.findByTestId('var-account');
+    await vi.waitFor(() => expect(auth.authFetch).toHaveBeenCalledTimes(3));
   });
 });

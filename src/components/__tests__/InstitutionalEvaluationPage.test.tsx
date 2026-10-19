@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import InstitutionalEvaluationPage, { STALE_RETRY_MS } from '../InstitutionalEvaluationPage';
 import { scoreFixture } from './fixtures';
+import { resetScoreCache } from '../../hooks/useScore';
 
 const api = vi.hoisted(() => ({ getInstitutionalScore: vi.fn(), setRiskTarget: vi.fn() }));
 vi.mock('../../services/api', async (importOriginal) => {
@@ -13,6 +14,7 @@ const { ApiError } = await import('../../services/api');
 
 describe('InstitutionalEvaluationPage', () => {
   beforeEach(() => {
+    resetScoreCache();
     api.getInstitutionalScore.mockReset();
     api.setRiskTarget.mockReset();
   });
@@ -63,6 +65,7 @@ describe('InstitutionalEvaluationPage', () => {
     const card = await screen.findByTestId('diversification-card');
     expect(within(card).getByRole('heading', { name: 'Risk & Diversification' })).toBeInTheDocument();
     unmount();
+    resetScoreCache(); // a new evaluation, not the one just cached
 
     api.getInstitutionalScore.mockResolvedValueOnce(scoreFixture({ diversification: null }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);

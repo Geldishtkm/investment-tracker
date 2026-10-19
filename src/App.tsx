@@ -6,12 +6,13 @@ import PortfolioPage from './components/PortfolioPage';
 import PortfolioEmptyState, { AssetsLoadError } from './components/PortfolioEmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
-import VaRDashboard from './components/VaRDashboard';
+import VaRDashboard, { resetVaRCache } from './components/VaRDashboard';
 import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDashboard';
 import InstitutionalEvaluationPage from './components/InstitutionalEvaluationPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
 import BankrollModal from './components/BankrollModal';
+import { resetScoreCache, useScore } from './hooks/useScore';
 import AccountModal from './components/AccountModal';
 
 
@@ -78,7 +79,6 @@ function App() {
   const [showAccount, setShowAccount] = useState(false);
   // Bumped after every trade; pages that compute on positions (score, VaR, analytics) reload when it changes
   const [dataVersion, setDataVersion] = useState(0);
-  const [score, setScore] = useState<{ score: number; rank: number; name: string } | null>(null);
 
   const loadAccount = async (): Promise<Account | null> => {
     try {
@@ -158,6 +158,8 @@ function App() {
   // An expired or rejected token anywhere in the app ends the session and shows the login page
   useEffect(() => {
     const onSessionExpired = (event: Event) => {
+      resetScoreCache();
+      resetVaRCache();
       setIsAuthenticated(false);
       setCurrentUser(null);
       setAccount(null);
@@ -274,6 +276,8 @@ function App() {
   };
 
   const handleLogout = () => {
+    resetScoreCache();
+    resetVaRCache();
     void authService.logout();
     setIsAuthenticated(false);
     setCurrentUser(null);
@@ -288,6 +292,8 @@ function App() {
   const handleAccountDeleted = () => {
     // The server already ended every session; just clear this browser's copy
     authService.clearAuth();
+    resetScoreCache();
+    resetVaRCache();
     setIsAuthenticated(false);
     setCurrentUser(null);
     setAccount(null);
@@ -312,15 +318,11 @@ function App() {
   };
 
   // Show authentication pages if not authenticated
-  // The Trader Index Score in the header, re-evaluated after every trade
-  useEffect(() => {
-    if (!isAuthenticated) { setScore(null); return; }
-    let cancelled = false;
-    assetService.getInstitutionalScore()
-      .then(s => { if (!cancelled) setScore({ score: s.score, rank: s.tier.rank, name: s.tier.name }); })
-      .catch(() => { if (!cancelled) setScore(null); });
-    return () => { cancelled = true; };
-  }, [isAuthenticated, dataVersion]);
+  // The Trader Index Score in the header: fetched once per data version (after every trade), shared
+  // with the Evaluation page, and never recomputed by the background price refresh
+  const scoreState = useScore(dataVersion, isAuthenticated);
+  const score = isAuthenticated && scoreState.data
+    ? { score: scoreState.data.score, rank: scoreState.data.tier.rank, name: scoreState.data.tier.name } : null;
 
   // Keep values current while the tab is open: re-price positions every minute when visible
   useEffect(() => {
@@ -401,11 +403,13 @@ function App() {
           <div className="flex shrink-0 items-center gap-4">
             {score && (
               <button type="button" onClick={() => setCurrentPage('institutional')} data-testid="score-chip"
-                      title={`Trader Index Score: Tier ${score.rank} · ${score.name}`}
+                      title={`Trader Index Score: Tier ${score.rank} · ${score.name}${scoreState.updating ? ' (updating)' : ''}`}
+                      aria-busy={scoreState.updating}
                       className="hidden items-center gap-2 rounded-md border border-term-line px-2.5 py-1 text-left transition-colors hover:border-white/20 lg:flex">
                 <span className="text-[10px] font-medium uppercase tracking-wider text-term-dim">TIS</span>
                 <span className="num text-sm text-term-text">{score.score}</span>
                 <span className="text-[11px] text-term-accent">T{score.rank}</span>
+                {scoreState.updating && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-term-accent" aria-label="Updating" />}
               </button>
             )}
             {account?.cash != null && (

@@ -44,6 +44,44 @@ export interface VaRCalculation {
 }
 
 const CONFIDENCE = [0.9, 0.95, 0.99];
+
+/**
+ * Results by data version, confidence and horizon. The Monte Carlo run happens on request only: when the
+ * page opens, after a trade (new version) or on Recalculate. Within FRESH_MS the same inputs are served from
+ * memory, and identical requests in flight are shared.
+ */
+export const VAR_FRESH_MS = 30_000;
+const varCache = new Map<string, { at: number; data: VaRCalculation }>();
+const varInflight = new Map<string, Promise<VaRCalculation>>();
+
+export function resetVaRCache() {
+  varCache.clear();
+  varInflight.clear();
+}
+
+/** Thrown for an empty portfolio, which the page shows as the empty state. */
+class NoAssetsError extends Error {}
+
+function fetchVaR(version: number, confidence: number, horizon: number, force: boolean): Promise<VaRCalculation> {
+  const key = `${version}|${confidence}|${horizon}`;
+  const hit = varCache.get(key);
+  if (!force && hit && Date.now() - hit.at < VAR_FRESH_MS) return Promise.resolve(hit.data);
+  const pending = varInflight.get(key);
+  if (!force && pending) return pending;
+  const promise = authService.authFetch(`${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidence}&timeHorizon=${horizon}`)
+    .then(async response => {
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        if (body?.code === 'NO_ASSETS') throw new NoAssetsError();
+        throw new Error(body?.error || `Failed to calculate VaR (HTTP ${response.status})`);
+      }
+      varCache.set(key, { at: Date.now(), data: body as VaRCalculation });
+      return body as VaRCalculation;
+    })
+    .finally(() => { if (varInflight.get(key) === promise) varInflight.delete(key); });
+  varInflight.set(key, promise);
+  return promise;
+}
 const HORIZONS = [1, 7, 30];
 const SHOCKS = [-0.1, -0.3, -0.5];
 
@@ -87,27 +125,19 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
   const [confidenceLevel, setConfidenceLevel] = useState(0.95);
   const [timeHorizon, setTimeHorizon] = useState(1);
 
-  const calculateVaR = useCallback(async () => {
+  const calculateVaR = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await authService.authFetch(
-        `${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`);
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        // An empty portfolio is a normal state, not an error; data problems are explained in "error"
-        if (body?.code === 'NO_ASSETS') { setPortfolioEmpty(true); return; }
-        throw new Error(body?.error || `Failed to calculate VaR (HTTP ${response.status})`);
-      }
+      setCalc(await fetchVaR(refreshKey, confidenceLevel, timeHorizon, force));
       setPortfolioEmpty(false);
-      setCalc(body as VaRCalculation);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to calculate VaR');
+      // An empty portfolio is a normal state, not an error
+      if (err instanceof NoAssetsError) setPortfolioEmpty(true);
+      else setError(err instanceof Error ? err.message : 'Failed to calculate VaR');
     } finally {
       setLoading(false);
     }
-    // refreshKey: recalculate after trades
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confidenceLevel, timeHorizon, refreshKey]);
 
   useEffect(() => { void calculateVaR(); }, [calculateVaR]);
@@ -170,7 +200,7 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
         </div>
         <div className="ml-auto flex items-center gap-3">
           {level && <Badge tone={level === 'HIGH' ? 'down' : level === 'MEDIUM' ? 'warn' : 'up'}>{level} risk</Badge>}
-          <button type="button" className={btn.secondary} onClick={() => void calculateVaR()} disabled={loading} aria-label="Recalculate">
+          <button type="button" className={btn.secondary} onClick={() => void calculateVaR(true)} disabled={loading} aria-label="Recalculate">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Recalculate
           </button>
         </div>
