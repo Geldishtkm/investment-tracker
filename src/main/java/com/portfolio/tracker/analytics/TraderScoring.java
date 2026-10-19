@@ -26,9 +26,10 @@ import java.util.*;
  *   <li>hard caps: stagnant portfolios stay at or below Tier 8 (≤ 399); provisional scores, no
  *       recorded sells, a thin trade history, or no positive return on capital stay at or below
  *       Tier 7 (≤ 499)</li>
- *   <li>tier gates: Tier 5 and above, Tier 3 and above, and Tier 1 each require a minimum return on
- *       capital and number of trades, with no waiting period; failing a gate caps the score just
- *       below it</li>
+ *   <li>tier gates: Tier 5 and above needs a minimum return on capital and number of trades, with no
+ *       waiting period. Tier 3 and Tier 1 also need discipline: a minimum Sharpe ratio, a capped largest
+ *       position and one-day deployment, and profits that don't hang on a single trade. Failing a gate caps
+ *       the score just below it</li>
  * </ul>
  */
 public final class TraderScoring {
@@ -67,9 +68,9 @@ public final class TraderScoring {
     static final int PANIC_WINDOW_DAYS = 3;          // ...at the lowest price within ±3 days
     static final double PANIC_TROUGH_TOLERANCE = 0.01;
     static final int MIN_EVALUABLE_TRADES = 2;
-    static final int BETA_WINDOW = 30;
-    static final int BETA_STEP = 5;
-    static final int MIN_BETA_WINDOWS = 3;
+    /** The benchmark beta looks at the most recent week of daily returns (at least 3 are needed). */
+    public static final int BETA_DAYS = 7;
+    static final int MIN_BETA_DAYS = 3;
 
     // Position sizing: penalties scale with each trade's share of the capital base
     static final double DUST_SHARE = 0.01;            // under 1% of capital: negligible, no penalty
@@ -84,8 +85,8 @@ public final class TraderScoring {
      */
     static final int MIN_RISK_OBSERVATIONS = 60;
     static final int MIN_VOLATILITY_DAYS = MIN_RISK_OBSERVATIONS;
-    /** Rolling-beta windows where the benchmark barely moved (below this share of its typical variance) are skipped. */
-    static final double MIN_BENCHMARK_VARIANCE_SHARE = 0.05;
+    /** Daily returns further than this many robust standard deviations from the median are trimmed for volatility. */
+    static final double VOLATILITY_TRIM_SIGMAS = 5.0;
 
     private TraderScoring() {
     }
@@ -114,13 +115,15 @@ public final class TraderScoring {
      * @param dailyPrices              daily price per coin, for evaluating trades around their dates
      * @param currentPrices            current price per coin, for valuing open lots
      * @param dailyVolumes             current 24h trading volume in USD per coin
-     * @param riskTargetVolatility     the user's target annual volatility, or null if not set
      * @param assetReturns             assetReturns[t][i] = daily return of holdings[i] on the same days as
      *                                 portfolioReturns, for correlations; null if unavailable
      * @param marketCaps               current market capitalisation in USD per coin; a coin with a volume in
      *                                 dailyVolumes but no cap here is one CoinGecko lists without a verified cap
      * @param initialBankroll          the user's starting capital S₀, or null when not set (S₀ is then the sum of
      *                                 all buys)
+     * @param recentMarketReturns      the market's (50/50 BTC/ETH) daily returns over the same most recent days as
+     *                                 the end of portfolioReturns, for the 7-day beta; null to use benchmarkReturns
+     * @param riskTargetVolatility     no longer scored; kept so callers don't change
      */
     public record Inputs(List<Holding> holdings,
                          double[] portfolioReturns,
@@ -136,7 +139,8 @@ public final class TraderScoring {
                          LocalDate today,
                          double[][] assetReturns,
                          Map<String, Double> marketCaps,
-                         Double initialBankroll) {
+                         Double initialBankroll,
+                         double[] recentMarketReturns) {
 
         /** Inputs without per-holding returns: diversification is then judged on concentration alone. */
         public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
@@ -145,7 +149,19 @@ public final class TraderScoring {
                       Map<String, Double> dailyVolumes, Double riskTargetVolatility, double riskFreeRate,
                       int periodsPerYear, LocalDate today) {
             this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
-                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, null, Map.of(), null);
+                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, null, Map.of(), null, null);
+        }
+
+        /** Inputs without a separate recent market series (the benchmark is used for the 7-day beta). */
+        public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
+                      String historyUnavailableReason, List<TradeEvent> trades,
+                      Map<String, SortedMap<LocalDate, Double>> dailyPrices, Map<String, Double> currentPrices,
+                      Map<String, Double> dailyVolumes, Double riskTargetVolatility, double riskFreeRate,
+                      int periodsPerYear, LocalDate today, double[][] assetReturns, Map<String, Double> marketCaps,
+                      Double initialBankroll) {
+            this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
+                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, assetReturns,
+                    marketCaps, initialBankroll, null);
         }
 
         /** Inputs without a configured bankroll. */
@@ -156,7 +172,7 @@ public final class TraderScoring {
                       int periodsPerYear, LocalDate today, double[][] assetReturns, Map<String, Double> marketCaps) {
             this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
                     currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, assetReturns,
-                    marketCaps, null);
+                    marketCaps, null, null);
         }
     }
 
@@ -276,7 +292,16 @@ public final class TraderScoring {
      * meets a requirement.
      */
     record Evidence(double volatility, double sharpe, double bankrollReturn, double profitFactor,
-                    int sells, int datedTrades, long activeDays, int holdings, Allocation allocation) {}
+                    int sells, int datedTrades, long activeDays, int holdings, Allocation allocation,
+                    double largestPositionShare, double peakDayShare, double topWinShare) {
+
+        /** Evidence without the discipline facts (unknown, so the high gates stay locked). */
+        Evidence(double volatility, double sharpe, double bankrollReturn, double profitFactor, int sells,
+                 int datedTrades, long activeDays, int holdings, Allocation allocation) {
+            this(volatility, sharpe, bankrollReturn, profitFactor, sells, datedTrades, activeDays, holdings, allocation,
+                    Double.NaN, Double.NaN, Double.NaN);
+        }
+    }
 
     /**
      * The largest recent buys as shares of capital, for the allocation caps: the largest single buy, the
@@ -350,9 +375,19 @@ public final class TraderScoring {
         long activeDays = manual.isEmpty() ? 0 : ChronoUnit.DAYS.between(
                 manual.stream().map(TradeEvent::date).min(Comparator.naturalOrder()).orElseThrow(), in.today()) + 1;
         int sells = (int) manual.stream().filter(t -> t.side() == Side.SELL).count();
+        // Discipline facts for the high tiers: biggest position, busiest day, and how much of the profit one trade made
+        double peakDay = dailyDeployment(in, sizing, null).values().stream().mapToDouble(DayDeployment::peakShare).max().orElse(Double.NaN);
+        double gross = 0.0, best = 0.0;
+        for (ClosedLot lot : book.closed()) {
+            if (lot.pnl() > 0) {
+                gross += lot.pnl();
+                best = Math.max(best, lot.pnl());
+            }
+        }
         return new Evidence(vol, sharpe, bankrollReturn(in, book).orElse(Double.NaN),
                 profitFactor(in, book).orElse(Double.NaN), sells, manual.size(), activeDays, in.holdings().size(),
-                allocation(in, sizing));
+                allocation(in, sizing), largestPosition(in, sizing).map(PositionShare::share).orElse(Double.NaN),
+                peakDay, gross > 0 ? best / gross : Double.NaN);
     }
 
     static Allocation allocation(Inputs in, Sizing sizing) {
@@ -379,33 +414,55 @@ public final class TraderScoring {
     }
 
     /**
-     * Gate thresholds: {min score, return on S0, dated trades}. Advancement depends on results and activity
-     * only, never on calendar time, so it can be reached as soon as it is earned.
+     * Gate thresholds: {min score, return on S0, recorded trades, Sharpe, largest position, peak day deployment,
+     * best trade's share of profits}. Tier 5 needs results and activity only, reachable as soon as they are
+     * earned. Tier 3 and Tier 1 also need discipline: risk-adjusted returns, controlled position sizes, measured
+     * deployment, and profits that don't hang on one lucky trade (NaN: not required).
      */
     private static final double[][] GATES = {
-            {600, 0.05, 10},
-            {750, 0.15, 20},
-            {900, 0.30, 40},
+            {600, 0.05, 10, Double.NaN, Double.NaN, Double.NaN, Double.NaN},
+            {750, 0.15, 20, 1.0, 0.30, 0.50, 0.50},
+            {900, 0.30, 40, 1.5, 0.20, 0.25, 0.35},
     };
 
     static List<TierGate> tierGates(Evidence e) {
-        // Judge the return at the precision it is shown with, so "+5.0%" never fails "at least 5%"
-        double ret = round(e.bankrollReturn(), 3);
+        // Judge each value at the precision it is shown with, so "+5.0%" never fails "at least 5%"
+        double ret = round(e.bankrollReturn(), 3), sharpe = round(e.sharpe(), 2);
         List<TierGate> gates = new ArrayList<>();
         for (double[] g : GATES) {
             int min = (int) g[0];
             int trades = (int) g[2];
-            List<Requirement> reqs = List.of(
+            List<Requirement> reqs = new ArrayList<>(List.of(
                     new Requirement("Return on capital (S₀) of at least " + pct0(g[1]), ret >= g[1],
                             Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn()),
                             "Return on Capital", "≥ " + signedPct1(g[1]), progress(ret, g[1])),
                     new Requirement("At least " + trades + " recorded trades", e.datedTrades() >= trades,
                             e.datedTrades() + " trade" + (e.datedTrades() == 1 ? "" : "s"),
-                            "Trade Count", "≥ " + trades + " trades", progress(e.datedTrades(), trades)));
+                            "Trade Count", "≥ " + trades + " trades", progress(e.datedTrades(), trades))));
+            if (!Double.isNaN(g[3])) {
+                reqs.add(new Requirement("Sharpe ratio of at least " + fmt1(g[3]), sharpe >= g[3],
+                        Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe()),
+                        "Risk-Adjusted Return (Sharpe)", "≥ " + fmt2(g[3]), progress(sharpe, g[3])));
+                reqs.add(atMost("Largest position at most " + pct0(g[4]) + " of capital", "Position Sizing",
+                        e.largestPositionShare(), g[4], "largest position ", "no open positions"));
+                reqs.add(atMost("At most " + pct0(g[5]) + " of capital deployed in one day", "Deployment Pacing",
+                        e.peakDayShare(), g[5], "busiest day ", "no dated buys"));
+                reqs.add(atMost("No single trade above " + pct0(g[6]) + " of total profit", "Profit Concentration",
+                        e.topWinShare(), g[6], "best trade made ", "no profitable closed trades"));
+            }
             gates.add(new TierGate(min, tierFor(min).rank() == 1 ? "Tier 1" : "Tier " + tierFor(min).rank() + " and above",
-                    reqs.stream().allMatch(Requirement::met), reqs));
+                    reqs.stream().allMatch(Requirement::met), List.copyOf(reqs)));
         }
         return gates;
+    }
+
+    /** A "no more than" requirement, met at or below the limit; progress falls as the actual value exceeds it. */
+    private static Requirement atMost(String label, String name, double actual, double limit, String prefix, String unknown) {
+        double shown = round(actual, 3);
+        boolean met = !Double.isNaN(actual) && shown <= limit;
+        String text = Double.isNaN(actual) ? unknown : prefix + pct0(actual) + (name.equals("Profit Concentration") ? " of profits" : " of capital");
+        double progress = Double.isNaN(actual) ? 0.0 : met ? 1.0 : Math.max(0.0, Math.min(1.0, limit / actual));
+        return new Requirement(label, met, text, name, "≤ " + pct0(limit), progress);
     }
 
     /** Share of the way from zero to the target, 0–1; unknown or negative values count as no progress. */
@@ -527,6 +584,7 @@ public final class TraderScoring {
         int periods = in.periodsPerYear();
         String noHistory = in.historyUnavailableReason() != null ? in.historyUnavailableReason()
                 : "Price history for your holdings is unavailable.";
+        double[] allReturns = rp; // the 7-day beta uses the latest week even when the long history is short
         // Annualizing a handful of days makes volatility (and everything built on it) meaningless
         if (rp != null && rp.length < MIN_RISK_OBSERVATIONS) {
             noHistory = "Needs at least " + MIN_RISK_OBSERVATIONS + " daily returns of price history; " + rp.length + " available.";
@@ -575,13 +633,16 @@ public final class TraderScoring {
             out.add(unavailable("sortino", "Sortino ratio", 50, noHistory));
         }
 
-        // Volatility level
+        // Volatility level: one-day outliers are trimmed first, then scored on a smooth curve
         if (hasHistory) {
-            out.add(component("volatility", "Annualized volatility", 30, volatility, pct1(volatility),
-                    inv(volatility, 0.20, 1.20), "Sample standard deviation of daily returns × √" + periods));
-            if (volatility > 0.5) {
-                flags.add(new Flag("high-volatility", volatility > 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
-                        "High Volatility", "Annualized volatility is " + pct1(volatility)
+            double robustVol = RiskMath.sampleStdDev(trimOutliers(rp)) * Math.sqrt(periods);
+            out.add(component("volatility", "Annualized volatility", 30, robustVol, pct1(robustVol), volatilityScore(robustVol),
+                    "Standard deviation of " + rp.length + " daily returns × √" + periods + ", with one-day outliers beyond "
+                            + fmt1(VOLATILITY_TRIM_SIGMAS) + " robust standard deviations trimmed; full marks up to 25%, "
+                            + "about half at 70%, near zero above 150%"));
+            if (robustVol > 0.5) {
+                flags.add(new Flag("high-volatility", robustVol > 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
+                        "High Volatility", "Annualized volatility is " + pct1(robustVol)
                         + ": a typical year could see the portfolio swing by this much in either direction.",
                         "Reduce position sizes or blend in less volatile assets until volatility matches what you can hold through."));
             }
@@ -589,27 +650,11 @@ public final class TraderScoring {
             out.add(unavailable("volatility", "Annualized volatility", 30, noHistory));
         }
 
-        // Beta stability: how much the market exposure drifts between rolling windows
-        double[] bench = in.benchmarkReturns();
-        List<Double> betas = rp == null || bench == null ? List.of() : rollingBetas(rp, bench);
-        if (betas.size() >= MIN_BETA_WINDOWS) {
-            double[] b = betas.stream().mapToDouble(Double::doubleValue).toArray();
-            double spread = RiskMath.sampleStdDev(b);
-            out.add(component("beta-stability", "Beta stability", 25, spread, "β " + fmt2(RiskMath.mean(b)) + " ± " + fmt2(spread),
-                    inv(spread, 0.10, 0.60), "Std. deviation of " + b.length + " rolling " + BETA_WINDOW + "-day betas"));
-            if (spread > 0.4) {
-                flags.add(new Flag("unstable-beta", Severity.LOW, "risk", "Unstable Market Exposure",
-                        "Rolling beta varied by ±" + fmt2(spread) + " around " + fmt2(RiskMath.mean(b))
-                                + ": the portfolio's sensitivity to the market keeps changing.",
-                        "Keep a consistent mix instead of rotating between high- and low-beta coins."));
-            }
-        } else {
-            out.add(unavailable("beta-stability", "Beta stability", 25, rp == null ? noHistory
-                    : "Needs at least " + (BETA_WINDOW + BETA_STEP * (MIN_BETA_WINDOWS - 1)) + " days of shared history."));
-        }
+        // 7-day benchmark beta: sensitivity to the market (BTC/ETH) over the most recent week
+        benchmarkBetaComponent(in, allReturns, noHistory, flags, out);
 
         diversificationComponents(div, flags, out);
-        positionSizingComponent(sizing, flags, out);
+        positionSizingComponent(in, sizing, flags, out);
         return out;
     }
 
@@ -704,18 +749,65 @@ public final class TraderScoring {
                 held.stream().mapToDouble(Holding::value).toArray(), aligned ? returns : null, in.periodsPerYear(), reason);
     }
 
-    static List<Double> rollingBetas(double[] rp, double[] bench) {
-        List<Double> betas = new ArrayList<>();
-        // Beta divides by the benchmark's variance: a window where the benchmark barely moved would make it
-        // explode, so windows below a small share of the benchmark's overall variance are skipped
-        double floor = MIN_BENCHMARK_VARIANCE_SHARE * RiskMath.sampleVariance(bench);
-        for (int start = 0; start + BETA_WINDOW <= rp.length; start += BETA_STEP) {
-            double[] x = Arrays.copyOfRange(rp, start, start + BETA_WINDOW);
-            double[] m = Arrays.copyOfRange(bench, start, start + BETA_WINDOW);
-            double var = RiskMath.sampleVariance(m);
-            if (var > 0 && var >= floor) betas.add(RiskMath.covariance(x, m) / var);
+    /**
+     * Beta over the most recent BETA_DAYS daily returns against the market (50/50 BTC/ETH when supplied, else the
+     * benchmark). Within ±1 it scores in full, falling smoothly to zero at ±2.5.
+     */
+    static void benchmarkBetaComponent(Inputs in, double[] rp, String noHistory, List<Flag> flags, List<Component> out) {
+        double[] market = in.recentMarketReturns();
+        String against = "BTC/ETH";
+        if (market == null && in.benchmarkReturns() != null) {
+            market = in.benchmarkReturns();
+            against = "BTC";
         }
-        return betas;
+        if (rp == null || market == null) {
+            out.add(unavailable("benchmark-beta", "7-day benchmark beta", 25, noHistory));
+            return;
+        }
+        int days = Math.min(BETA_DAYS, Math.min(rp.length, market.length));
+        if (days < MIN_BETA_DAYS) {
+            out.add(unavailable("benchmark-beta", "7-day benchmark beta", 25, "Needs at least " + MIN_BETA_DAYS + " days of returns."));
+            return;
+        }
+        double[] p = Arrays.copyOfRange(rp, rp.length - days, rp.length);
+        double[] m = Arrays.copyOfRange(market, market.length - days, market.length);
+        double var = RiskMath.sampleVariance(m);
+        if (!(var > 0)) {
+            out.add(unavailable("benchmark-beta", "7-day benchmark beta", 25, "The market didn't move over the last " + days + " days."));
+            return;
+        }
+        double beta = RiskMath.covariance(p, m) / var;
+        double excess = Math.max(0.0, Math.abs(beta) - 1.0);
+        out.add(component("benchmark-beta", "7-day benchmark beta", 25, beta, "β " + fmt2(beta) + " · " + days + "d vs " + against,
+                inv(excess, 0.0, 1.5), "Covariance with the market over the last " + days + " daily returns ÷ the market's variance; "
+                        + "within ±1 scores full marks, ±2.5 or beyond none"));
+        if (Math.abs(beta) > 1.5) {
+            flags.add(new Flag("high-beta", Math.abs(beta) > 2.0 ? Severity.MEDIUM : Severity.LOW, "risk", "High Market Sensitivity",
+                    "Over the last " + days + " days the portfolio moved " + fmt2(Math.abs(beta)) + "× as much as the market ("
+                            + against + ").",
+                    "Blend in steadier assets or trim the most aggressive coins so a market drop doesn't hit the portfolio harder than the market."));
+        }
+    }
+
+    /** Daily returns with one-day outliers (beyond VOLATILITY_TRIM_SIGMAS robust deviations of the median) clamped. */
+    static double[] trimOutliers(double[] r) {
+        double[] sorted = r.clone();
+        Arrays.sort(sorted);
+        double median = RiskMath.quantile(sorted, 0.5);
+        double[] dev = new double[r.length];
+        for (int i = 0; i < r.length; i++) dev[i] = Math.abs(r[i] - median);
+        double mad = RiskMath.quantile(dev, 0.5) * 1.4826; // matches the standard deviation for normal data
+        if (!(mad > 0)) return r;
+        double lo = median - VOLATILITY_TRIM_SIGMAS * mad, hi = median + VOLATILITY_TRIM_SIGMAS * mad;
+        double[] out = new double[r.length];
+        for (int i = 0; i < r.length; i++) out[i] = Math.max(lo, Math.min(hi, r[i]));
+        return out;
+    }
+
+    /** Smooth volatility curve: full marks up to 25% a year, about 0.84 at 50%, 0.36 at 85%, near zero above 150%. */
+    static double volatilityScore(double annualVol) {
+        double excess = Math.max(0.0, annualVol - 0.25) / 0.6;
+        return Math.exp(-excess * excess);
     }
 
     // ---------------------------------------------------------------------
@@ -972,16 +1064,47 @@ public final class TraderScoring {
         return new AssetRisk(coinId, cap, volatility, assessed, speculative);
     }
 
+    /** The largest current position as a share of the capital base, and whether its coin is speculative. */
+    record PositionShare(Holding holding, double share, boolean speculative) {}
+
+    static Optional<PositionShare> largestPosition(Inputs in, Sizing sizing) {
+        if (!(sizing.capitalBase() > 0)) return Optional.empty();
+        return in.holdings().stream().filter(h -> h.value() > 0)
+                .max(Comparator.comparingDouble(Holding::value))
+                .map(h -> new PositionShare(h, h.value() / sizing.capitalBase(), assetRisk(in, h.coinId()).speculative()));
+    }
+
     /**
-     * Risk pillar: position sizing of every buy (25 points), judged by the worst one. A speculative buy scores
-     * full marks at 2% of capital or less and none at 15%; any other buy full marks at 10% and none at 40%.
+     * Position-sizing curve on a share of capital: up to 15% scores in full (25 of 25 points), falling linearly
+     * to 0.6 (15 points) at 30% and 0.2 (5 points) at 50%; above 50% scores zero.
      */
-    static void positionSizingComponent(Sizing sizing, List<Flag> flags, List<Component> out) {
-        List<TradeSize> buys = sizing.trades().values().stream().filter(s -> s.trade().side() == Side.BUY).toList();
-        if (buys.isEmpty() || !(sizing.capitalBase() > 0)) {
-            out.add(unavailable("position-sizing", "Position sizing", 25, "Needs recorded buys."));
-            return;
+    static double positionSizingScore(double share) {
+        if (share <= 0.15) return 1.0;
+        if (share <= 0.30) return 1.0 - 0.4 * (share - 0.15) / 0.15;
+        if (share <= 0.50) return 0.6 - 0.4 * (share - 0.30) / 0.20;
+        return 0.0;
+    }
+
+    /**
+     * Risk pillar: position sizing (25 points), from the largest current position as a share of capital. A
+     * speculative coin counts double. Oversized buys are also flagged, even after they've been sold.
+     */
+    static void positionSizingComponent(Inputs in, Sizing sizing, List<Flag> flags, List<Component> out) {
+        Optional<PositionShare> largest = largestPosition(in, sizing);
+        if (largest.isEmpty()) {
+            out.add(unavailable("position-sizing", "Position sizing", 25, "No open positions."));
+        } else {
+            PositionShare p = largest.get();
+            double effective = p.speculative() ? Math.min(1.0, 2 * p.share()) : p.share();
+            out.add(component("position-sizing", "Position sizing", 25, p.share(),
+                    "largest " + pct1(p.share()) + " of capital in " + p.holding().name() + (p.speculative() ? " (speculative, counts double)" : ""),
+                    positionSizingScore(effective), "Largest position as a share of capital (" + capitalBaseText(sizing)
+                            + "): up to 15% full marks, 30% → 15 points, 50% → 5, above 50% none"));
         }
+
+        // Flags for oversized buys, judged by the worst one
+        List<TradeSize> buys = sizing.trades().values().stream().filter(s -> s.trade().side() == Side.BUY).toList();
+        if (buys.isEmpty() || !(sizing.capitalBase() > 0)) return;
         TradeSize worst = null;
         double worstScore = 2.0;
         for (TradeSize b : buys) {
@@ -993,11 +1116,6 @@ public final class TraderScoring {
         }
         double share = worst.share();
         boolean speculative = worst.asset().speculative();
-        out.add(component("position-sizing", "Position sizing", 25, share,
-                "largest " + pct1(share) + " of capital in " + worst.trade().name() + (speculative ? " (speculative)" : ""),
-                worstScore, "Worst-sized buy as a share of capital (" + capitalBaseText(sizing) + "). Speculative coins: "
-                        + "2% or less full marks, 15% none; others: 10% or less full marks, 40% none"));
-
         TradeEvent t = worst.trade();
         if (speculative && share >= 0.05) {
             flags.add(new Flag("position-sizing", share >= FULL_IMPACT_SHARE ? Severity.HIGH : Severity.MEDIUM, "risk",
@@ -1244,7 +1362,7 @@ public final class TraderScoring {
             // Best between 2 and 8 trades a month; overtrading falls to 0 at 40, and near-inactivity
             // (under 2) earns at most 40%, since a handful of trades shows little discipline
             double velocityScore = per30 < 2 ? 0.4 + 0.6 * lin(per30, 0.5, 2.0) : inv(weightedPer30, 8, 40);
-            out.add(component("velocity", "Trading velocity", 100, weightedPer30, fmt1(per30) + " trades / 30 days · "
+            out.add(component("velocity", "Trading velocity", 143, weightedPer30, fmt1(per30) + " trades / 30 days · "
                             + fmt1(weightedPer30) + " size-weighted", velocityScore,
                     manual.size() + " trades over " + days + " days; overtrading is judged on the size-weighted rate ("
                             + SIZING_RULE + ")"));
@@ -1260,7 +1378,7 @@ public final class TraderScoring {
                         "Trade only from a written plan, with a limit on trades per week, and keep each trade to a fixed small share of capital."));
             }
         } else {
-            out.add(unavailable("velocity", "Trading velocity", 100, "Record buys and sells to measure trading frequency."));
+            out.add(unavailable("velocity", "Trading velocity", 143, "Record buys and sells to measure trading frequency."));
         }
 
         // Liquidity impact: trade size as a share of the coin's 24h trading volume
@@ -1279,7 +1397,7 @@ public final class TraderScoring {
             }
         }
         if (measured > 0) {
-            out.add(component("liquidity", "Liquidity impact", 75, worst, "largest trade " + pct2(worst) + " of 24h volume",
+            out.add(component("liquidity", "Liquidity impact", 107, worst, "largest trade " + pct2(worst) + " of 24h volume",
                     scoreSum / measured, measured + " trades compared with each coin's current 24h volume"));
             if (worst > 0.01) {
                 flags.add(new Flag("liquidity", worst > 0.05 ? Severity.HIGH : Severity.MEDIUM, "execution", "Liquidity Impact Flagged",
@@ -1287,33 +1405,9 @@ public final class TraderScoring {
                         "Split large orders over time (or use limit orders) so each piece stays well under 1% of daily volume."));
             }
         } else {
-            out.add(unavailable("liquidity", "Liquidity impact", 75, "Trading volume for your coins is unavailable right now."));
+            out.add(unavailable("liquidity", "Liquidity impact", 107, "Trading volume for your coins is unavailable right now."));
         }
 
-        // Risk target adherence: actual volatility versus the user's target
-        Double target = in.riskTargetVolatility();
-        double[] rp = in.portfolioReturns();
-        if (target != null && target > 0 && rp != null) {
-            double vol = RiskMath.sampleStdDev(rp) * Math.sqrt(in.periodsPerYear());
-            double deviation = Math.abs(vol - target) / target;
-            out.add(component("risk-target", "Risk target adherence", 75, deviation,
-                    pct1(vol) + " actual vs " + pct1(target) + " target", inv(deviation, 0.10, 1.0),
-                    "Relative gap between annualized volatility and your target"));
-            if (deviation > 0.25) {
-                flags.add(new Flag("risk-target", deviation > 0.5 ? Severity.MEDIUM : Severity.LOW, "execution", "Off Risk Target",
-                        "Volatility is " + pct1(vol) + " against your " + pct1(target) + " target (" + pct0(deviation) + " off).",
-                        vol > target ? "Reduce the most volatile positions to bring risk back to target."
-                                : "You're taking less risk than planned; adjust the target or the allocation deliberately."));
-            }
-        } else if (target == null || target <= 0) {
-            out.add(unavailable("risk-target", "Risk target adherence", 75, "No risk target set."));
-            flags.add(new Flag("no-risk-target", Severity.INFO, "execution", "Set a Risk Target",
-                    "Institutional desks run to a volatility budget; you haven't set one yet.",
-                    "Set a target annual volatility (for example 40%) to have adherence scored."));
-        } else {
-            out.add(unavailable("risk-target", "Risk target adherence", 75,
-                    in.historyUnavailableReason() != null ? in.historyUnavailableReason() : "Price history for your holdings is unavailable."));
-        }
         return out;
     }
 

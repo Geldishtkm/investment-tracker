@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Circle, Lock, RefreshCw, Unlock } from 'lucide-react';
-import { ApiError, assetService } from '../services/api';
+import { ApiError } from '../services/api';
 import { useScore } from '../hooks/useScore';
 import { DiagnosticFlag, GateRequirement, InstitutionalScore, ScoreCap, ScorePillar, TierGate } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
@@ -11,8 +11,7 @@ import { PILLAR_SHORT_NAME, SEVERITY_STYLE, tierColor } from './institutional/st
 import Term from './ui/Term';
 import InfoTip from './ui/InfoTip';
 import { METRIC_GUIDE } from './institutional/metricGuide';
-import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonRows, btn, input } from './ui/kit';
-import { pct } from './ui/format';
+import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonRows, btn } from './ui/kit';
 
 interface InstitutionalEvaluationPageProps {
   /** Opens the add-asset flow; shown when there is nothing to evaluate. */
@@ -158,7 +157,7 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
         )}
       </Panel>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {data.strengths.length > 0 && (
           <Panel title="Strengths">
             <ul className="space-y-1.5 text-sm">
@@ -166,7 +165,6 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
             </ul>
           </Panel>
         )}
-        <RiskTargetForm current={data.riskTargetVolatility} onSaved={load} />
         {notes.length > 0 && (
           <Panel title="Improve score coverage" id="notes">
             <ul className="space-y-3">
@@ -255,52 +253,6 @@ export const DiagnosticRow: React.FC<{ flag: DiagnosticFlag }> = ({ flag }) => {
       </td>
       <td className="px-3 py-3 text-term-muted"><span className="sr-only">Coaching: </span>{flag.recommendation}</td>
     </tr>
-  );
-};
-
-const RiskTargetForm: React.FC<{ current: number | null; onSaved: () => void }> = ({ current, onSaved }) => {
-  const [value, setValue] = useState(current != null ? String(Math.round(current * 1000) / 10) : '');
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const save = async (target: number | null) => {
-    setSaving(true);
-    setMessage(null);
-    try {
-      await assetService.setRiskTarget(target);
-      onSaved();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const submit = (event: React.FormEvent) => {
-    event.preventDefault();
-    const p = parseFloat(value);
-    if (!(p >= 1 && p <= 300)) {
-      setMessage('Enter a target between 1% and 300% a year.');
-      return;
-    }
-    void save(p / 100);
-  };
-
-  return (
-    <Panel title="Risk target" id="target" subtitle="Annual volatility you aim to run at; Execution Discipline scores adherence">
-      <form onSubmit={submit} noValidate aria-label="Risk Target">
-        <div className="flex items-center gap-2">
-          <label className="sr-only" htmlFor="risk-target">Target annual volatility (%)</label>
-          <input id="risk-target" type="number" min="1" max="300" step="0.5" value={value} placeholder="e.g. 40"
-                 onChange={e => setValue(e.target.value)} className={`num flex-1 ${input}`} />
-          <span className="text-sm text-term-muted">%</span>
-          <button type="submit" disabled={saving} className={btn.primary}>Save</button>
-          {current != null && <button type="button" disabled={saving} onClick={() => void save(null)} className={btn.ghost}>Clear</button>}
-        </div>
-        {current != null && <p className="mt-2 text-xs text-term-dim">Current target {pct(current, 1)}</p>}
-        {message && <p className="mt-2 text-sm text-term-down" role="alert">{message}</p>}
-      </form>
-    </Panel>
   );
 };
 

@@ -85,6 +85,7 @@ public class BehavioralAnalyticsService {
         // Daily return history of the current holdings
         double[] portfolioReturns = null, benchmarkReturns = null;
         double[][] assetReturns = null;
+        double[] recentMarket = null;
         String historyReason = null;
         LocalDate historyThrough = null;
         if (holdings.isEmpty()) {
@@ -95,6 +96,7 @@ public class BehavioralAnalyticsService {
                 portfolioReturns = snapshot.portfolioReturns();
                 benchmarkReturns = snapshot.benchmark();
                 assetReturns = alignedReturns(snapshot, holdings);
+                recentMarket = recentMarketReturns(snapshot);
                 historyThrough = snapshot.dates().get(snapshot.dates().size() - 1);
             } catch (PortfolioDataException e) {
                 historyReason = e.getMessage();
@@ -128,12 +130,40 @@ public class BehavioralAnalyticsService {
 
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
-                historyReason, events, dailyPrices, currentPrices, market.volumes(), user.getRiskTargetVolatility(),
+                historyReason, events, dailyPrices, currentPrices, market.volumes(), null,
                 properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns,
-                market.marketCaps(), user.getInitialBankroll() == null ? null : user.getInitialBankroll().doubleValue()));
+                market.marketCaps(), user.getInitialBankroll() == null ? null : user.getInitialBankroll().doubleValue(), recentMarket));
         // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
         boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
         return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));
+    }
+
+    /**
+     * The market's daily returns, 50/50 Bitcoin and Ethereum, over the snapshot's most recent consecutive days
+     * (up to a week), lined up with the end of its return series for the 7-day beta. Null when Ethereum's
+     * history for those days isn't available; the engine then uses the Bitcoin benchmark alone.
+     */
+    private double[] recentMarketReturns(PortfolioSnapshot snapshot) {
+        List<LocalDate> dates = snapshot.dates();
+        double[] btc = snapshot.benchmark();
+        if (btc == null || dates.size() < 2) return null;
+        int days = Math.min(TraderScoring.BETA_DAYS, Math.min(btc.length, dates.size() - 1));
+        try {
+            SortedMap<LocalDate, Double> eth = priceHistoryService.getDailyPrices("ethereum", properties.getLookbackDays());
+            double[] out = new double[days];
+            for (int k = 0; k < days; k++) {
+                // The snapshot's last returns run between its last dates, one calendar day apart
+                LocalDate end = dates.get(dates.size() - days + k), start = dates.get(dates.size() - days + k - 1);
+                if (!start.plusDays(1).equals(end)) return null;
+                Double e0 = eth.get(start), e1 = eth.get(end);
+                if (e0 == null || e1 == null || e0 <= 0) return null;
+                out[k] = 0.5 * btc[btc.length - days + k] + 0.5 * (e1 / e0 - 1.0);
+            }
+            return out;
+        } catch (PortfolioDataException e) {
+            logger.debug("Ethereum history unavailable for the market benchmark: {}", e.getMessage());
+            return null;
+        }
     }
 
     /** Each holding's daily returns, in holding order, or null if a holding isn't in the snapshot. */

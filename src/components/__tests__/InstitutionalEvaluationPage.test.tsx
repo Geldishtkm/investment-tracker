@@ -5,7 +5,7 @@ import InstitutionalEvaluationPage, { STALE_RETRY_MS } from '../InstitutionalEva
 import { scoreFixture } from './fixtures';
 import { resetScoreCache } from '../../hooks/useScore';
 
-const api = vi.hoisted(() => ({ getInstitutionalScore: vi.fn(), setRiskTarget: vi.fn() }));
+const api = vi.hoisted(() => ({ getInstitutionalScore: vi.fn() }));
 vi.mock('../../services/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/api')>();
   return { ...actual, assetService: api };
@@ -16,7 +16,6 @@ describe('InstitutionalEvaluationPage', () => {
   beforeEach(() => {
     resetScoreCache();
     api.getInstitutionalScore.mockReset();
-    api.setRiskTarget.mockReset();
   });
 
   it('shows the 0–1000 gauge, the rank tier badge and the provisional label', async () => {
@@ -208,31 +207,6 @@ describe('InstitutionalEvaluationPage', () => {
     expect(alert).toHaveTextContent('None of the four pillars can be scored yet.');
   });
 
-  it('saves a risk target as a fraction and reloads the evaluation', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture());
-    api.setRiskTarget.mockResolvedValue(undefined);
-    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-
-    const input = await screen.findByLabelText('Target annual volatility (%)');
-    await userEvent.type(input, '40');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(api.setRiskTarget).toHaveBeenCalledWith(0.4);
-    await waitFor(() => expect(api.getInstitutionalScore).toHaveBeenCalledTimes(2));
-  });
-
-  it('rejects an out-of-range risk target without calling the API', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture());
-    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-
-    await userEvent.type(await screen.findByLabelText('Target annual volatility (%)'), '900');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    const form = screen.getByRole('form', { name: 'Risk Target' });
-    expect(within(form).getByRole('alert')).toHaveTextContent('between 1% and 300%');
-    expect(api.setRiskTarget).not.toHaveBeenCalled();
-  });
-
   it('puts an info tooltip on every pillar metric and explains coverage scaling', async () => {
     const component = (key: string, name: string, points: number, weight: number, available = true) => ({
       key, name, available, value: available ? 1 : null, displayValue: available ? 'shown' : 'Not enough data', weight,
@@ -241,19 +215,18 @@ describe('InstitutionalEvaluationPage', () => {
     const base = scoreFixture();
     api.getInstitutionalScore.mockResolvedValue(scoreFixture({
       pillars: base.pillars.map(p => p.key !== 'execution' ? p : {
-        ...p, points: 250, coverage: 0.4, components: [
-          component('velocity', 'Trading velocity', 100, 100),
-          component('liquidity', 'Liquidity impact', 0, 75, false),
-          component('risk-target', 'Risk target adherence', 0, 75, false),
+        ...p, points: 250, coverage: 0.572, components: [
+          component('velocity', 'Trading velocity', 143, 143),
+          component('liquidity', 'Liquidity impact', 0, 107, false),
         ],
       }),
     }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     const exec = await screen.findByTestId('pillar-execution');
-    for (const name of ['Trading velocity', 'Liquidity impact', 'Risk target adherence']) {
+    for (const name of ['Trading velocity', 'Liquidity impact']) {
       expect(within(exec).getByRole('button', { name: `About ${name}` })).toBeInTheDocument();
     }
     expect(screen.getByTestId('coverage-execution'))
-      .toHaveTextContent('40% of this pillar\'s metrics have data · scaled to 250 from the 100 of 100 points with data, so missing data costs nothing');
+      .toHaveTextContent('57% of this pillar\'s metrics have data · scaled to 250 from the 143 of 143 points with data, so missing data costs nothing');
   });
 });

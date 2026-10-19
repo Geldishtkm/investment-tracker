@@ -171,16 +171,6 @@ export const assetService = {
     const response = await authService.authFetch(`${API_BASE_URL}/api/analytics/institutional-score`);
     return jsonOrThrow<InstitutionalScore>(response, 'Failed to load the evaluation');
   },
-
-  /** Target annual volatility as a fraction (0.4 = 40%), or null to clear it. */
-  setRiskTarget: async (targetVolatility: number | null): Promise<void> => {
-    const response = await authService.authFetch(`${API_BASE_URL}/api/analytics/risk-target`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetVolatility })
-    });
-    await jsonOrThrow<unknown>(response, 'Failed to save the risk target');
-  },
 };
 
 export const accountService = {

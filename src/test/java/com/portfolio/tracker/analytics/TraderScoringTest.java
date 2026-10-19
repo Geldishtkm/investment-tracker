@@ -191,7 +191,7 @@ class TraderScoringTest {
             assertFalse(component(e, "sharpe").available());
             assertFalse(component(e, "sortino").available());
             assertFalse(component(e, "volatility").available());
-            assertFalse(component(e, "beta-stability").available()); // the benchmark never moved either
+            assertFalse(component(e, "benchmark-beta").available()); // the benchmark never moved either
             for (Pillar p : e.pillars()) assertFalse(Double.isNaN(p.points()), p.key());
         }
 
@@ -302,27 +302,45 @@ class TraderScoringTest {
             double[] few = new double[6];
             for (int i = 0; i < few.length; i++) few[i] = i % 2 == 0 ? 0.20 : -0.18;   // would annualize to ~370%
             Evaluation e = TraderScoring.evaluate(inputs(equalHoldings(3), few, few, List.of(), Map.of(), Map.of(), null));
-            for (String key : List.of("sharpe", "sortino", "volatility", "beta-stability")) {
+            for (String key : List.of("sharpe", "sortino", "volatility")) {
                 Component c = component(e, key);
                 assertFalse(c.available(), key);
                 assertTrue(c.detail().contains("at least 60 daily returns"), c.detail());
             }
             assertTrue(flag(e, "high-volatility").isEmpty(), "no 'astronomical volatility' flag from 6 days");
+            // The 7-day beta needs only the latest week, so a new account gets it straight away
+            assertTrue(component(e, "benchmark-beta").available());
+            assertEquals(1.0, component(e, "benchmark-beta").value(), 1e-9);
         }
 
         @Test
-        @DisplayName("Beta skips windows where the benchmark barely moved instead of dividing by almost nothing")
-        void betaIgnoresFlatBenchmarkWindows() {
-            Random rnd = new Random(11);
-            double[] bench = new double[150], port = new double[150];
-            for (int t = 0; t < 150; t++) {
-                boolean flat = t >= 60 && t < 90;                // a month where Bitcoin hardly moved
-                bench[t] = flat ? rnd.nextGaussian() * 1e-6 : rnd.nextGaussian() * 0.03;
-                port[t] = flat ? rnd.nextGaussian() * 0.02 : bench[t];
+        @DisplayName("7-day beta: within ±1 scores in full, falling smoothly to zero at ±2.5; uses BTC/ETH when given")
+        void benchmarkBeta() {
+            double[] market = returns(120, 0.0, 0.02);
+            double[] calm = new double[120], amplified = new double[120];
+            for (int t = 0; t < 120; t++) {
+                calm[t] = 0.8 * market[t];
+                amplified[t] = 2.0 * market[t];
             }
-            List<Double> betas = TraderScoring.rollingBetas(port, bench);
-            assertFalse(betas.isEmpty());
-            for (double b : betas) assertTrue(Math.abs(b) < 5, "beta " + b);
+            Evaluation a = TraderScoring.evaluate(inputs(equalHoldings(4), calm, market, List.of(), Map.of(), Map.of(), null));
+            Component beta = component(a, "benchmark-beta");
+            assertEquals(0.8, beta.value(), 1e-9);
+            assertEquals(1.0, beta.score(), EPS);
+            assertTrue(beta.displayValue().endsWith("7d vs BTC"), beta.displayValue());
+            assertEquals(25.0, beta.weight(), EPS);
+
+            Evaluation b = TraderScoring.evaluate(inputs(equalHoldings(4), amplified, market, List.of(), Map.of(), Map.of(), null));
+            assertEquals(2.0, component(b, "benchmark-beta").value(), 1e-9);
+            assertEquals(1.0 - 1.0 / 1.5, component(b, "benchmark-beta").score(), 1e-9);   // continuous, not 0
+            assertTrue(flag(b, "high-beta").isPresent());
+
+            // Only the last 7 days count, and the BTC/ETH series is used when supplied
+            double[] recent = Arrays.copyOfRange(market, 113, 120);
+            Inputs withEth = new Inputs(equalHoldings(4), calm, market, null, List.of(), Map.of(), Map.of(), Map.of(), null,
+                    0.04, 365, TODAY, null, Map.of(), null, recent);
+            Component c = component(TraderScoring.evaluate(withEth), "benchmark-beta");
+            assertTrue(c.displayValue().endsWith("7d vs BTC/ETH"), c.displayValue());
+            assertFalse(c.displayValue().contains("±"), "no multi-month error margin");
         }
 
         @Test
@@ -336,20 +354,23 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Beta that keeps changing between windows scores lower than a steady beta")
-        void betaStability() {
-            Random rnd = new Random(7);
-            double[] bench = new double[150], steady = new double[150], shifting = new double[150];
-            for (int t = 0; t < 150; t++) {
-                bench[t] = rnd.nextGaussian() * 0.03;
-                steady[t] = 1.0 * bench[t];
-                shifting[t] = ((t / 30) % 2 == 0 ? 0.3 : 2.0) * bench[t];
+        @DisplayName("Volatility is scored on a smooth curve, and one-day outliers don't blow it up")
+        void volatilityCurve() {
+            assertEquals(1.0, TraderScoring.volatilityScore(0.20), EPS);
+            assertEquals(Math.exp(-Math.pow(0.25 / 0.6, 2)), TraderScoring.volatilityScore(0.50), 1e-12);
+            assertTrue(TraderScoring.volatilityScore(0.85) > 0.3 && TraderScoring.volatilityScore(0.85) < 0.4);
+            assertTrue(TraderScoring.volatilityScore(1.5) < 0.02);
+            for (double v = 0.2; v < 2.0; v += 0.05) {
+                assertTrue(TraderScoring.volatilityScore(v + 0.05) <= TraderScoring.volatilityScore(v), "monotone at " + v);
             }
-            Evaluation a = TraderScoring.evaluate(inputs(equalHoldings(4), steady, bench, List.of(), Map.of(), Map.of(), null));
-            Evaluation b = TraderScoring.evaluate(inputs(equalHoldings(4), shifting, bench, List.of(), Map.of(), Map.of(), null));
-            assertEquals(0.0, component(a, "beta-stability").value(), 1e-9);
-            assertTrue(component(b, "beta-stability").score() < component(a, "beta-stability").score());
-            assertTrue(flag(b, "unstable-beta").isPresent());
+
+            double[] r = returns(200, 0.0, 0.02);
+            double[] spiked = r.clone();
+            spiked[100] = 3.0;                                     // a one-day +300% data glitch
+            Evaluation clean = TraderScoring.evaluate(inputs(equalHoldings(4), r, r, List.of(), Map.of(), Map.of(), null));
+            Evaluation glitch = TraderScoring.evaluate(inputs(equalHoldings(4), spiked, r, List.of(), Map.of(), Map.of(), null));
+            double v0 = component(clean, "volatility").value(), v1 = component(glitch, "volatility").value();
+            assertTrue(v1 < v0 * 1.2, v0 + " → " + v1);           // without trimming it would be several times higher
         }
     }
 
@@ -539,6 +560,38 @@ class TraderScoringTest {
         }
 
         @Test
+        @DisplayName("Position sizing curve: ≤15% → 25 pts, 30% → 15, 50% → 5, above 50% → 0, linear in between")
+        void positionSizingCurve() {
+            assertEquals(25.0, 25 * TraderScoring.positionSizingScore(0.10), EPS);
+            assertEquals(25.0, 25 * TraderScoring.positionSizingScore(0.15), EPS);
+            assertEquals(20.0, 25 * TraderScoring.positionSizingScore(0.225), 1e-9);
+            assertEquals(15.0, 25 * TraderScoring.positionSizingScore(0.30), 1e-9);
+            assertEquals(10.0, 25 * TraderScoring.positionSizingScore(0.40), 1e-9);
+            assertEquals(5.0, 25 * TraderScoring.positionSizingScore(0.50), 1e-9);
+            assertEquals(0.0, 25 * TraderScoring.positionSizingScore(0.51), EPS);
+        }
+
+        @Test
+        @DisplayName("Position sizing reads the largest open position; a speculative coin counts double")
+        void positionSizingFromHoldings() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.03, 80_000, TODAY.minusDays(30)), buy(2, "pepe", 1_200, 1, TODAY.minusDays(20)));
+            List<Holding> holdings = List.of(new Holding("btc", "btc", 2_400), new Holding("pepe", "pepe", 1_200));
+            Inputs in = new Inputs(holdings, null, null, "No price history.", trades, Map.of(), Map.of(),
+                    Map.of("btc", 1e12, "pepe", 1e12), null, 0.04, 365, TODAY, null, Map.of("btc", LARGE_CAP, "pepe", MICRO), 10_000.0);
+            Component c = component(TraderScoring.evaluate(in), "position-sizing");
+            assertEquals(0.24, c.value(), 1e-9);                     // BTC: 2,400 of 10,000
+            assertEquals(TraderScoring.positionSizingScore(0.24), c.score(), 1e-12);
+
+            List<Holding> specHeavy = List.of(new Holding("btc", "btc", 1_000), new Holding("pepe", "pepe", 2_000));
+            Inputs spec = new Inputs(specHeavy, null, null, "No price history.", trades, Map.of(), Map.of(),
+                    Map.of("btc", 1e12, "pepe", 1e12), null, 0.04, 365, TODAY, null, Map.of("btc", LARGE_CAP, "pepe", MICRO), 10_000.0);
+            Component s2 = component(TraderScoring.evaluate(spec), "position-sizing");
+            assertEquals(0.20, s2.value(), 1e-9);
+            assertEquals(TraderScoring.positionSizingScore(0.40), s2.score(), 1e-12); // 20% speculative counts as 40%
+            assertTrue(s2.displayValue().contains("counts double"));
+        }
+
+        @Test
         @DisplayName("Impact: dust counts 0, 10% counts 1, and a speculative trade escalates by 1 per extra 5%")
         void impactScale() {
             assertEquals(0.0, TraderScoring.impact(0.005, true), EPS);
@@ -556,9 +609,7 @@ class TraderScoringTest {
         void dustMicroCap() {
             List<TradeEvent> trades = List.of(buy(2, "pepe", 5, 1, TODAY.minusDays(10)));
             Evaluation e = TraderScoring.evaluate(withBankroll(10_000, trades, Map.of("pepe", MICRO)));
-            Component sizing = component(e, "position-sizing");
-            assertEquals(0.0005, sizing.value(), 1e-9);
-            assertEquals(1.0, sizing.score(), EPS);
+            assertFalse(component(e, "position-sizing").available()); // no open positions in this input
             assertEquals(0.0, component(e, "speculative-accumulation").value(), EPS);
             assertEquals(1.0, component(e, "speculative-accumulation").score(), EPS);
             assertTrue(flag(e, "position-sizing").isEmpty());
@@ -569,12 +620,8 @@ class TraderScoringTest {
         void oversizedMicroCap() {
             List<TradeEvent> trades = List.of(buy(2, "pepe", 20, 1, TODAY.minusDays(10)));
             Evaluation e = TraderScoring.evaluate(withBankroll(100, trades, Map.of("pepe", MICRO)));
-            Component sizing = component(e, "position-sizing");
-            assertEquals(0.20, sizing.value(), 1e-9);
-            assertEquals(0.0, sizing.points(), EPS);
             assertEquals(3.0, component(e, "speculative-accumulation").value(), 1e-9);
             assertEquals(0.0, component(e, "speculative-accumulation").points(), EPS);
-            assertTrue(component(e, "position-sizing").detail().contains("starting bankroll"));
 
             Flag f = flag(e, "position-sizing").orElseThrow();
             assertEquals(Severity.HIGH, f.severity());
@@ -756,8 +803,8 @@ class TraderScoringTest {
             for (int i = 0; i < 10; i++) paced.add(buy(i, "btc", 0.012, 82_500, TODAY.minusDays(9L * i)));
             Evaluation scaledIn = TraderScoring.evaluate(account(10_000, holdings, paced, Map.of("btc", LARGE_CAP)));
             assertTrue(allIn.rawScore() < scaledIn.rawScore() - 50, allIn.rawScore() + " vs " + scaledIn.rawScore());
-            assertEquals(0.0, component(allIn, "position-sizing").score(), EPS);
-            assertEquals(1.0, component(scaledIn, "position-sizing").score(), EPS);
+            assertEquals(0.0, component(allIn, "position-sizing").score(), EPS);       // 99% in one coin, either way
+            assertEquals(component(allIn, "position-sizing").score(), component(scaledIn, "position-sizing").score(), EPS);
             assertEquals(1.0, component(scaledIn, "deployment-pacing").score(), EPS);
         }
 
@@ -863,17 +910,16 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Risk target: adherence is measured when set, and suggested when missing")
-        void riskTarget() {
-            double[] r = returns(200, 0.0, 0.02);
-            double vol = RiskMath.sampleStdDev(r) * Math.sqrt(365);
-            Evaluation onTarget = TraderScoring.evaluate(inputs(equalHoldings(4), r, r, List.of(), Map.of(), Map.of(), vol));
-            assertEquals(0.0, component(onTarget, "risk-target").value(), 1e-12);
-            assertEquals(1.0, component(onTarget, "risk-target").score(), EPS);
-
-            Evaluation none = TraderScoring.evaluate(inputs(equalHoldings(4), r, r, List.of(), Map.of(), Map.of(), null));
-            assertFalse(component(none, "risk-target").available());
-            assertEquals(Severity.INFO, flag(none, "no-risk-target").orElseThrow().severity());
+        @DisplayName("Risk target adherence is gone; its points went to velocity and liquidity")
+        void executionWeights() {
+            Evaluation e = TraderScoring.evaluate(inputs(equalHoldings(4), returns(200, 0.0, 0.02), returns(200, 0.0, 0.02),
+                    roundTrips(4, 7, 100, 110, 0), Map.of(), Map.of("btc", 1e12), 0.4));
+            Pillar exec = pillar(e, "execution");
+            assertEquals(List.of("velocity", "liquidity"), exec.components().stream().map(Component::key).toList());
+            assertEquals(143.0, component(e, "velocity").weight(), EPS);
+            assertEquals(107.0, component(e, "liquidity").weight(), EPS);
+            assertEquals(250.0, exec.components().stream().mapToDouble(Component::weight).sum(), EPS);
+            assertTrue(e.flags().stream().noneMatch(f -> f.id().contains("risk-target")));
         }
     }
 
@@ -979,9 +1025,34 @@ class TraderScoringTest {
             assertEquals(1.1, TraderScoring.profitFactor(in, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
             assertTrue(e.gates().get(0).unlocked());
             assertTrue(e.score() > 599, "score " + e.score());
-            for (TierGate g : e.gates()) {
-                assertEquals(List.of("Return on Capital", "Trade Count"), g.requirements().stream().map(Requirement::name).toList());
-            }
+            assertEquals(List.of("Return on Capital", "Trade Count"),
+                    e.gates().get(0).requirements().stream().map(Requirement::name).toList());
+        }
+
+        @Test
+        @DisplayName("Tier 3 and above need discipline: Sharpe, position size, deployment pacing and spread-out profits")
+        void highTiersNeedDiscipline() {
+            var lucky = new TraderScoring.Evidence(0.6, 0.4, 0.40, 3.0, 12, 30, 2, 2, TraderScoring.Allocation.NONE,
+                    0.55, 0.90, 0.85);      // +40% from one big, all-in, lucky trade
+            TierGate tier3 = TraderScoring.tierGates(lucky).get(1);
+            assertFalse(tier3.unlocked());
+            Map<String, Requirement> byName = new HashMap<>();
+            tier3.requirements().forEach(r -> byName.put(r.name(), r));
+            assertTrue(byName.get("Return on Capital").met());
+            assertTrue(byName.get("Trade Count").met());
+            assertFalse(byName.get("Risk-Adjusted Return (Sharpe)").met());
+            assertFalse(byName.get("Position Sizing").met());
+            assertEquals("largest position 55% of capital", byName.get("Position Sizing").actual());
+            assertEquals("≤ 30%", byName.get("Position Sizing").target());
+            assertEquals(0.30 / 0.55, byName.get("Position Sizing").progress(), 1e-9);
+            assertFalse(byName.get("Deployment Pacing").met());
+            assertFalse(byName.get("Profit Concentration").met());
+            assertEquals("best trade made 85% of profits", byName.get("Profit Concentration").actual());
+
+            var disciplined = new TraderScoring.Evidence(0.4, 1.2, 0.18, 1.8, 12, 25, 120, 6, TraderScoring.Allocation.NONE,
+                    0.18, 0.30, 0.20);
+            assertTrue(TraderScoring.tierGates(disciplined).get(1).unlocked());
+            assertFalse(TraderScoring.tierGates(disciplined).get(2).unlocked()); // Tier 1 needs more
         }
 
         @Test
@@ -1073,7 +1144,7 @@ class TraderScoringTest {
             Evaluation withoutVolume = TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null));
             Pillar exec = pillar(withoutVolume, "execution");
             assertFalse(component(withoutVolume, "liquidity").available());
-            assertEquals(0.4, exec.coverage(), 1e-9);               // only velocity (100 of 250) has data
+            assertEquals(143.0 / 250, exec.coverage(), 1e-9);       // only velocity (143 of 250) has data
             assertTrue(exec.available());
             assertEquals(250 * component(withoutVolume, "velocity").score(), exec.points(), 1e-9);
 
@@ -1092,7 +1163,9 @@ class TraderScoringTest {
             Evaluation e = TraderScoring.evaluate(holdingsOnly(equalHoldings(5)));
             for (TierGate g : e.gates()) {
                 assertFalse(g.unlocked());
-                g.requirements().forEach(r -> assertFalse(r.met(), r.label()));
+                // Nothing traded: every requirement fails except the size of the positions held
+                g.requirements().stream().filter(r -> !r.name().equals("Position Sizing"))
+                        .forEach(r -> assertFalse(r.met(), r.label()));
             }
         }
 

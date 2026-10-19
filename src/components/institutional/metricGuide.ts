@@ -18,12 +18,12 @@ export const METRIC_GUIDE: Record<string, MetricGuide> = {
     improve: 'Cut back the positions behind your worst down days, and set exit levels so losses stay small.',
   },
   volatility: {
-    what: 'How much your portfolio’s value typically moves up or down in a year. Lower means a smoother ride.',
+    what: 'How much your portfolio’s value typically moves up or down in a year. Up to 25% earns full points, then the score eases down smoothly; one-day price glitches are ignored.',
     improve: 'Hold fewer high-volatility coins, size them smaller, or keep a cash or stablecoin reserve.',
   },
-  'beta-stability': {
-    what: 'How steady your sensitivity to the overall market (Bitcoin) stays from month to month.',
-    improve: 'Keep a consistent mix instead of rotating between very aggressive and very defensive coins.',
+  'benchmark-beta': {
+    what: 'How strongly your portfolio moved with the overall crypto market (Bitcoin and Ethereum) over the last 7 days. 1 means it moved in step with the market; 2 means twice as hard.',
+    improve: 'Keep beta between −1 and 1: blend in steadier coins or a stablecoin reserve, and trim the most aggressive positions when your portfolio swings harder than the market.',
   },
   concentration: {
     what: 'How much of your money sits in your biggest positions (HHI). Spread evenly across 5 coins is ideal; one coin is the worst case.',
@@ -38,9 +38,10 @@ export const METRIC_GUIDE: Record<string, MetricGuide> = {
     improve: 'Combine coins that don’t move together; five coins that all follow Bitcoin count as little more than one bet.',
   },
   'position-sizing': {
-    what: 'The size of your largest single buy compared with your capital. Speculative coins are held to a stricter limit.',
-    improve: 'Keep any single buy to 10–20% of capital, and speculative coins to 1–2%; build bigger positions in steps.',
+    what: 'How big your largest position is compared with your capital. Up to 15% in one coin earns full points; 30% earns 15 of 25, 50% earns 5, and more earns none. Speculative coins count double.',
+    improve: 'Keep any single coin at or below 15% of your capital; trim oversized positions and add new ones in steps.',
   },
+
 
   // Behavioral Psychology
   disposition: {
@@ -86,9 +87,5 @@ export const METRIC_GUIDE: Record<string, MetricGuide> = {
   liquidity: {
     what: 'How big your trades are compared with how much of each coin trades in a day. Large orders in thin markets move the price against you.',
     improve: 'Split big orders into smaller pieces and favour coins with plenty of daily trading volume.',
-  },
-  'risk-target': {
-    what: 'How closely your portfolio’s actual volatility matches the risk target you set.',
-    improve: 'Set a target on this page, then adjust position sizes until your volatility sits near it.',
   },
 };

@@ -311,7 +311,6 @@ export interface InstitutionalScore {
   coverage: { trades: number; datedTrades: number; closedLots: number; observations: number };
   /** Null when there are no current holdings. */
   diversification: PortfolioDiversification | null;
-  riskTargetVolatility: number | null;
   /** How current the inputs are: prices older than 15 minutes, or history ending before yesterday, are stale. */
   dataFreshness: {
     pricesAsOf: string | null;

@@ -4,11 +4,11 @@ import { METRIC_GUIDE } from '../institutional/metricGuide';
 import InfoTip from '../ui/InfoTip';
 
 /** Every component key the scoring engine can send (from TraderScoring.java). */
-const ENGINE_KEYS = 'bankroll-return beta-stability concentration correlation deployment-pacing disposition fomo independent-bets liquidity panic position-sizing profit-factor risk-target sharpe smoothness sortino speculative-accumulation velocity volatility '.trim().split(' ');
+const ENGINE_KEYS = 'bankroll-return benchmark-beta concentration correlation deployment-pacing disposition fomo independent-bets liquidity panic position-sizing profit-factor sharpe smoothness sortino speculative-accumulation velocity volatility'.split(' ');
 
 describe('metric guide', () => {
   it('explains every metric the engine scores, with what it means and how to improve it', () => {
-    expect(ENGINE_KEYS.length).toBe(19);
+    expect(ENGINE_KEYS.length).toBe(18);
     for (const key of ENGINE_KEYS) {
       const g = METRIC_GUIDE[key];
       expect(g, key).toBeDefined();
