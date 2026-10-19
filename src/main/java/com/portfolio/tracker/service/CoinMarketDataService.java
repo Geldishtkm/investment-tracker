@@ -80,22 +80,53 @@ public class CoinMarketDataService {
         }
     }
 
+    /** 24h volume and market capitalisation of each coin, keyed by field name. */
+    public record MarketData(Map<String, Double> volumes, Map<String, Double> marketCaps) {}
+
+    /**
+     * Current 24h volume and market capitalisation in one lookup. A coin CoinGecko lists without a market
+     * capitalisation has a volume but no cap; coins it can't provide right now are left out of both.
+     */
+    public MarketData getVolumesAndMarketCaps(Collection<String> coinIds) {
+        try {
+            Map<String, Map<String, Double>> fields = getMarketFields(coinIds, List.of("total_volume", "market_cap"));
+            return new MarketData(fields.get("total_volume"), fields.get("market_cap"));
+        } catch (Exception e) {
+            logger.warn("Market data unavailable for {}: {}", coinIds, e.getMessage());
+            return new MarketData(Map.of(), Map.of());
+        }
+    }
+
     /** A positive numeric /coins/markets field per coin, from the cached top-100 list where possible. */
     private Map<String, Double> getMarketField(Collection<String> coinIds, String field) throws Exception {
-        Map<String, Double> values = new HashMap<>();
+        return getMarketFields(coinIds, List.of(field)).get(field);
+    }
+
+    /**
+     * Positive numeric /coins/markets fields per coin. A coin counts as found once CoinGecko returns it,
+     * so a coin without one of the fields isn't fetched again.
+     */
+    private Map<String, Map<String, Double>> getMarketFields(Collection<String> coinIds, List<String> fields) throws Exception {
+        Map<String, Map<String, Double>> byField = new HashMap<>();
+        for (String field : fields) byField.put(field, new HashMap<>());
+        Set<String> found = new HashSet<>();
         // The top-100 list is already cached (with market data); only fetch coins outside it
         try {
             for (Map<String, Object> coin : cryptoPriceService.getTopCoins()) {
                 String id = String.valueOf(coin.get("id"));
-                if (coinIds.contains(id) && coin.get(field) instanceof Number value && value.doubleValue() > 0) {
-                    values.put(id, value.doubleValue());
+                if (!coinIds.contains(id)) continue;
+                found.add(id);
+                for (String field : fields) {
+                    if (coin.get(field) instanceof Number value && value.doubleValue() > 0) {
+                        byField.get(field).put(id, value.doubleValue());
+                    }
                 }
             }
         } catch (Exception e) {
-            logger.debug("Top coins unavailable for {}: {}", field, e.getMessage());
+            logger.debug("Top coins unavailable for {}: {}", fields, e.getMessage());
         }
-        List<String> toFetch = coinIds.stream().filter(id -> !values.containsKey(id)).toList();
-        if (toFetch.isEmpty()) return values;
+        List<String> toFetch = coinIds.stream().filter(id -> !found.contains(id)).toList();
+        if (toFetch.isEmpty()) return byField;
 
         String path = UriComponentsBuilder.fromPath("/coins/markets")
                 .queryParam("vs_currency", "usd")
@@ -105,12 +136,14 @@ public class CoinMarketDataService {
                 .toUriString();
         JsonNode markets = objectMapper.readTree(coinGecko.get(path));
         for (JsonNode coin : markets) {
-            JsonNode value = coin.get(field);
-            if (value != null && value.isNumber() && value.asDouble() > 0) {
-                values.put(coin.get("id").asText(), value.asDouble());
+            for (String field : fields) {
+                JsonNode value = coin.get(field);
+                if (value != null && value.isNumber() && value.asDouble() > 0) {
+                    byField.get(field).put(coin.get("id").asText(), value.asDouble());
+                }
             }
         }
-        return values;
+        return byField;
     }
 
     private Optional<String> findInTopCoins(String key) {

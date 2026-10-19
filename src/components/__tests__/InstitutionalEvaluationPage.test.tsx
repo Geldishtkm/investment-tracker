@@ -70,6 +70,22 @@ describe('InstitutionalEvaluationPage', () => {
     expect(screen.queryByTestId('diversification-card')).not.toBeInTheDocument();
   });
 
+  it('shows position-sizing coaching cards with the capital share at risk', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [{
+      id: 'position-sizing', severity: 'HIGH', pillar: 'risk', title: 'High-Risk Concentration & Impulse',
+      detail: 'High concentration risk: a single trade allocated 25.0% of your total portfolio ($25 of $100) to Pepe, a micro-cap asset ($40.0M market cap).',
+      recommendation: 'Size speculative positions at 1–2% of capital and never more than 5%.',
+    }] }));
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    const card = await screen.findByRole('article', { name: 'High-Risk Concentration & Impulse' });
+    expect(card).toHaveTextContent('High concentration risk: a single trade');
+    expect(within(card).getByText('Position sizing')).toBeInTheDocument();
+    expect(card).toHaveTextContent('allocated 25.0% of your total portfolio');
+    expect(card).toHaveTextContent('micro-cap asset');
+    expect(card).toHaveTextContent('1–2% of capital');
+    expect(within(card).getByText('High')).toBeInTheDocument();
+  });
+
   it('says so when no issues are flagged', async () => {
     api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4, caps: [] }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);

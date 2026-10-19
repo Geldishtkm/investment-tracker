@@ -229,7 +229,7 @@ class TraderScoringTest {
                 }
             }
             return new Inputs(equalHoldings(n), portfolio, bench, null, List.of(), Map.of(), Map.of(), Map.of(), null,
-                    0.04, 365, TODAY, assets);
+                    0.04, 365, TODAY, assets, Map.of());
         }
 
         @Test
@@ -279,7 +279,7 @@ class TraderScoringTest {
             List<Holding> holdings = List.of(new Holding("btc", "Bitcoin", 300), new Holding("eth", "Ethereum", 300),
                     new Holding("sol", "Solana", 300), new Holding("usdc", "USDC", 100));
             Evaluation e = TraderScoring.evaluate(new Inputs(holdings, portfolio, portfolio, null,
-                    List.of(), Map.of(), Map.of(), Map.of(), null, 0.04, 365, TODAY, assets));
+                    List.of(), Map.of(), Map.of(), Map.of(), null, 0.04, 365, TODAY, assets, Map.of()));
             assertTrue(e.diversification().averageCorrelation() < 0.7, "ρ̄ " + e.diversification().averageCorrelation());
             Flag f = flag(e, "correlated-holdings").orElseThrow();
             assertTrue(f.detail().contains("90% of the capital is in holdings that move in lockstep"), f.detail());
@@ -357,7 +357,7 @@ class TraderScoringTest {
             Component c = component(TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null)), "disposition");
             assertEquals(2.0, c.value(), EPS);
             assertEquals(0.5, c.score(), EPS);
-            assertEquals(50.0, c.points(), EPS);
+            assertEquals(42.5, c.points(), EPS);
         }
 
         @Test
@@ -489,13 +489,184 @@ class TraderScoringTest {
     // ---- Pillar 4 ----
 
     @Nested
+    @DisplayName("Position sizing")
+    class PositionSizing {
+        private static final double LARGE_CAP = 500e9, MICRO = 40e6;
+
+        /** A portfolio of BTC (large cap) plus the given trades, with market caps and listings supplied. */
+        private Inputs sized(List<TradeEvent> trades, Map<String, Double> caps, Map<String, SortedMap<LocalDate, Double>> prices) {
+            Map<String, Double> volumes = new HashMap<>();
+            for (TradeEvent t : trades) volumes.put(t.coinId(), 1e12); // listed, and too liquid for a liquidity flag
+            return new Inputs(List.of(), null, null, "No price history.", trades, prices, Map.of(), volumes, null,
+                    0.04, 365, TODAY, null, caps);
+        }
+
+        @Test
+        @DisplayName("Impact: dust counts 0, 10% counts 1, and a speculative trade escalates by 1 per extra 5%")
+        void impactScale() {
+            assertEquals(0.0, TraderScoring.impact(0.005, true), EPS);
+            assertEquals(0.0, TraderScoring.impact(0.01, true), EPS);
+            assertEquals(0.5, TraderScoring.impact(0.055, false), EPS);
+            assertEquals(1.0, TraderScoring.impact(0.10, true), EPS);
+            assertEquals(1.0, TraderScoring.impact(0.25, false), EPS);
+            assertEquals(3.0, TraderScoring.impact(0.20, true), EPS);
+            assertEquals(4.0, TraderScoring.impact(0.25, true), EPS);
+            assertEquals(4.0, TraderScoring.impact(0.90, true), EPS);
+        }
+
+        @Test
+        @DisplayName("$5 of a micro-cap on a $10,000 portfolio is dust: no penalty")
+        void dustMicroCap() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 99.95, 100, TODAY.minusDays(60)),
+                    buy(2, "pepe", 5, 1, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(sized(trades, Map.of("btc", LARGE_CAP, "pepe", MICRO), Map.of()));
+            Component sizing = component(e, "speculative-sizing");
+            assertEquals(0.0005, sizing.value(), 1e-9);
+            assertEquals(1.0, sizing.score(), EPS);
+            assertEquals(0.0, component(e, "speculative-accumulation").value(), EPS);
+            assertEquals(1.0, component(e, "speculative-accumulation").score(), EPS);
+            assertTrue(flag(e, "position-sizing").isEmpty());
+        }
+
+        @Test
+        @DisplayName("$20 of the same micro-cap on a $100 bankroll is a 20% speculative stake: severe penalties")
+        void oversizedMicroCap() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.8, 100, TODAY.minusDays(60)),
+                    buy(2, "pepe", 20, 1, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(sized(trades, Map.of("btc", LARGE_CAP, "pepe", MICRO), Map.of()));
+            Component sizing = component(e, "speculative-sizing");
+            assertEquals(0.20, sizing.value(), 1e-9);
+            assertEquals(0.0, sizing.points(), EPS);
+            assertEquals(3.0, component(e, "speculative-accumulation").value(), 1e-9);
+            assertEquals(0.0, component(e, "speculative-accumulation").points(), EPS);
+
+            Flag f = flag(e, "position-sizing").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertEquals("risk", f.pillar());
+            assertEquals("High-Risk Concentration & Impulse", f.title());
+            assertTrue(f.detail().startsWith("High concentration risk: a single trade allocated 20.0% of your total portfolio"
+                    + " ($20 of $100) to pepe, a micro-cap asset ($40.0M market cap)"), f.detail());
+            assertTrue(f.recommendation().contains("1–2% of capital"));
+        }
+
+        @Test
+        @DisplayName("A coin listed without a market cap is unverified, and 100%+ volatility is speculative too")
+        void speculativeClassification() {
+            SortedMap<LocalDate, Double> wild = new TreeMap<>(), calm = new TreeMap<>();
+            for (int d = 0; d < 200; d++) {
+                wild.put(TODAY.minusDays(200 - d), d % 2 == 0 ? 100.0 : 112.0); // ±12% a day ≈ 200%+ a year
+                calm.put(TODAY.minusDays(200 - d), 100.0 + d * 0.01);
+            }
+            List<TradeEvent> trades = List.of(buy(1, "btc", 1, 100, TODAY.minusDays(60)),
+                    buy(2, "anon", 1, 15, TODAY.minusDays(30)), buy(3, "wild", 1, 15, TODAY.minusDays(20)));
+            Inputs in = sized(trades, Map.of("btc", LARGE_CAP, "wild", LARGE_CAP),
+                    Map.of("btc", calm, "wild", wild));
+            TraderScoring.Sizing s = TraderScoring.sizing(in);
+            assertFalse(s.of(trades.get(0)).asset().speculative());
+            assertTrue(s.of(trades.get(1)).asset().speculative());
+            assertEquals("unverified asset (no verified market cap)", s.of(trades.get(1)).asset().label());
+            assertTrue(s.of(trades.get(2)).asset().speculative());
+            assertTrue(s.of(trades.get(2)).asset().label().startsWith("high-volatility asset ("), s.of(trades.get(2)).asset().label());
+
+            // Without any market data or history a coin is unassessed, never assumed speculative
+            TraderScoring.Sizing unknown = TraderScoring.sizing(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null));
+            assertFalse(unknown.of(trades.get(1)).asset().assessed());
+            assertFalse(unknown.of(trades.get(1)).asset().speculative());
+        }
+
+        @Test
+        @DisplayName("Capital base is peak capital invested: trading the same money in and out doesn't shrink trades")
+        void capitalBase() {
+            List<TradeEvent> churn = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                churn.add(buy(2L * i, "btc", 10, 100, TODAY.minusDays(30 - 2L * i)));
+                churn.add(sell(2L * i + 1, "btc", 10, 100, TODAY.minusDays(29 - 2L * i)));
+            }
+            assertEquals(1000.0, TraderScoring.peakCapitalInvested(churn), EPS);
+            assertEquals(1.0, TraderScoring.sizing(inputs(List.of(), null, null, churn, Map.of(), Map.of(), null))
+                    .of(churn.get(4)).share(), EPS);
+            // Current value counts when the portfolio has grown past what was invested
+            Inputs grown = inputs(List.of(new Holding("btc", "btc", 4000)), null, null, List.of(churn.get(0)), Map.of(), Map.of(), null);
+            assertEquals(4000.0, TraderScoring.sizing(grown).capitalBase(), EPS);
+        }
+
+        @Test
+        @DisplayName("FOMO is weighted by size: dust rally-buys aren't penalized, a big speculative one escalates")
+        void fomoBySize() {
+            LocalDate surgeDay = TODAY.minusDays(40), calmDay = TODAY.minusDays(100);
+            Map<LocalDate, Double> overrides = new HashMap<>();
+            overrides.put(surgeDay, 120.0);
+            SortedMap<LocalDate, Double> history = prices(overrides);
+
+            List<TradeEvent> dust = List.of(buy(1, "pepe", 0.05, 120, surgeDay), buy(2, "pepe", 1000, 100, calmDay));
+            Evaluation small = TraderScoring.evaluate(sized(dust, Map.of("pepe", MICRO), Map.of("pepe", history)));
+            assertEquals(0.0, component(small, "fomo").value(), EPS);
+            assertEquals(1.0, component(small, "fomo").score(), EPS);
+            assertEquals(Severity.INFO, flag(small, "fomo").orElseThrow().severity());
+
+            List<TradeEvent> big = List.of(buy(1, "pepe", 3, 120, surgeDay), buy(2, "btc", 10, 100, calmDay));
+            Evaluation large = TraderScoring.evaluate(sized(big, Map.of("pepe", MICRO, "btc", LARGE_CAP),
+                    Map.of("pepe", history, "btc", prices(Map.of()))));
+            assertEquals(2.0, component(large, "fomo").value(), 1e-9); // (4 + 0) / 2 buys
+            Flag f = flag(large, "fomo").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertTrue(f.detail().contains("Position sizing: the largest put 26.5% of your capital into pepe, a micro-cap asset"), f.detail());
+        }
+
+        @Test
+        @DisplayName("60 dust trades a month aren't overtrading; the raw count still shows the activity")
+        void dustIsNotOvertrading() {
+            List<TradeEvent> trades = new ArrayList<>();
+            trades.add(buy(0, "btc", 100, 100, TODAY.minusDays(29)));
+            for (int i = 1; i <= 60; i++) trades.add(buy(i, "btc", 0.5, 100, TODAY.minusDays(i % 30)));
+            Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null));
+            Component v = component(e, "velocity");
+            assertTrue(v.displayValue().startsWith("61.0 trades / 30 days"), v.displayValue());
+            assertEquals(1.0, v.value(), EPS); // only the opening buy carries weight
+            assertEquals(1.0, v.score(), EPS);
+            assertTrue(flag(e, "overtrading").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Repeated speculative buys are flagged as accumulation in the Behavioral pillar")
+        void accumulation() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 7, 100, TODAY.minusDays(90)),
+                    buy(2, "pepe", 100, 1, TODAY.minusDays(60)), buy(3, "bonk", 100, 1, TODAY.minusDays(30)),
+                    buy(4, "wif", 100, 1, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(sized(trades,
+                    Map.of("btc", LARGE_CAP, "pepe", MICRO, "bonk", MICRO, "wif", MICRO), Map.of()));
+            assertEquals(3.0, component(e, "speculative-accumulation").value(), 1e-9);
+            Flag f = flag(e, "speculative-accumulation").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertEquals("behavior", f.pillar());
+            assertTrue(f.detail().startsWith("3 buys put 30.0% of your capital into speculative assets (pepe, bonk, wif)"), f.detail());
+        }
+
+        @Test
+        @DisplayName("Pillar weights still total 250 with the sizing components")
+        void weights() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 1, 100, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(sized(trades, Map.of("btc", LARGE_CAP), Map.of()));
+            for (String key : List.of("risk", "behavior", "consistency", "execution")) {
+                assertEquals(250.0, pillar(e, key).components().stream().mapToDouble(Component::weight).sum(), EPS, key);
+            }
+            assertEquals(25.0, component(e, "speculative-sizing").weight(), EPS);
+            assertEquals(50.0, component(e, "speculative-accumulation").weight(), EPS);
+        }
+    }
+
+    @Nested
     @DisplayName("Execution Discipline")
     class Execution {
         @Test
         @DisplayName("60 trades in 30 days is overtrading; 4 a month is disciplined")
         void velocity() {
+            // 30 round trips of the whole bankroll: every trade moves 100% of the capital invested
             List<TradeEvent> busy = new ArrayList<>();
-            for (int i = 0; i < 60; i++) busy.add(buy(i, "btc", 1, 100, TODAY.minusDays(i % 30)));
+            for (int i = 0; i < 60; i++) {
+                busy.add(i % 2 == 0 ? buy(i, "btc", 10, 100, TODAY.minusDays(29 - i / 2))
+                        : sell(i, "btc", 10, 100, TODAY.minusDays(29 - i / 2)));
+            }
             Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, busy, Map.of(), Map.of(), null));
             assertEquals(60.0, component(e, "velocity").value(), EPS);
             assertEquals(0.0, component(e, "velocity").score(), EPS);

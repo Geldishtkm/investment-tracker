@@ -200,6 +200,9 @@ const PillarCard: React.FC<{ pillar: ScorePillar }> = ({ pillar }) => {
   );
 };
 
+/** Flags about how much capital a trade or holding put at risk. */
+const SIZING_FLAGS = new Set(['position-sizing', 'speculative-accumulation']);
+
 export const DiagnosticCard: React.FC<{ flag: DiagnosticFlag }> = ({ flag }) => {
   const style = SEVERITY_STYLE[flag.severity];
   return (
@@ -207,6 +210,9 @@ export const DiagnosticCard: React.FC<{ flag: DiagnosticFlag }> = ({ flag }) => 
       <div className="flex items-center gap-2 mb-2">
         <span className={`text-xs px-2 py-0.5 rounded-full border ${style.chip}`}>{style.label}</span>
         <span className="text-xs text-gray-400">{PILLAR_SHORT_NAME[flag.pillar]}</span>
+        {SIZING_FLAGS.has(flag.id) && (
+          <span className="text-xs px-2 py-0.5 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-200">Position sizing</span>
+        )}
       </div>
       <h4 className="font-semibold text-white mb-1">{flag.title}</h4>
       <p className="text-sm text-gray-300 mb-3">{flag.detail}</p>

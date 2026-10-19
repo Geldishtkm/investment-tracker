@@ -121,12 +121,16 @@ public class BehavioralAnalyticsService {
                 logger.debug("No price history for {}: {}", id, e.getMessage());
             }
         }
-        Map<String, Double> volumes = tradedCoins.isEmpty() ? Map.of() : coinMarketDataService.getTotalVolumes(tradedCoins);
+        // 24h volumes (liquidity impact) and market caps (micro-cap and unverified coins, for position sizing)
+        CoinMarketDataService.MarketData market = tradedCoins.isEmpty()
+                ? new CoinMarketDataService.MarketData(Map.of(), Map.of())
+                : coinMarketDataService.getVolumesAndMarketCaps(tradedCoins);
 
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
-                historyReason, events, dailyPrices, currentPrices, volumes, user.getRiskTargetVolatility(),
-                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns));
+                historyReason, events, dailyPrices, currentPrices, market.volumes(), user.getRiskTargetVolatility(),
+                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns,
+                market.marketCaps()));
         // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
         boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
         return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));

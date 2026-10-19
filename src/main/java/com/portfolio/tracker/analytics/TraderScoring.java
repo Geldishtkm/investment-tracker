@@ -52,6 +52,15 @@ public final class TraderScoring {
     static final int BETA_STEP = 5;
     static final int MIN_BETA_WINDOWS = 3;
 
+    // Position sizing: penalties scale with each trade's share of the capital base
+    static final double DUST_SHARE = 0.01;            // under 1% of capital: negligible, no penalty
+    static final double FULL_IMPACT_SHARE = 0.10;     // a trade of 10%+ counts in full...
+    static final double ESCALATION_STEP = 0.05;       // ...and in a speculative asset, each further 5% adds one more
+    static final double MAX_IMPACT = 4.0;             // (a 25% speculative trade counts four times)
+    static final double MICRO_CAP = 250e6;            // market capitalisation below $250M
+    static final double SPECULATIVE_VOLATILITY = 1.0; // annualized volatility of 100% or more
+    static final int MIN_VOLATILITY_DAYS = 30;
+
     private TraderScoring() {
     }
 
@@ -82,6 +91,8 @@ public final class TraderScoring {
      * @param riskTargetVolatility     the user's target annual volatility, or null if not set
      * @param assetReturns             assetReturns[t][i] = daily return of holdings[i] on the same days as
      *                                 portfolioReturns, for correlations; null if unavailable
+     * @param marketCaps               current market capitalisation in USD per coin; a coin with a volume in
+     *                                 dailyVolumes but no cap here is one CoinGecko lists without a verified cap
      */
     public record Inputs(List<Holding> holdings,
                          double[] portfolioReturns,
@@ -95,7 +106,8 @@ public final class TraderScoring {
                          double riskFreeRate,
                          int periodsPerYear,
                          LocalDate today,
-                         double[][] assetReturns) {
+                         double[][] assetReturns,
+                         Map<String, Double> marketCaps) {
 
         /** Inputs without per-holding returns: diversification is then judged on concentration alone. */
         public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
@@ -104,7 +116,7 @@ public final class TraderScoring {
                       Map<String, Double> dailyVolumes, Double riskTargetVolatility, double riskFreeRate,
                       int periodsPerYear, LocalDate today) {
             this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
-                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, null);
+                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, null, Map.of());
         }
     }
 
@@ -169,12 +181,13 @@ public final class TraderScoring {
         List<Flag> flags = new ArrayList<>();
         LotBook book = matchLots(in.trades());
         Diversification.Result diversification = diversification(in);
+        Sizing sizing = sizing(in);
 
         List<Pillar> pillars = List.of(
-                pillar("risk", "Risk Control & Tail Risk", riskComponents(in, diversification, flags)),
-                pillar("behavior", "Behavioral Psychology", behaviorComponents(in, book, flags)),
+                pillar("risk", "Risk Control & Tail Risk", riskComponents(in, diversification, sizing, flags)),
+                pillar("behavior", "Behavioral Psychology", behaviorComponents(in, book, sizing, flags)),
                 pillar("consistency", "Consistency & Return Quality", consistencyComponents(in, book, flags)),
-                pillar("execution", "Execution Discipline", executionComponents(in, flags)));
+                pillar("execution", "Execution Discipline", executionComponents(in, sizing, flags)));
 
         int scored = 0;
         double points = 0.0;
@@ -323,7 +336,7 @@ public final class TraderScoring {
     // Pillar 1: Risk Control & Tail Risk
     // ---------------------------------------------------------------------
 
-    static List<Component> riskComponents(Inputs in, Diversification.Result div, List<Flag> flags) {
+    static List<Component> riskComponents(Inputs in, Diversification.Result div, Sizing sizing, List<Flag> flags) {
         List<Component> out = new ArrayList<>();
         double[] rp = in.portfolioReturns();
         int periods = in.periodsPerYear();
@@ -336,7 +349,7 @@ public final class TraderScoring {
         // Sharpe ratio
         if (hasHistory) {
             double sharpe = (annualReturn - in.riskFreeRate()) / volatility;
-            out.add(component("sharpe", "Sharpe ratio", 65, sharpe, fmt2(sharpe), lin(sharpe, -0.5, 2.0),
+            out.add(component("sharpe", "Sharpe ratio", 60, sharpe, fmt2(sharpe), lin(sharpe, -0.5, 2.0),
                     "(annualized return − " + pct1(in.riskFreeRate()) + " risk-free) / annualized volatility, "
                             + rp.length + " daily returns"));
             if (sharpe < 0) {
@@ -347,7 +360,7 @@ public final class TraderScoring {
                                 + "or hold part of the portfolio in lower-volatility assets."));
             }
         } else {
-            out.add(unavailable("sharpe", "Sharpe ratio", 65, noHistory));
+            out.add(unavailable("sharpe", "Sharpe ratio", 60, noHistory));
         }
 
         // Sortino ratio: only downside deviation (returns below the risk-free rate) counts as risk
@@ -362,19 +375,19 @@ public final class TraderScoring {
             double excess = annualReturn - in.riskFreeRate();
             if (downside > 0) {
                 double sortino = excess / downside;
-                out.add(component("sortino", "Sortino ratio", 55, sortino, fmt2(sortino), lin(sortino, -0.5, 3.0),
+                out.add(component("sortino", "Sortino ratio", 50, sortino, fmt2(sortino), lin(sortino, -0.5, 3.0),
                         "(annualized return − risk-free) / annualized downside deviation " + pct1(downside)));
             } else {
-                out.add(component("sortino", "Sortino ratio", 55, null, "∞ (no down days)", excess > 0 ? 1.0 : 0.0,
+                out.add(component("sortino", "Sortino ratio", 50, null, "∞ (no down days)", excess > 0 ? 1.0 : 0.0,
                         "No daily return fell below the risk-free rate"));
             }
         } else {
-            out.add(unavailable("sortino", "Sortino ratio", 55, noHistory));
+            out.add(unavailable("sortino", "Sortino ratio", 50, noHistory));
         }
 
         // Volatility level
         if (hasHistory) {
-            out.add(component("volatility", "Annualized volatility", 35, volatility, pct1(volatility),
+            out.add(component("volatility", "Annualized volatility", 30, volatility, pct1(volatility),
                     inv(volatility, 0.20, 1.20), "Sample standard deviation of daily returns × √" + periods));
             if (volatility > 0.5) {
                 flags.add(new Flag("high-volatility", volatility > 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
@@ -383,7 +396,7 @@ public final class TraderScoring {
                         "Reduce position sizes or blend in less volatile assets until volatility matches what you can hold through."));
             }
         } else {
-            out.add(unavailable("volatility", "Annualized volatility", 35, noHistory));
+            out.add(unavailable("volatility", "Annualized volatility", 30, noHistory));
         }
 
         // Beta stability: how much the market exposure drifts between rolling windows
@@ -392,7 +405,7 @@ public final class TraderScoring {
         if (betas.size() >= MIN_BETA_WINDOWS) {
             double[] b = betas.stream().mapToDouble(Double::doubleValue).toArray();
             double spread = RiskMath.sampleStdDev(b);
-            out.add(component("beta-stability", "Beta stability", 35, spread, "β " + fmt2(RiskMath.mean(b)) + " ± " + fmt2(spread),
+            out.add(component("beta-stability", "Beta stability", 25, spread, "β " + fmt2(RiskMath.mean(b)) + " ± " + fmt2(spread),
                     inv(spread, 0.10, 0.60), "Std. deviation of " + b.length + " rolling " + BETA_WINDOW + "-day betas"));
             if (spread > 0.4) {
                 flags.add(new Flag("unstable-beta", Severity.LOW, "risk", "Unstable Market Exposure",
@@ -401,11 +414,12 @@ public final class TraderScoring {
                         "Keep a consistent mix instead of rotating between high- and low-beta coins."));
             }
         } else {
-            out.add(unavailable("beta-stability", "Beta stability", 35, rp == null ? noHistory
+            out.add(unavailable("beta-stability", "Beta stability", 25, rp == null ? noHistory
                     : "Needs at least " + (BETA_WINDOW + BETA_STEP * (MIN_BETA_WINDOWS - 1)) + " days of shared history."));
         }
 
         diversificationComponents(div, flags, out);
+        speculativeSizingComponent(sizing, flags, out);
         return out;
     }
 
@@ -514,14 +528,14 @@ public final class TraderScoring {
     // Pillar 2: Behavioral Psychology
     // ---------------------------------------------------------------------
 
-    static List<Component> behaviorComponents(Inputs in, LotBook book, List<Flag> flags) {
+    static List<Component> behaviorComponents(Inputs in, LotBook book, Sizing sizing, List<Flag> flags) {
         List<Component> out = new ArrayList<>();
 
         // Disposition effect: losers held longer than winners (Shefrin & Statman, 1985)
         Optional<Disposition> disposition = disposition(book.closed());
         if (disposition.isPresent()) {
             Disposition d = disposition.get();
-            out.add(component("disposition", "Disposition effect", 100, d.ratio(), fmt1(d.ratio()) + "× loser/winner hold time",
+            out.add(component("disposition", "Disposition effect", 85, d.ratio(), fmt1(d.ratio()) + "× loser/winner hold time",
                     inv(d.ratio(), 1.0, 3.0), "Average hold: losers " + fmt1(d.loserDays()) + " days ("
                             + d.losers() + "), winners " + fmt1(d.winnerDays()) + " days (" + d.winners() + ")"));
             if (d.ratio() >= 1.5) {
@@ -532,13 +546,14 @@ public final class TraderScoring {
                                 + "and judge a losing trade on its prospects, not on getting back to break-even."));
             }
         } else {
-            out.add(unavailable("disposition", "Disposition effect", 100,
+            out.add(unavailable("disposition", "Disposition effect", 85,
                     "Needs at least one winning and one losing sell with known buy and sell dates."));
         }
 
-        // FOMO chasing: buys made right after a sharp rally
+        // FOMO chasing: buys made right after a sharp rally, weighted by how much capital each one committed
         int evaluableBuys = 0, fomoBuys = 0;
-        double fomoRunUpSum = 0.0;
+        double fomoRunUpSum = 0.0, fomoImpact = 0.0;
+        TradeSize largestFomo = null;
         for (TradeEvent t : in.trades()) {
             if (t.side() != Side.BUY || !t.dateKnown()) continue;
             Double now = priceOn(in, t.coinId(), t.date());
@@ -549,22 +564,37 @@ public final class TraderScoring {
             if (runUp >= FOMO_RUN_UP) {
                 fomoBuys++;
                 fomoRunUpSum += runUp;
+                TradeSize size = sizing.of(t);
+                fomoImpact += size.impact();
+                if (largestFomo == null || size.share() > largestFomo.share()) largestFomo = size;
             }
         }
         if (evaluableBuys >= MIN_EVALUABLE_TRADES) {
-            double rate = (double) fomoBuys / evaluableBuys;
-            out.add(component("fomo", "FOMO chasing", 75, rate, fomoBuys + " of " + evaluableBuys + " buys (" + pct0(rate) + ")",
-                    inv(rate, 0.0, 0.5), "Buys made after the coin rose " + pct0(FOMO_RUN_UP) + "+ in the previous "
-                            + FOMO_LOOKBACK_DAYS + " days"));
-            if (fomoBuys > 0) {
-                flags.add(new Flag("fomo", rate >= 0.25 ? Severity.MEDIUM : Severity.LOW, "behavior", "FOMO Chasing Flagged",
+            double rate = fomoImpact / evaluableBuys;
+            out.add(component("fomo", "FOMO chasing", 60, rate, fomoBuys + " of " + evaluableBuys + " buys · size-weighted "
+                            + fmt2(rate), inv(rate, 0.0, 0.5),
+                    "Buys made after the coin rose " + pct0(FOMO_RUN_UP) + "+ in the previous " + FOMO_LOOKBACK_DAYS
+                            + " days, each counted by its share of capital (" + SIZING_RULE + "), per evaluable buy"));
+            if (fomoBuys > 0 && fomoImpact == 0.0) {
+                flags.add(new Flag("fomo", Severity.INFO, "behavior", "FOMO Buys Too Small to Matter",
+                        fomoBuys + " of " + evaluableBuys + " buys came after a rally of " + pct0(FOMO_RUN_UP)
+                                + " or more, but each was under " + pct0(DUST_SHARE) + " of your capital, so they aren't penalized.",
+                        "Small experiments are fine; keep rally-chasing buys this small if you make them at all."));
+            } else if (fomoBuys > 0) {
+                boolean oversized = largestFomo.share() >= FULL_IMPACT_SHARE;
+                Severity severity = rate >= 0.5 || (oversized && largestFomo.asset().speculative()) ? Severity.HIGH
+                        : rate >= 0.25 || oversized ? Severity.MEDIUM : Severity.LOW;
+                flags.add(new Flag("fomo", severity, "behavior", "FOMO Chasing Flagged",
                         fomoBuys + " of " + evaluableBuys + " buys came after a " + FOMO_LOOKBACK_DAYS + "-day rally of "
-                                + pct0(FOMO_RUN_UP) + " or more (average +" + pct1(fomoRunUpSum / fomoBuys) + ").",
+                                + pct0(FOMO_RUN_UP) + " or more (average +" + pct1(fomoRunUpSum / fomoBuys) + "). "
+                                + "Position sizing: the largest put " + pct1(largestFomo.share()) + " of your capital into "
+                                + largestFomo.trade().name() + (largestFomo.asset().speculative()
+                                        ? ", a " + largestFomo.asset().label() : "") + ".",
                         "Wait for a pullback or scale in over several days instead of buying into a spike; "
-                                + "write down the entry reason before placing the order."));
+                                + "if you do chase, keep the position to 1–2% of capital and write down the entry reason first."));
             }
         } else {
-            out.add(unavailable("fomo", "FOMO chasing", 75, "Needs at least " + MIN_EVALUABLE_TRADES
+            out.add(unavailable("fomo", "FOMO chasing", 60, "Needs at least " + MIN_EVALUABLE_TRADES
                     + " dated buys within the last year of price history."));
         }
 
@@ -586,7 +616,7 @@ public final class TraderScoring {
         }
         if (evaluableSells >= MIN_EVALUABLE_TRADES) {
             double rate = (double) panicSells / evaluableSells;
-            out.add(component("panic", "Panic capitulation", 75, rate, panicSells + " of " + evaluableSells + " sells (" + pct0(rate) + ")",
+            out.add(component("panic", "Panic capitulation", 55, rate, panicSells + " of " + evaluableSells + " sells (" + pct0(rate) + ")",
                     inv(rate, 0.0, 0.5), "Sells on a day the coin fell " + pct0(-PANIC_DROP) + "+ in 24h, at its lowest price within ±"
                             + PANIC_WINDOW_DAYS + " days"));
             if (panicSells > 0) {
@@ -596,9 +626,11 @@ public final class TraderScoring {
                         "Set exit levels in advance and avoid selling during a crash; if you must act, reduce in steps rather than all at once."));
             }
         } else {
-            out.add(unavailable("panic", "Panic capitulation", 75, "Needs at least " + MIN_EVALUABLE_TRADES
+            out.add(unavailable("panic", "Panic capitulation", 55, "Needs at least " + MIN_EVALUABLE_TRADES
                     + " dated sells within the last year of price history."));
         }
+
+        speculativeAccumulationComponent(sizing, flags, out);
         return out;
     }
 
@@ -620,6 +652,185 @@ public final class TraderScoring {
         if (winners == 0 || losers == 0) return Optional.empty();
         double w = winDays / winners, l = loseDays / losers;
         return Optional.of(new Disposition(l / w, l, w, losers, winners));
+    }
+
+    // ---------------------------------------------------------------------
+    // Position sizing (Risk and Behavioral pillars)
+    // ---------------------------------------------------------------------
+
+    static final String SIZING_RULE = "under 1% of capital counts 0, 10% or more counts 1, and in a speculative asset "
+            + "every 5% above 10% counts one more";
+
+    /**
+     * What is known about a coin's risk. speculative: a market cap under $250M, a listing without a verified
+     * market cap, or annualized volatility of 100% or more. Unknown values never make a coin speculative.
+     */
+    record AssetRisk(String coinId, Double marketCap, Double volatility, boolean assessed, boolean speculative) {
+        String label() {
+            List<String> why = new ArrayList<>();
+            if (marketCap != null && marketCap < MICRO_CAP) why.add(compactMoney(marketCap) + " market cap");
+            if (marketCap == null && assessed && speculative && (volatility == null || volatility < SPECULATIVE_VOLATILITY)) {
+                why.add("no verified market cap");
+            }
+            if (volatility != null && volatility >= SPECULATIVE_VOLATILITY) why.add(pct0(volatility) + " annual volatility");
+            String kind = marketCap != null && marketCap < MICRO_CAP ? "micro-cap asset"
+                    : marketCap == null && assessed ? "unverified asset" : "high-volatility asset";
+            return why.isEmpty() ? kind : kind + " (" + String.join(", ", why) + ")";
+        }
+    }
+
+    /** A trade's share of the capital base and the weight it carries in penalties. */
+    record TradeSize(TradeEvent trade, double share, double impact, AssetRisk asset) {}
+
+    /**
+     * Every trade's size, measured against capitalBase = max(peak capital invested, current portfolio value).
+     * Peak capital invested is the largest cost basis of open positions at any point in the ledger: the
+     * bankroll actually put to work. Unlike S₀ (all buys added up) it doesn't grow when the same money is
+     * traded in and out, so frequent traders' trades aren't made to look small.
+     */
+    record Sizing(double capitalBase, Map<Long, TradeSize> trades) {
+        TradeSize of(TradeEvent t) {
+            return trades.get(t.id());
+        }
+    }
+
+    static Sizing sizing(Inputs in) {
+        double holdingsValue = in.holdings().stream().mapToDouble(Holding::value).sum();
+        double base = Math.max(peakCapitalInvested(in.trades()), holdingsValue);
+        Map<String, AssetRisk> assets = new HashMap<>();
+        Map<Long, TradeSize> sizes = new HashMap<>();
+        for (TradeEvent t : in.trades()) {
+            AssetRisk asset = assets.computeIfAbsent(t.coinId(), id -> assetRisk(in, id));
+            double share = base > 0 ? t.notional() / base : 0.0;
+            sizes.put(t.id(), new TradeSize(t, share, impact(share, asset.speculative()), asset));
+        }
+        return new Sizing(base, sizes);
+    }
+
+    /** Largest cost basis of open positions over the ledger, with sells removing lots first-in, first-out. */
+    static double peakCapitalInvested(List<TradeEvent> trades) {
+        List<TradeEvent> ordered = new ArrayList<>(trades);
+        ordered.sort(Comparator.comparing((TradeEvent t) -> t.dateKnown() ? t.date() : LocalDate.MIN)
+                .thenComparingLong(TradeEvent::id));
+        Map<String, Deque<double[]>> lots = new HashMap<>(); // [quantity, price]
+        double invested = 0.0, peak = 0.0;
+        for (TradeEvent t : ordered) {
+            Deque<double[]> queue = lots.computeIfAbsent(t.coinId(), k -> new ArrayDeque<>());
+            if (t.side() == Side.BUY) {
+                queue.addLast(new double[]{t.quantity(), t.price()});
+                invested += t.notional();
+                peak = Math.max(peak, invested);
+                continue;
+            }
+            double toSell = t.quantity();
+            while (toSell > 1e-12 && !queue.isEmpty()) {
+                double[] lot = queue.peekFirst();
+                double used = Math.min(lot[0], toSell);
+                invested -= used * lot[1];
+                lot[0] -= used;
+                toSell -= used;
+                if (lot[0] <= 1e-12) queue.pollFirst();
+            }
+        }
+        return peak;
+    }
+
+    /**
+     * Penalty weight of a trade: 0 below 1% of capital, rising linearly to 1 at 10%. Above 10% a trade in a
+     * speculative asset escalates by one for every further 5%, up to 4 at 25%.
+     */
+    static double impact(double share, boolean speculative) {
+        if (share < DUST_SHARE) return 0.0;
+        if (share <= FULL_IMPACT_SHARE || !speculative) return lin(share, DUST_SHARE, FULL_IMPACT_SHARE);
+        return Math.min(MAX_IMPACT, 1.0 + (share - FULL_IMPACT_SHARE) / ESCALATION_STEP);
+    }
+
+    static AssetRisk assetRisk(Inputs in, String coinId) {
+        Double cap = in.marketCaps() == null ? null : in.marketCaps().get(coinId);
+        boolean listed = in.dailyVolumes().containsKey(coinId); // CoinGecko returned market data for it
+        Double volatility = null;
+        SortedMap<LocalDate, Double> prices = in.dailyPrices().get(coinId);
+        if (prices != null && prices.size() > MIN_VOLATILITY_DAYS) {
+            List<Double> series = new ArrayList<>(prices.values());
+            double[] logReturns = new double[series.size() - 1];
+            boolean valid = true;
+            for (int i = 1; i < series.size(); i++) {
+                if (!(series.get(i - 1) > 0 && series.get(i) > 0)) { valid = false; break; }
+                logReturns[i - 1] = Math.log(series.get(i) / series.get(i - 1));
+            }
+            if (valid) volatility = RiskMath.sampleStdDev(logReturns) * Math.sqrt(in.periodsPerYear());
+        }
+        boolean assessed = cap != null || listed || volatility != null;
+        boolean speculative = (cap != null && cap < MICRO_CAP) || (cap == null && listed)
+                || (volatility != null && volatility >= SPECULATIVE_VOLATILITY);
+        return new AssetRisk(coinId, cap, volatility, assessed, speculative);
+    }
+
+    /** Risk pillar: the largest single buy of a speculative asset, as a share of capital (25 points). */
+    static void speculativeSizingComponent(Sizing sizing, List<Flag> flags, List<Component> out) {
+        List<TradeSize> buys = sizing.trades().values().stream()
+                .filter(s -> s.trade().side() == Side.BUY && s.asset().assessed()).toList();
+        if (buys.isEmpty() || !(sizing.capitalBase() > 0)) {
+            out.add(unavailable("speculative-sizing", "Speculative position sizing", 25,
+                    "Needs recorded buys of coins with market data or price history."));
+            return;
+        }
+        TradeSize largest = buys.stream().filter(s -> s.asset().speculative())
+                .max(Comparator.comparingDouble(TradeSize::share)).orElse(null);
+        if (largest == null) {
+            out.add(component("speculative-sizing", "Speculative position sizing", 25, 0.0, "no speculative buys", 1.0,
+                    "None of your buys were in micro-cap (under " + compactMoney(MICRO_CAP) + "), unverified or "
+                            + pct0(SPECULATIVE_VOLATILITY) + "+ volatility assets"));
+            return;
+        }
+        double share = largest.share();
+        out.add(component("speculative-sizing", "Speculative position sizing", 25, share,
+                "largest " + pct1(share) + " of capital in " + largest.trade().name(), inv(share, 0.02, 0.15),
+                "Largest single buy of a micro-cap, unverified or high-volatility asset as a share of capital "
+                        + "(the larger of peak capital invested and current value, " + money(sizing.capitalBase())
+                        + "); 2% or less scores full marks, 15% none"));
+        if (share >= 0.05) {
+            TradeEvent t = largest.trade();
+            flags.add(new Flag("position-sizing", share >= FULL_IMPACT_SHARE ? Severity.HIGH : Severity.MEDIUM, "risk",
+                    "High-Risk Concentration & Impulse",
+                    "High concentration risk: a single trade allocated " + pct1(share) + " of your total portfolio ("
+                            + money(t.notional()) + " of " + money(sizing.capitalBase()) + ") to " + t.name() + ", a "
+                            + largest.asset().label() + (t.dateKnown() ? ", on " + t.date() : "") + ".",
+                    "Size speculative positions at 1–2% of capital and never more than 5%: a micro-cap can fall 80–90% "
+                            + "quickly, and at " + pct0(share) + " that would cost " + pct0(share * 0.85)
+                            + " of the whole portfolio."));
+        }
+    }
+
+    /**
+     * Behavioral pillar: repeated buying of speculative assets, as the sum of those buys' penalty weights
+     * (50 points; full marks at 0, none at 3, e.g. three 10% buys or one 20% buy).
+     */
+    static void speculativeAccumulationComponent(Sizing sizing, List<Flag> flags, List<Component> out) {
+        List<TradeSize> buys = sizing.trades().values().stream()
+                .filter(s -> s.trade().side() == Side.BUY && s.asset().assessed()).toList();
+        if (buys.isEmpty() || !(sizing.capitalBase() > 0)) {
+            out.add(unavailable("speculative-accumulation", "Speculative accumulation", 50,
+                    "Needs recorded buys of coins with market data or price history."));
+            return;
+        }
+        List<TradeSize> speculative = buys.stream().filter(s -> s.asset().speculative()).toList();
+        double load = speculative.stream().mapToDouble(TradeSize::impact).sum();
+        double share = speculative.stream().mapToDouble(TradeSize::share).sum();
+        out.add(component("speculative-accumulation", "Speculative accumulation", 50, load,
+                speculative.isEmpty() ? "no speculative buys"
+                        : speculative.size() + (speculative.size() == 1 ? " buy · " : " buys · ") + pct1(share) + " of capital · load " + fmt2(load),
+                inv(load, 0.0, 3.0), "Sum of size weights of buys in micro-cap, unverified or high-volatility assets ("
+                        + SIZING_RULE + "); 3 or more scores zero"));
+        long meaningful = speculative.stream().filter(s -> s.impact() > 0).count();
+        if (meaningful >= 2 && load >= 1.0) {
+            List<String> names = speculative.stream().filter(s -> s.impact() > 0).map(s -> s.trade().name()).distinct().toList();
+            flags.add(new Flag("speculative-accumulation", load >= 2.0 ? Severity.HIGH : Severity.MEDIUM, "behavior",
+                    "Speculative Accumulation Flagged",
+                    meaningful + " buys put " + pct1(share) + " of your capital into speculative assets ("
+                            + String.join(", ", names) + "): position sizing that compounds risk with every purchase.",
+                    "Set a total budget for speculative coins (for example 5–10% of capital) and stop adding once it's used."));
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -755,24 +966,35 @@ public final class TraderScoring {
     // Pillar 4: Execution Discipline
     // ---------------------------------------------------------------------
 
-    static List<Component> executionComponents(Inputs in, List<Flag> flags) {
+    static List<Component> executionComponents(Inputs in, Sizing sizing, List<Flag> flags) {
         List<Component> out = new ArrayList<>();
 
-        // Overtrading velocity: trades per 30 days since the first recorded trade
+        // Overtrading velocity: trades per 30 days since the first recorded trade. Activity is judged on the raw
+        // count; overtrading on the size-weighted count, so dust trades don't add to it and large speculative
+        // ones add more than one each
         List<TradeEvent> manual = in.trades().stream().filter(t -> !t.imported() && t.dateKnown()).toList();
         if (!manual.isEmpty()) {
             LocalDate first = manual.stream().map(TradeEvent::date).min(Comparator.naturalOrder()).orElseThrow();
             long days = Math.max(30, ChronoUnit.DAYS.between(first, in.today()) + 1);
             double per30 = manual.size() * 30.0 / days;
+            double weightedPer30 = manual.stream().mapToDouble(t -> sizing.of(t).impact()).sum() * 30.0 / days;
             // Best between 2 and 8 trades a month; overtrading falls to 0 at 40, and near-inactivity
             // (under 2) earns at most 40%, since a handful of trades shows little discipline
-            double velocityScore = per30 < 2 ? 0.4 + 0.6 * lin(per30, 0.5, 2.0) : inv(per30, 8, 40);
-            out.add(component("velocity", "Trading velocity", 100, per30, fmt1(per30) + " trades / 30 days", velocityScore,
-                    manual.size() + " trades over " + days + " days"));
-            if (per30 > 20) {
-                flags.add(new Flag("overtrading", per30 > 40 ? Severity.HIGH : Severity.MEDIUM, "execution", "Overtrading Flagged",
-                        fmt1(per30) + " trades every 30 days: frequent trading adds costs and decisions made under pressure.",
-                        "Trade only from a written plan, with a limit on trades per week."));
+            double velocityScore = per30 < 2 ? 0.4 + 0.6 * lin(per30, 0.5, 2.0) : inv(weightedPer30, 8, 40);
+            out.add(component("velocity", "Trading velocity", 100, weightedPer30, fmt1(per30) + " trades / 30 days · "
+                            + fmt1(weightedPer30) + " size-weighted", velocityScore,
+                    manual.size() + " trades over " + days + " days; overtrading is judged on the size-weighted rate ("
+                            + SIZING_RULE + ")"));
+            if (weightedPer30 > 20) {
+                long large = manual.stream().filter(t -> sizing.of(t).share() >= FULL_IMPACT_SHARE).count();
+                long speculative = manual.stream().filter(t -> sizing.of(t).share() >= FULL_IMPACT_SHARE
+                        && sizing.of(t).asset().speculative()).count();
+                flags.add(new Flag("overtrading", weightedPer30 > 40 ? Severity.HIGH : Severity.MEDIUM, "execution", "Overtrading Flagged",
+                        fmt1(per30) + " trades every 30 days (" + fmt1(weightedPer30) + " weighted by size): " + large + " of "
+                                + manual.size() + " trades moved " + pct0(FULL_IMPACT_SHARE) + " or more of your capital"
+                                + (speculative > 0 ? ", " + speculative + " of them in speculative assets" : "")
+                                + ". Frequent large trades add costs and decisions made under pressure.",
+                        "Trade only from a written plan, with a limit on trades per week, and keep each trade to a fixed small share of capital."));
             }
         } else {
             out.add(unavailable("velocity", "Trading velocity", 100, "Record buys and sells to measure trading frequency."));
@@ -953,6 +1175,13 @@ public final class TraderScoring {
     private static String pct1(double v) { return String.format(Locale.ROOT, "%.1f%%", v * 100); }
     private static String pct2(double v) { return String.format(Locale.ROOT, "%.2f%%", v * 100); }
     private static String signedPct1(double v) { return String.format(Locale.ROOT, "%+.1f%%", v * 100); }
+
+    /** $61.2M, $1.4B: for market capitalisations. */
+    private static String compactMoney(double v) {
+        if (v >= 1e9) return String.format(Locale.ROOT, "$%.1fB", v / 1e9);
+        if (v >= 1e6) return String.format(Locale.ROOT, "$%.1fM", v / 1e6);
+        return money(v);
+    }
 
     private static String money(double v) {
         return (v < 0 ? "-$" : "$") + String.format(Locale.US, "%,.0f", Math.abs(v));
