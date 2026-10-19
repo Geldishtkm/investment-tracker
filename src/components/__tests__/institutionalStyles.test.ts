@@ -4,12 +4,12 @@ import { todayLocal } from '../../utils/dates';
 
 describe('tier colours', () => {
   it('runs from muted gold at the top to crimson at the bottom', () => {
-    expect(tierColor(1).hex).toBe('#C6A15B');
-    expect(tierColor(2).hex).toBe('#C6A15B');
-    expect(tierColor(4).hex).toBe('#3FA586');
-    expect(tierColor(6).hex).toBe('#5B8DEF');
-    expect(tierColor(8).hex).toBe('#C99A3E');
-    expect(tierColor(10).hex).toBe('#C8464F');
+    expect(tierColor(1).hex).toBe('#D4B062');
+    expect(tierColor(2).hex).toBe('#D4B062');
+    expect(tierColor(4).hex).toBe('#4FD1A5');
+    expect(tierColor(6).hex).toBe('#7C83FF');
+    expect(tierColor(8).hex).toBe('#E3B062');
+    expect(tierColor(10).hex).toBe('#E06C75');
   });
 });
 

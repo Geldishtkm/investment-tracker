@@ -100,10 +100,10 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
             <div className="h-44 w-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={rows} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="100%" stroke="#12161F" strokeWidth={2} isAnimationActive={false}>
+                  <Pie data={rows} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="100%" stroke="#0E131F" strokeWidth={2} isAnimationActive={false}>
                     {rows.map((r, i) => <Cell key={r.id} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                  <Tooltip contentStyle={{ background: '#141B2A', border: '1px solid #2A3447', borderRadius: 6, fontSize: 12 }}
                            formatter={(v: number, n: string) => [usd(v), n]} />
                 </PieChart>
               </ResponsiveContainer>

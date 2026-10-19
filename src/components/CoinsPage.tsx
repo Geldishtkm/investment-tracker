@@ -1,13 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { LineChart, RefreshCw, Search } from 'lucide-react';
 import { Coin } from '../types';
 import { NewAsset } from '../services/api';
 import { useMarketData } from '../hooks/useMarketData';
+import { useVirtualRows } from '../hooks/useVirtualRows';
 import { todayLocal } from '../utils/dates';
 import PriceHistoryChart from './PriceHistoryChart';
 import Term from './ui/Term';
-import { Badge, Delta, Modal, Panel, ShareBar, SkeletonRows, Sparkline, btn, input } from './ui/kit';
+import { Badge, CoinIcon, Delta, Modal, Panel, ShareBar, SkeletonRows, Sparkline, btn, focusRing, input, segmented } from './ui/kit';
 import { compactUsd, pct, pctPoints, qty as fmtQty, usd } from './ui/format';
+
+/** Fixed row height, so the grid can window 500 rows. */
+const ROW_HEIGHT = 44;
 
 type SortKey = 'rank' | 'price' | 'change24h' | 'change7d' | 'marketCap' | 'volume' | 'turnover';
 
@@ -32,7 +36,10 @@ const sortValue = (c: Coin, key: SortKey): number => {
   }
 };
 
-/** Market grid: the top coins by market cap with trends, volume, and a quick-buy ticket. */
+/**
+ * Market grid: the top 500 coins by market cap with trends, volume, and a quick-buy ticket. Rows are
+ * windowed (only those in view are rendered) and search is deferred, so typing and scrolling stay fast.
+ */
 const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) => {
   const { coins, loading, error, asOf, refresh } = useMarketData();
   const [search, setSearch] = useState('');
@@ -40,15 +47,21 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
   const [buying, setBuying] = useState<Coin | null>(null);
   const [charting, setCharting] = useState<Coin | null>(null);
 
+  const deferredSearch = useDeferredValue(search);
+
   const held = useMemo(() => new Set(heldNames.map(n => n.trim().toLowerCase())), [heldNames]);
   const isHeld = (c: Coin) => held.has(c.name.toLowerCase()) || held.has(c.id) || held.has(c.symbol.toLowerCase());
 
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const filtered = q ? coins.filter(c => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q) || c.id.includes(q)) : coins;
     const dir = sort.desc ? -1 : 1;
     return [...filtered].sort((a, b) => dir * (sortValue(a, sort.key) - sortValue(b, sort.key)));
-  }, [coins, search, sort]);
+  }, [coins, deferredSearch, sort]);
+
+  const win = useVirtualRows(rows.length, ROW_HEIGHT);
+  const { reset } = win;
+  useEffect(() => { reset(); }, [deferredSearch, sort, reset]);
 
   const maxVolume = Math.max(1, ...coins.map(c => c.total_volume ?? 0));
   const totalCap = coins.reduce((s, c) => s + (c.market_cap ?? 0), 0);
@@ -73,7 +86,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
       {/* Market tape */}
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4" data-testid="market-tape">
         {[
-          ['Top-100 market cap', compactUsd(totalCap), 'Market cap'],
+          [`Top-${coins.length || 500} market cap`, compactUsd(totalCap), 'Market cap'],
           ['24h volume', compactUsd(totalVolume), 'Volume 24h'],
           ['BTC dominance', totalCap && btc ? pct(btc.market_cap / totalCap, 1) : '—', 'Market cap'],
           ['Advancers / decliners', coins.length ? `${advancers} / ${coins.length - advancers}` : '—', ''],
@@ -85,8 +98,11 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
         ))}
       </div>
 
-      <Panel flush title="Top 100 by market cap"
-             subtitle={asOf ? `Updated ${new Date(asOf).toLocaleTimeString()}` : undefined}
+      <Panel flush title={`Top ${coins.length || 500} by market cap`}
+             subtitle={<>
+               {deferredSearch.trim() ? `${rows.length} match${rows.length === 1 ? '' : 'es'} · ` : ''}
+               {asOf ? `Updated ${new Date(asOf).toLocaleTimeString()}` : ''}
+             </>}
              actions={<>
                <div className="relative">
                  <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-term-dim" />
@@ -103,8 +119,8 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
             <button type="button" className={`${btn.secondary} mt-3`} onClick={() => void refresh(true)}>Try again</button>
           </div>
         ) : loading && !coins.length ? <SkeletonRows rows={12} cols={8} /> : (
-          <div className="max-h-[72vh] overflow-auto">
-            <table className="w-full min-w-[1100px] text-sm" aria-label="Markets">
+          <div ref={win.ref} className="max-h-[72vh] overflow-auto" data-testid="markets-scroller">
+            <table className="w-full min-w-[1100px] text-sm" aria-label="Markets" aria-rowcount={rows.length + 1}>
               <thead className="text-[11px] tracking-wider text-term-dim">
                 <tr className="border-b border-term-line">
                   {th('rank', '#', 'text-left')}
@@ -123,14 +139,16 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
                 {rows.length === 0 && (
                   <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-term-muted">No coins match “{search}”.</td></tr>
                 )}
-                {rows.map(c => {
+                {win.padTop > 0 && <tr aria-hidden="true" style={{ height: win.padTop }} />}
+                {rows.slice(win.start, win.end).map((c, i) => {
                   const turnover = c.market_cap ? (c.total_volume ?? 0) / c.market_cap : null;
                   return (
-                    <tr key={c.id} className="hover:bg-term-hover" data-testid={`coin-${c.id}`}>
+                    <tr key={c.id} className="whitespace-nowrap transition-colors duration-100 hover:bg-white/[0.03]" style={{ height: ROW_HEIGHT }}
+                        aria-rowindex={win.start + i + 2} data-testid={`coin-${c.id}`}>
                       <td className="num px-3 py-2 text-left text-term-dim">{c.market_cap_rank ?? '—'}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2.5">
-                          <img src={c.image} alt="" className="h-5 w-5 rounded-full" loading="lazy" />
+                          <CoinIcon src={c.image} name={c.name} />
                           <span className="font-medium text-term-text">{c.name}</span>
                           <span className="text-xs uppercase text-term-dim">{c.symbol}</span>
                           {isHeld(c) && <Badge tone="accent">Held</Badge>}
@@ -162,6 +180,7 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
                     </tr>
                   );
                 })}
+                {win.padBottom > 0 && <tr aria-hidden="true" style={{ height: win.padBottom }} />}
               </tbody>
             </table>
           </div>
@@ -213,15 +232,15 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
   return (
     <Modal title={`Buy ${coin.name}`} labelledBy="buy-title" onClose={onClose}>
       <form onSubmit={submit} noValidate className="space-y-3">
-        <div className="flex items-center justify-between rounded-md border border-term-line bg-term-bg px-3 py-2 text-sm">
-          <span className="flex items-center gap-2"><img src={coin.image} alt="" className="h-4 w-4 rounded-full" />{coin.symbol.toUpperCase()} / USD</span>
+        <div className="flex items-center justify-between rounded-md border border-term-line bg-black/20 px-3 py-2 text-sm">
+          <span className="flex items-center gap-2"><CoinIcon src={coin.image} name={coin.name} size={16} />{coin.symbol.toUpperCase()} / USD</span>
           <span className="num text-term-text">{usd(price)}</span>
         </div>
 
-        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Order size in">
+        <div className={`${segmented.track} flex w-full`} role="group" aria-label="Order size in">
           {(['usd', 'qty'] as const).map(m => (
             <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setAmount(''); }}
-                    className={`flex-1 rounded py-1 text-xs font-semibold ${mode === m ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`}>
+                    className={`flex-1 ${segmented.option(mode === m)} font-sans font-medium`}>
               {m === 'usd' ? 'Amount (USD)' : `Quantity (${coin.symbol.toUpperCase()})`}
             </button>
           ))}
@@ -235,7 +254,7 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
         {presets.length > 0 && (
           <div className="flex gap-1.5">
             {presets.map(p => (
-              <button key={p} type="button" className="num flex-1 rounded border border-term-line py-1 text-xs text-term-muted hover:border-term-line2 hover:text-term-text"
+              <button key={p} type="button" className={`num flex-1 rounded-md border border-term-line py-1 text-xs text-term-muted transition-colors duration-150 hover:border-white/20 hover:text-term-text ${focusRing}`}
                       onClick={() => { setMode('usd'); setAmount((Math.floor((cash ?? 0) * p * 100) / 100).toString()); }}>
                 {pct(p, 0)} of cash
               </button>
@@ -247,7 +266,7 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
           <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className={`num mt-1 ${input}`} />
         </label>
 
-        <dl className="grid grid-cols-2 gap-1.5 rounded-md border border-term-line bg-term-bg px-3 py-2 text-xs">
+        <dl className="grid grid-cols-2 gap-1.5 rounded-md border border-term-line bg-black/20 px-3 py-2 text-xs">
           <dt className="text-term-dim">Quantity</dt><dd className="num text-right text-term-text">{fmtQty(quantity)}</dd>
           <dt className="text-term-dim">Order value</dt><dd className="num text-right text-term-text">{usd(cost)}</dd>
           {cash != null && (<>
@@ -261,7 +280,7 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
           <p className="text-xs text-term-warn">Large single orders and same-day deployment lower your Evaluation score.</p>
         )}
         {error && <p role="alert" className="text-sm text-term-down">{error}</p>}
-        <button type="submit" disabled={saving} className="w-full rounded-md bg-term-up py-2 text-sm font-semibold text-white hover:bg-[#4BB896] disabled:opacity-50">
+        <button type="submit" disabled={saving} className={btn.submitBuy}>
           {saving ? 'Placing…' : `Buy ${coin.symbol.toUpperCase()}`}
         </button>
       </form>

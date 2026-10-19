@@ -11,11 +11,17 @@
 
   html,
   body {
-    background: #0B0E14;
-    color: #E4E8EF;
+    background: #090D16;
+    color: #E6EAF2;
   }
 
   body {
+    /* A faint indigo/cyan glow behind the frosted panels */
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(124, 131, 255, 0.08), transparent 60%),
+      radial-gradient(900px 500px at 95% 0%, rgba(76, 201, 240, 0.05), transparent 55%),
+      #090D16;
+    background-attachment: fixed;
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-feature-settings: 'cv11', 'ss01';
     -webkit-font-smoothing: antialiased;
@@ -29,25 +35,26 @@
   }
 
   ::selection {
-    background: rgba(91, 141, 239, 0.35);
+    background: rgba(124, 131, 255, 0.35);
   }
 
   :focus-visible {
-    outline: 2px solid #5B8DEF;
+    outline: 2px solid rgba(124, 131, 255, 0.7);
     outline-offset: 2px;
+    border-radius: 4px;
   }
 
   /* Thin, quiet scrollbars */
   * {
     scrollbar-width: thin;
-    scrollbar-color: #2E3647 transparent;
+    scrollbar-color: #2A3447 transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: #2E3647;
+    background: #2A3447;
     border-radius: 4px;
   }
   *::-webkit-scrollbar-track {
@@ -64,12 +71,12 @@
   input[type='range']::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    background: #2E3647;
+    background: #2A3447;
   }
   input[type='range']::-moz-range-track {
     height: 4px;
     border-radius: 2px;
-    background: #2E3647;
+    background: #2A3447;
   }
   input[type='range']::-webkit-slider-thumb {
     -webkit-appearance: none;
@@ -77,16 +84,16 @@
     height: 14px;
     margin-top: -5px;
     border-radius: 50%;
-    background: #E4E8EF;
-    border: 2px solid #5B8DEF;
+    background: #E6EAF2;
+    border: 2px solid #7C83FF;
     cursor: pointer;
   }
   input[type='range']::-moz-range-thumb {
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #E4E8EF;
-    border: 2px solid #5B8DEF;
+    background: #E6EAF2;
+    border: 2px solid #7C83FF;
     cursor: pointer;
   }
 
@@ -114,9 +121,11 @@
 
   /* Panels used by the sign-in pages and empty states */
   .glass-card {
-    background: #12161F;
-    border: 1px solid #222938;
-    border-radius: 12px;
+    background: rgba(14, 19, 31, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 48px -24px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(14px);
   }
 
   .btn {
@@ -124,11 +133,12 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
+    height: 2.25rem;
+    padding: 0 1rem;
     border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.875rem;
-    transition: background-color 150ms, border-color 150ms, color 150ms;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out;
     cursor: pointer;
   }
   .btn:disabled {
@@ -136,11 +146,12 @@
     cursor: not-allowed;
   }
   .btn-primary {
-    background: #5B8DEF;
-    color: #0B0E14;
+    background: #7C83FF;
+    color: #0B0F1C;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 6px 16px -6px rgba(124, 131, 255, 0.55);
   }
   .btn-primary:hover:not(:disabled) {
-    background: #7AA3F3;
+    background: #959BFF;
   }
 
   .flex-center {
@@ -151,7 +162,7 @@
 
   /* Loading placeholder with a soft sweep */
   .skeleton {
-    background: linear-gradient(90deg, #171C27 0px, #1F2533 160px, #171C27 320px);
+    background: linear-gradient(90deg, rgba(148, 163, 184, 0.06) 0px, rgba(148, 163, 184, 0.12) 160px, rgba(148, 163, 184, 0.06) 320px);
     background-size: 800px 100%;
     animation: shimmer 1.4s ease-in-out infinite;
     border-radius: 4px;

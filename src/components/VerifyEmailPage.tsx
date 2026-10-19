@@ -183,7 +183,7 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
               <button
                 type="submit"
                 disabled={digits.some(d => d === '') || isVerifying || verified}
-                className="w-full py-2.5 text-term-text font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
+                className="w-full py-2.5 text-term-text font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-term-accent text-term-bg hover:bg-[#959BFF]"
               >
                 {isVerifying ? 'Verifying…' : verified ? 'Verified' : 'Verify Email'}
               </button>

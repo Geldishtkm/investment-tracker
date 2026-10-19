@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Asset, TradeRequest } from '../types';
 import { assetService } from '../services/api';
 import { todayLocal } from '../utils/dates';
-import { Modal, btn, input } from './ui/kit';
+import { Modal, btn, focusRing, input, segmented } from './ui/kit';
 import { qty as fmtQty, usd } from './ui/format';
 
 interface TradeModalProps {
@@ -54,14 +54,14 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
   };
 
   const tab = (value: TradeRequest['side'], active: string) =>
-    `flex-1 py-1.5 text-sm font-semibold rounded transition-colors ${side === value ? active : 'text-term-muted hover:text-term-text'}`;
+    `flex-1 rounded-[5px] py-1.5 text-[13px] font-medium transition-colors duration-150 ${focusRing} ${side === value ? active : 'text-term-muted hover:text-term-text'}`;
 
   return (
     <Modal title={`Trade ${asset.name}`} labelledBy="trade-title" onClose={onClose}>
       <form onSubmit={submit} noValidate className="space-y-3">
-        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Trade side">
-          <button type="button" aria-pressed={side === 'BUY'} onClick={() => setSide('BUY')} className={tab('BUY', 'bg-term-up-soft text-term-up')}>Buy</button>
-          <button type="button" aria-pressed={side === 'SELL'} onClick={() => setSide('SELL')} className={tab('SELL', 'bg-term-down-soft text-term-down')}>Sell</button>
+        <div className={`${segmented.track} flex w-full`} role="group" aria-label="Trade side">
+          <button type="button" aria-pressed={side === 'BUY'} onClick={() => setSide('BUY')} className={tab('BUY', 'bg-term-up/15 text-term-up')}>Buy</button>
+          <button type="button" aria-pressed={side === 'SELL'} onClick={() => setSide('SELL')} className={tab('SELL', 'bg-term-down/15 text-term-down')}>Sell</button>
         </div>
 
         <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
@@ -79,7 +79,7 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
           <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className={`num mt-1 ${input}`} />
         </label>
 
-        <dl className="grid grid-cols-2 gap-2 rounded-md border border-term-line bg-term-bg px-3 py-2 text-xs">
+        <dl className="grid grid-cols-2 gap-2 rounded-md border border-term-line bg-black/20 px-3 py-2 text-xs">
           <dt className="text-term-dim">Order value</dt>
           <dd className="num text-right text-term-text">{usd(notional)}</dd>
           {side === 'BUY' && cash != null && (
@@ -100,7 +100,7 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
 
         <p className="text-xs text-term-dim">Paper trades execute near the market price and feed the Institutional Evaluation.</p>
         <button type="submit" disabled={saving}
-                className={`w-full rounded-md py-2 text-sm font-semibold text-white disabled:opacity-50 ${side === 'BUY' ? 'bg-term-up hover:bg-[#4BB896]' : 'bg-term-down hover:bg-[#D85A62]'}`}>
+                className={side === 'BUY' ? btn.submitBuy : btn.submitSell}>
           {saving ? 'Saving…' : side === 'BUY' ? 'Record buy' : 'Record sell'}
         </button>
         <button type="button" onClick={onClose} className={`${btn.ghost} w-full`}>Cancel</button>

@@ -4,16 +4,31 @@ import { Tone, TONE_TEXT, toneOf } from './format';
 
 /** Shared building blocks for the terminal: panels, metrics, deltas, badges, skeletons and sparklines. */
 
+/** Focus ring shared by every control: crisp, offset from the surface, keyboard-only. */
+export const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-term-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-term-bg';
+
+const base = `inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-[background-color,border-color,color,box-shadow] duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-45 ${focusRing}`;
+
 export const btn = {
-  primary: 'inline-flex items-center justify-center gap-1.5 rounded-md bg-term-accent px-3 py-1.5 text-sm font-semibold text-term-bg hover:bg-[#7AA3F3] disabled:cursor-not-allowed disabled:opacity-50',
-  secondary: 'inline-flex items-center justify-center gap-1.5 rounded-md border border-term-line2 bg-term-raised px-3 py-1.5 text-sm font-medium text-term-text hover:border-term-dim hover:bg-term-hover disabled:cursor-not-allowed disabled:opacity-50',
-  ghost: 'inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-term-muted hover:bg-term-hover hover:text-term-text disabled:opacity-50',
-  buy: 'inline-flex items-center justify-center rounded px-2 py-1 text-xs font-semibold text-term-up border border-term-up/40 bg-term-up-soft hover:border-term-up hover:text-[#5CC4A3]',
-  sell: 'inline-flex items-center justify-center rounded px-2 py-1 text-xs font-semibold text-term-down border border-term-down/40 bg-term-down-soft hover:border-term-down hover:text-[#E0626B]',
-  danger: 'inline-flex items-center justify-center gap-1.5 rounded-md bg-term-down px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#D85A62] disabled:opacity-50',
+  primary: `${base} h-8 px-3 text-[13px] bg-term-accent text-[#0B0F1C] shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_6px_16px_-6px_rgba(124,131,255,0.55)] hover:bg-[#959BFF]`,
+  secondary: `${base} h-8 px-3 text-[13px] border border-term-line2 bg-white/[0.03] text-term-text hover:border-white/20 hover:bg-white/[0.06]`,
+  ghost: `${base} h-8 px-2.5 text-[13px] text-term-muted hover:bg-white/[0.05] hover:text-term-text`,
+  buy: `${base} h-7 px-2.5 text-xs border border-term-up/30 bg-term-up/10 text-term-up hover:border-term-up/60 hover:bg-term-up/15`,
+  sell: `${base} h-7 px-2.5 text-xs border border-term-down/30 bg-term-down/10 text-term-down hover:border-term-down/60 hover:bg-term-down/15`,
+  danger: `${base} h-8 px-3 text-[13px] bg-term-down text-[#1A0B0E] hover:bg-[#E8858D]`,
+  /** Full-width order buttons on tickets. */
+  submitBuy: `${base} h-9 w-full text-sm bg-term-up text-[#06221A] hover:bg-[#6BDDB6]`,
+  submitSell: `${base} h-9 w-full text-sm bg-term-down text-[#1A0B0E] hover:bg-[#E8858D]`,
 };
 
-export const input = 'w-full rounded-md border border-term-line2 bg-term-bg px-3 py-2 text-sm text-term-text placeholder:text-term-dim focus:border-term-accent focus:outline-none';
+export const input = 'w-full h-9 rounded-md border border-term-line2 bg-white/[0.025] px-3 text-sm text-term-text placeholder:text-term-dim transition-[border-color,box-shadow,background-color] duration-150 hover:border-white/20 focus:border-term-accent/70 focus:bg-white/[0.04] focus:outline-none focus:ring-2 focus:ring-term-accent/25';
+
+/** Segmented control (confidence, horizon, side): a track and its options. */
+export const segmented = {
+  track: 'inline-flex gap-0.5 rounded-md border border-term-line bg-black/20 p-0.5',
+  option: (active: boolean) =>
+    `num rounded-[5px] px-2.5 py-1 text-xs transition-colors duration-150 ${focusRing} ${active ? 'bg-white/[0.08] text-term-text shadow-[0_1px_0_rgba(255,255,255,0.06)_inset]' : 'text-term-muted hover:text-term-text'}`,
+};
 
 interface PanelProps {
   title?: React.ReactNode;
@@ -31,7 +46,8 @@ interface PanelProps {
 export const Panel: React.FC<PanelProps> = ({ title, subtitle, actions, children, className = '', flush, id, ...rest }) => {
   const headingId = id ? `${id}-heading` : undefined;
   return (
-    <section className={`rounded-lg border border-term-line bg-term-panel ${className}`} aria-labelledby={title ? headingId : undefined}
+    <section className={`rounded-xl border border-term-line bg-term-panel/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] backdrop-blur-md ${className}`}
+             aria-labelledby={title ? headingId : undefined}
              data-testid={rest['data-testid']}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-term-line px-4 py-2.5">
@@ -92,7 +108,7 @@ const BADGE: Record<BadgeTone, string> = {
   down: 'border-term-down/40 bg-term-down-soft text-term-down',
   warn: 'border-term-warn/40 bg-term-warn-soft text-term-warn',
   accent: 'border-term-accent/40 bg-term-accent-soft text-term-accent',
-  gold: 'border-term-gold/50 bg-[#2A2213] text-term-gold',
+  gold: 'border-term-gold/50 bg-[#2A2414] text-term-gold',
 };
 
 export const Badge: React.FC<{ tone?: BadgeTone; children: React.ReactNode; className?: string }> = ({ tone = 'neutral', children, className = '' }) => (
@@ -120,7 +136,7 @@ export const SkeletonRows: React.FC<{ rows?: number; cols?: number }> = ({ rows 
 
 /** Placeholder for a row of metric tiles. */
 export const SkeletonMetrics: React.FC<{ count?: number }> = ({ count = 4 }) => (
-  <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4" role="status" aria-label="Loading">
+  <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-term-line bg-term-line md:grid-cols-4" role="status" aria-label="Loading">
     {Array.from({ length: count }, (_, i) => (
       <div key={i} className="space-y-2 bg-term-panel p-4">
         <Skeleton className="h-2.5 w-20" />
@@ -145,7 +161,7 @@ export const Sparkline: React.FC<{ data?: number[] | null; width?: number; heigh
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className={className}
          role="img" aria-label={label ?? `Trend ${up ? 'up' : 'down'}`}>
       <polyline points={path} fill="none" strokeWidth={1.25} strokeLinejoin="round" strokeLinecap="round"
-                stroke={up ? '#3FA586' : '#C8464F'} />
+                stroke={up ? '#4FD1A5' : '#E06C75'} />
     </svg>
   );
 };
@@ -175,17 +191,33 @@ export const PageHeader: React.FC<{ title: string; subtitle?: React.ReactNode; a
 export const Modal: React.FC<{ title: React.ReactNode; onClose?: () => void; children: React.ReactNode; labelledBy?: string; width?: string }> = ({
   title, onClose, children, labelledBy = 'modal-title', width = 'max-w-md',
 }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true"
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#04060B]/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true"
        aria-labelledby={labelledBy}
        onKeyDown={e => { if (e.key === 'Escape' && onClose) onClose(); }}>
-    <div className={`w-full ${width} rounded-lg border border-term-line2 bg-term-panel shadow-2xl shadow-black/60`}>
+    <div className={`w-full ${width} rounded-xl border border-term-line2 bg-term-panel/95 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl`}>
       <div className="flex items-center justify-between border-b border-term-line px-4 py-3">
         <h3 id={labelledBy} className="text-sm font-semibold text-term-text">{title}</h3>
         {onClose && (
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded p-1 text-term-muted hover:bg-term-hover hover:text-term-text">✕</button>
+          <button type="button" onClick={onClose} aria-label="Close" className={`${btn.ghost} h-7 w-7 px-0`}>✕</button>
         )}
       </div>
       <div className="p-4">{children}</div>
     </div>
   </div>
 );
+
+/** A coin's icon, falling back to its initial when the image is missing or fails to load. */
+export const CoinIcon: React.FC<{ src?: string; name: string; size?: number }> = ({ src, name, size = 20 }) => {
+  const [failed, setFailed] = React.useState(false);
+  if (!src || failed) {
+    return (
+      <span aria-hidden="true" style={{ width: size, height: size }}
+            className="inline-flex shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-semibold uppercase text-term-muted ring-1 ring-inset ring-white/10">
+        {name.trim()[0] ?? '?'}
+      </span>
+    );
+  }
+  return <img src={src} alt="" width={size} height={size} loading="lazy" decoding="async" onError={() => setFailed(true)}
+              className="shrink-0 rounded-full" style={{ width: size, height: size }} />;
+};
+

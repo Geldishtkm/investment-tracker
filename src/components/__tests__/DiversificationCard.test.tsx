@@ -60,9 +60,9 @@ describe('DiversificationCard', () => {
     expect(screen.getByText(/metrics without history are left out/)).toBeInTheDocument();
   });
 
-  it('colours positive correlation crimson and negative correlation emerald, stronger with magnitude', () => {
-    expect(correlationColor(0.9)).toMatch(/^rgba\(200, 70, 79/);
-    expect(correlationColor(-0.5)).toMatch(/^rgba\(63, 165, 134/);
+  it('colours positive correlation slate-red and negative correlation mint, stronger with magnitude', () => {
+    expect(correlationColor(0.9)).toMatch(/^rgba\(224, 108, 117/);
+    expect(correlationColor(-0.5)).toMatch(/^rgba\(79, 209, 165/);
     const alpha = (c: string) => parseFloat(c.slice(c.lastIndexOf(',') + 1));
     expect(alpha(correlationColor(0.9))).toBeGreaterThan(alpha(correlationColor(0.2)));
   });

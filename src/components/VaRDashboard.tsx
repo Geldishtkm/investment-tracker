@@ -6,7 +6,7 @@ import { authService } from '../services/authService';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { SLICE_COLORS } from './PortfolioPage';
 import Term from './ui/Term';
-import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonMetrics, btn } from './ui/kit';
+import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonMetrics, btn, segmented } from './ui/kit';
 import { num, pct, usd } from './ui/format';
 
 /** GET /api/var/portfolio: the full calculation, including the daily return history it used. */
@@ -68,8 +68,7 @@ interface VaRDashboardProps {
   onAddAsset: () => void;
 }
 
-const segment = (active: boolean) =>
-  `num rounded px-2.5 py-1 text-xs ${active ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`;
+const segment = segmented.option;
 
 const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
   const [calc, setCalc] = useState<VaRCalculation | null>(null);
@@ -139,9 +138,9 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
   return (
     <div className="space-y-4">
       {/* Parameters */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-term-line bg-term-panel px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-term-line bg-term-panel/75 px-4 py-2.5 backdrop-blur-md">
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-term-dim">Confidence</span>
-        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Confidence level">
+        <div className={segmented.track} role="group" aria-label="Confidence level">
           {CONFIDENCE.map(c => (
             <button key={c} type="button" aria-pressed={confidenceLevel === c} onClick={() => setConfidenceLevel(c)} className={segment(confidenceLevel === c)}>
               {pct(c, 0)}
@@ -149,7 +148,7 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
           ))}
         </div>
         <span className="ml-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-term-dim">Horizon</span>
-        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Time horizon">
+        <div className={segmented.track} role="group" aria-label="Time horizon">
           {HORIZONS.map(h => (
             <button key={h} type="button" aria-pressed={timeHorizon === h} onClick={() => setTimeHorizon(h)} className={segment(timeHorizon === h)}>
               {h}D
@@ -190,21 +189,21 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
                   <div className="h-64" role="img" aria-label={`Histogram of daily returns; the ${pct(1 - confidenceLevel, 0)} tail lies below ${pct(daily.cutoff, 2)}`}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={daily.bins} margin={{ top: 22, right: 8, bottom: 0, left: 0 }} barCategoryGap={1}>
-                        <CartesianGrid stroke="#222938" vertical={false} />
+                        <CartesianGrid stroke="#1C2433" vertical={false} />
                         <XAxis dataKey="mid" type="number" domain={['dataMin', 'dataMax']} tickFormatter={x => pct(x, 0)}
-                               stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
-                        <YAxis allowDecimals={false} width={32} stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+                               stroke="#5F6B82" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+                        <YAxis allowDecimals={false} width={32} stroke="#5F6B82" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
                         <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-                                 contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                                 contentStyle={{ background: '#141B2A', border: '1px solid #2A3447', borderRadius: 6, fontSize: 12 }}
                                  labelFormatter={(_, p) => p?.[0] ? `${pct(p[0].payload.from, 2)} to ${pct(p[0].payload.to, 2)}` : ''}
                                  formatter={(n: number) => [n, 'days']} />
                         <Bar dataKey="count" isAnimationActive={false}>
-                          {daily.bins.map((b, i) => <Cell key={i} fill={b.tail ? '#C8464F' : b.mid < 0 ? '#5D667A' : '#3FA586'} fillOpacity={b.tail ? 0.9 : 0.6} />)}
+                          {daily.bins.map((b, i) => <Cell key={i} fill={b.tail ? '#E06C75' : b.mid < 0 ? '#5F6B82' : '#4FD1A5'} fillOpacity={b.tail ? 0.9 : 0.6} />)}
                         </Bar>
-                        <ReferenceLine x={daily.cutoff} stroke="#C8464F" strokeDasharray="4 3"
-                                       label={{ value: `VaR ${pct(confidenceLevel, 0)}`, fill: '#C8464F', fontSize: 11, position: 'top' }} />
-                        <ReferenceLine x={daily.shortfall} stroke="#C99A3E" strokeDasharray="2 3"
-                                       label={{ value: 'CVaR', fill: '#C99A3E', fontSize: 11, position: 'insideTopLeft' }} />
+                        <ReferenceLine x={daily.cutoff} stroke="#E06C75" strokeDasharray="4 3"
+                                       label={{ value: `VaR ${pct(confidenceLevel, 0)}`, fill: '#E06C75', fontSize: 11, position: 'top' }} />
+                        <ReferenceLine x={daily.shortfall} stroke="#E3B062" strokeDasharray="2 3"
+                                       label={{ value: 'CVaR', fill: '#E3B062', fontSize: 11, position: 'insideTopLeft' }} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

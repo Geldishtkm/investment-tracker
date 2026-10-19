@@ -30,7 +30,15 @@ public class CryptoPriceService {
 
     // Cache configuration
     private static final long CACHE_DURATION_MS = 10 * 60 * 1000L; // 10 minutes
-    private static final int TOP_COINS_LIMIT = 100;
+    /** Coins in the market catalog, fetched as pages of CoinGecko's maximum page size. */
+    static final int TOP_COINS_LIMIT = 500;
+    static final int PAGE_SIZE = 250;
+    /** Points kept from the hourly 7-day sparkline in the catalog sent to browsers (every 4th hour). */
+    static final int SPARKLINE_STEP = 4;
+    /** Fields of /coins/markets the market grid uses; the rest is dropped from the browser payload. */
+    private static final List<String> CATALOG_FIELDS = List.of("id", "symbol", "name", "image", "current_price", "market_cap",
+            "market_cap_rank", "total_volume", "high_24h", "low_24h", "price_change_percentage_24h",
+            "price_change_percentage_7d_in_currency");
     private static final String CURRENCY_USD = "usd";
     // CoinGecko accepts many IDs per /simple/price call; stay well under URL length limits
     private static final int MAX_IDS_PER_BATCH = 200;
@@ -41,6 +49,8 @@ public class CryptoPriceService {
 
     // Cache for top coins with timestamp tracking
     private volatile List<Map<String, Object>> cachedTopCoins;
+    /** The same coins trimmed for browsers: used fields only, thinned sparkline, small icons. */
+    private volatile List<Map<String, Object>> catalog = List.of();
     private volatile long lastCacheTime = 0;
 
     private record SpotPrice(double usd, Instant fetchedAt) {
@@ -62,28 +72,75 @@ public class CryptoPriceService {
      */
     @Scheduled(fixedRate = CACHE_DURATION_MS)
     public synchronized void refreshCache() {
-        try {
-            String body = coinGecko.get(String.format(
-                    "/coins/markets?vs_currency=%s&order=market_cap_desc&per_page=%d&page=1&sparkline=true"
-                            + "&price_change_percentage=24h,7d&locale=en",
-                    CURRENCY_USD, TOP_COINS_LIMIT));
-            List<Map<String, Object>> coins = objectMapper.readValue(body, new TypeReference<>() {});
-            if (coins == null || coins.isEmpty()) {
-                logger.warn("Received empty response when refreshing top coins");
-                return;
+        List<Map<String, Object>> coins = new ArrayList<>();
+        int pages = (TOP_COINS_LIMIT + PAGE_SIZE - 1) / PAGE_SIZE;
+        for (int page = 1; page <= pages; page++) {
+            try {
+                String body = coinGecko.get(String.format(
+                        "/coins/markets?vs_currency=%s&order=market_cap_desc&per_page=%d&page=%d&sparkline=true"
+                                + "&price_change_percentage=24h,7d&locale=en",
+                        CURRENCY_USD, PAGE_SIZE, page));
+                List<Map<String, Object>> pageCoins = objectMapper.readValue(body, new TypeReference<>() {});
+                if (pageCoins == null || pageCoins.isEmpty()) break;
+                coins.addAll(pageCoins);
+            } catch (CoinGeckoClient.RateLimitedException e) {
+                logger.warn("Top coins page {} not refreshed: {}", page, e.getMessage());
+                if (page == 1) return; // keep the whole cached list
+                break;
+            } catch (Exception e) {
+                logger.error("Failed to refresh top coins page {}: {}", page, e.getMessage());
+                if (page == 1) return;
+                break;
             }
-            cachedTopCoins = coins;
-            lastCacheTime = System.currentTimeMillis();
-            logger.info("Successfully refreshed cache with {} coins", coins.size());
-        } catch (CoinGeckoClient.RateLimitedException e) {
-            logger.warn("Top coins not refreshed: {}; keeping the cached list", e.getMessage());
-        } catch (Exception e) {
-            logger.error("Failed to refresh top coins cache: {}", e.getMessage());
         }
+        if (coins.isEmpty()) {
+            logger.warn("Received empty response when refreshing top coins");
+            return;
+        }
+        // A later page that failed keeps its previous coins rather than shrinking the catalog
+        List<Map<String, Object>> previous = cachedTopCoins;
+        if (coins.size() < TOP_COINS_LIMIT && previous != null && previous.size() > coins.size()) {
+            Set<Object> have = new HashSet<>();
+            for (Map<String, Object> c : coins) have.add(c.get("id"));
+            for (Map<String, Object> c : previous.subList(coins.size(), previous.size())) {
+                if (have.add(c.get("id"))) coins.add(c);
+            }
+        }
+        cachedTopCoins = coins;
+        catalog = compact(coins);
+        lastCacheTime = System.currentTimeMillis();
+        logger.info("Successfully refreshed cache with {} coins", coins.size());
+    }
+
+    /** The coins as sent to browsers: the fields the grid shows, a thinned 7-day sparkline and small icons. */
+    static List<Map<String, Object>> compact(List<Map<String, Object>> coins) {
+        List<Map<String, Object>> out = new ArrayList<>(coins.size());
+        for (Map<String, Object> coin : coins) {
+            Map<String, Object> c = new LinkedHashMap<>();
+            for (String field : CATALOG_FIELDS) {
+                if (coin.containsKey(field)) c.put(field, coin.get(field));
+            }
+            if (c.get("image") instanceof String image) c.put("image", image.replace("/large/", "/small/"));
+            if (coin.get("sparkline_in_7d") instanceof Map<?, ?> spark && spark.get("price") instanceof List<?> prices) {
+                List<Object> thin = new ArrayList<>();
+                for (int i = 0; i < prices.size(); i++) {
+                    if (i % SPARKLINE_STEP == 0 || i == prices.size() - 1) thin.add(prices.get(i));
+                }
+                c.put("sparkline_in_7d", Map.of("price", thin));
+            }
+            out.add(c);
+        }
+        return List.copyOf(out);
+    }
+
+    /** The market catalog for browsers (see {@link #compact}); refreshes like {@link #getTopCoins()}. */
+    public List<Map<String, Object>> getCatalog() {
+        getTopCoins();
+        return catalog;
     }
 
     /**
-     * Get the top 100 cryptocurrencies by market cap
+     * Get the top 500 cryptocurrencies by market cap
      * @return list of top coins with their market data (possibly stale if CoinGecko is unavailable)
      * @throws RuntimeException if CoinGecko is unavailable and nothing has been cached yet
      */

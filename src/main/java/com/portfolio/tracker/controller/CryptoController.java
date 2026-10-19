@@ -66,7 +66,7 @@ public class CryptoController {
     @GetMapping("/top")
     public ResponseEntity<?> getTopCoins() {
         try {
-            List<Map<String, Object>> topCoins = cryptoPriceService.getTopCoins();
+            List<Map<String, Object>> topCoins = cryptoPriceService.getCatalog();
 
 
             return ResponseEntity.ok(Map.of("coins", topCoins, "count", topCoins.size()));

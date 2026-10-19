@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CoinsPage from '../CoinsPage';
 import { resetMarketDataCache } from '../../hooks/useMarketData';
@@ -76,5 +76,33 @@ describe('CoinsPage', () => {
     await userEvent.type(within(dialog).getByLabelText('Amount (USD)', { selector: 'input' }), '50');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Buy SOL' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('below Solana’s market price');
+  });
+
+  it('renders only the visible window of a 500-coin catalog and follows the scroll', async () => {
+    const many: Coin[] = Array.from({ length: 500 }, (_, i) => ({
+      id: `coin-${i + 1}`, name: `Coin ${i + 1}`, symbol: `c${i + 1}`, image: '', current_price: 500 - i,
+      market_cap: (500 - i) * 1e6, market_cap_rank: i + 1, total_volume: 1e6, price_change_percentage_24h: 0,
+    }));
+    api.getTopCoins.mockResolvedValue(many);
+    render(<CoinsPage cash={1000} onBuy={vi.fn()} />);
+    await screen.findByTestId('coin-coin-1');
+
+    const table = screen.getByRole('table', { name: 'Markets' });
+    expect(table).toHaveAttribute('aria-rowcount', '501');
+    const rendered = within(table).getAllByRole('row').length - 1; // minus the header
+    expect(rendered).toBeLessThan(40);
+    expect(screen.queryByTestId('coin-coin-300')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Top 500 by market cap' })).toBeInTheDocument();
+
+    const scroller = screen.getByTestId('markets-scroller');
+    scroller.scrollTop = 299 * 44;
+    fireEvent.scroll(scroller);
+    expect(await screen.findByTestId('coin-coin-300')).toBeInTheDocument();
+    expect(screen.queryByTestId('coin-coin-1')).not.toBeInTheDocument();
+
+    // Search reaches any coin in the catalog, not only the rendered ones
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search coins' }), 'Coin 487');
+    expect(await screen.findByTestId('coin-coin-487')).toBeInTheDocument();
+    expect(screen.getByText(/1 match ·/)).toBeInTheDocument();
   });
 });

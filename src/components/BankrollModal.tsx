@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Wallet } from 'lucide-react';
 import { Account } from '../types';
 import { accountService } from '../services/api';
+import { btn, focusRing, input } from './ui/kit';
 
 export const BANKROLL_PRESETS = [1_000, 10_000, 100_000];
 const MIN = 100;
@@ -51,14 +52,14 @@ const BankrollModal: React.FC<Props> = ({ account, onSaved, onLogout }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-term-raised p-4" role="dialog" aria-modal="true"
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#04060B]/80 p-4 backdrop-blur-md" role="dialog" aria-modal="true"
          aria-labelledby="bankroll-title">
-      <form onSubmit={submit} noValidate className="w-full max-w-lg bg-term-raised border border-term-line2 rounded-lg p-6 space-y-5">
+      <form onSubmit={submit} noValidate className="w-full max-w-lg space-y-5 rounded-xl border border-term-line2 bg-term-panel/95 p-6 shadow-[0_24px_64px_-16px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-md flex items-center justify-center bg-term-raised border border-term-line2">
-            <Wallet size={22} className="text-term-text" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-term-accent/30 bg-term-accent/10">
+            <Wallet size={18} className="text-term-accent" />
           </div>
-          <h2 id="bankroll-title" className="text-xl font-bold text-term-text">Set your initial paper trading bankroll (S₀):</h2>
+          <h2 id="bankroll-title" className="text-base font-semibold text-term-text">Set your initial paper trading bankroll (S₀):</h2>
         </div>
         <p className="text-sm text-term-muted">
           This is the cash you start with. Every buy is paid from it and every sell returns to it, and your returns are
@@ -71,8 +72,8 @@ const BankrollModal: React.FC<Props> = ({ account, onSaved, onLogout }) => {
             return (
               <button key={p} type="button" role="radio" aria-checked={choice === p} disabled={disabled}
                       onClick={() => setChoice(p)}
-                      className={`py-3 rounded-md font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-                        choice === p ? 'bg-emerald-600 border-emerald-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-200 hover:border-emerald-500/60'}`}>
+                      className={`num h-10 rounded-md border text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-30 ${focusRing} ${
+                        choice === p ? 'border-term-accent/70 bg-term-accent/15 text-term-text' : 'border-term-line2 bg-white/[0.03] text-term-muted hover:border-white/20 hover:text-term-text'}`}>
                 {usd(p).replace('.00', '')}
               </button>
             );
@@ -87,11 +88,11 @@ const BankrollModal: React.FC<Props> = ({ account, onSaved, onLogout }) => {
                  aria-label="Custom bankroll"
                  onFocus={() => setChoice('custom')} onChange={e => { setCustom(e.target.value); setChoice('custom'); }}
                  placeholder={`${effectiveMin.toLocaleString('en-US')} – ${MAX.toLocaleString('en-US')}`}
-                 className="mt-1 w-full px-3 py-2 bg-term-raised border border-term-line2 rounded-lg text-term-text" />
+                 className={`num mt-1 ${input}`} />
         </label>
 
         {legacy && (
-          <div className="rounded-md border border-term-line2 bg-term-raised p-4 text-sm space-y-2">
+          <div className="space-y-2 rounded-lg border border-term-warn/30 bg-term-warn/[0.06] p-4 text-sm">
             <p className="text-term-warn">
               Your portfolio already has trades worth {usd(account.minimumBankroll)}, recorded before bankrolls existed.
               Your bankroll must cover them, or you can start over.
@@ -106,10 +107,10 @@ const BankrollModal: React.FC<Props> = ({ account, onSaved, onLogout }) => {
         {error && <p className="text-sm text-term-down" role="alert">{error}</p>}
 
         <button type="submit" disabled={saving}
-                className="w-full py-3 rounded-md font-semibold text-term-text bg-term-raised hover:bg-term-hover disabled:opacity-50">
+                className={`${btn.primary} h-10 w-full text-sm`}>
           {saving ? 'Saving…' : Number.isFinite(amount) && amount > 0 ? `Start with ${usd(amount)}` : 'Start trading'}
         </button>
-        <button type="button" onClick={onLogout} className="w-full text-sm text-term-dim hover:text-gray-300">Log out</button>
+        <button type="button" onClick={onLogout} className={`${btn.ghost} w-full`}>Log out</button>
       </form>
     </div>
   );

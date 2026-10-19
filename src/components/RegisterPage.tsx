@@ -237,7 +237,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 disabled:from-gray-600 disabled:to-gray-700 text-term-text font-semibold rounded-lg transition-all border border-term-line2 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
+                className="w-full py-2.5 disabled:from-gray-600 disabled:to-gray-700 text-term-text font-semibold rounded-lg transition-all border border-term-line2 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-term-accent text-term-bg hover:bg-[#959BFF]"
               >
                 {isLoading ? (
                   <>

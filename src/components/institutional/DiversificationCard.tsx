@@ -9,7 +9,7 @@ const MAX_MATRIX = 10;
 /** Background for a correlation cell: red when moving together, slate near zero, teal when offsetting. */
 export function correlationColor(rho: number): string {
   const a = Math.min(1, Math.abs(rho));
-  return rho >= 0 ? `rgba(200, 70, 79, ${0.12 + 0.68 * a})` : `rgba(63, 165, 134, ${0.12 + 0.68 * a})`;
+  return rho >= 0 ? `rgba(224, 108, 117, ${0.12 + 0.68 * a})` : `rgba(79, 209, 165, ${0.12 + 0.68 * a})`;
 }
 
 const fmt = (v: number, digits = 2) => v.toFixed(digits);
@@ -64,7 +64,7 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
             <span className="text-term-muted">Average pairwise correlation (ρ̄)</span>
             <span className="num text-term-text">{fmt(d.averageCorrelation)}</span>
           </div>
-          <div className="relative h-2 rounded-full bg-gradient-to-r from-[#3FA586]/70 via-[#2E3647] to-[#C8464F]/80"
+          <div className="relative h-2 rounded-full bg-gradient-to-r from-[#4FD1A5]/70 via-[#2A3447] to-[#E06C75]/80"
                role="img" aria-label={`Average correlation ${fmt(d.averageCorrelation)} on a scale from −1 to 1`}>
             <div className="absolute -top-1 h-4 w-1 rounded bg-term-text"
                  style={{ left: `calc(${((d.averageCorrelation + 1) / 2) * 100}% - 2px)` }} />
@@ -107,7 +107,7 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
                   </th>
                   {d.correlations![i].map((rho, j) => (
                     <td key={j} className="w-12 h-8 text-center num text-term-text rounded"
-                        style={{ background: i === j ? 'rgba(46, 54, 71, 0.6)' : correlationColor(rho) }}>
+                        style={{ background: i === j ? 'rgba(42, 52, 71, 0.6)' : correlationColor(rho) }}>
                       {i === j ? '—' : fmt(rho)}
                     </td>
                   ))}

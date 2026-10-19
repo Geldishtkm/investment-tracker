@@ -6,11 +6,11 @@ import { findCoin, useMarketData } from '../hooks/useMarketData';
 import TradeModal from './TradeModal';
 import PortfolioEmptyState, { AssetsLoadError } from './PortfolioEmptyState';
 import Term from './ui/Term';
-import { Delta, Metric, Modal, Panel, ShareBar, SkeletonMetrics, SkeletonRows, Sparkline, btn, input } from './ui/kit';
+import { CoinIcon, Delta, Metric, Modal, Panel, ShareBar, SkeletonMetrics, SkeletonRows, Sparkline, btn, input } from './ui/kit';
 import { pct, pctPoints, qty, toneOf, usd } from './ui/format';
 
 /** Palette for allocation slices: steady, distinguishable, not neon. */
-export const SLICE_COLORS = ['#5B8DEF', '#3FA586', '#C6A15B', '#9B7FD1', '#4FA3B8', '#C77B5A', '#7F8CA3', '#B5657A', '#6C9B5E', '#A88B4A'];
+export const SLICE_COLORS = ['#7C83FF', '#4FD1A5', '#4CC9F0', '#D4B062', '#B58CFF', '#F2937A', '#8A9BB8', '#E879A6', '#8FD16B', '#5EA8FF'];
 
 export interface HoldingRow {
   asset: AssetWithPrice;
@@ -176,8 +176,7 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2.5">
                           <span className="h-6 w-1 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} aria-hidden="true" />
-                          {r.image ? <img src={r.image} alt="" className="h-5 w-5 rounded-full" loading="lazy" />
-                            : <span className="flex h-5 w-5 items-center justify-center rounded-full bg-term-raised text-[10px] text-term-muted">{r.asset.name[0]}</span>}
+                          <CoinIcon src={r.image} name={r.asset.name} />
                           <div className="min-w-0">
                             <div className="truncate font-medium text-term-text">{r.asset.name}</div>
                             {r.symbol && <div className="text-[11px] text-term-dim">{r.symbol}</div>}

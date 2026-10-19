@@ -14,10 +14,10 @@ const PillarRadar: React.FC<{ pillars: ScorePillar[] }> = ({ pillars }) => {
     <div className="h-64 w-full" aria-label="Pillar scores radar chart">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} outerRadius="72%">
-          <PolarGrid stroke="#2E3647" />
-          <PolarAngleAxis dataKey="pillar" tick={{ fill: '#8C95A8', fontSize: 11 }} />
+          <PolarGrid stroke="#2A3447" />
+          <PolarAngleAxis dataKey="pillar" tick={{ fill: '#94A0B8', fontSize: 11 }} />
           <PolarRadiusAxis domain={[0, 250]} tick={false} axisLine={false} />
-          <Radar dataKey="points" stroke="#5B8DEF" strokeWidth={1.5} fill="#5B8DEF" fillOpacity={0.18} isAnimationActive={false} />
+          <Radar dataKey="points" stroke="#7C83FF" strokeWidth={1.5} fill="#7C83FF" fillOpacity={0.18} isAnimationActive={false} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { API_BASE_URL } from '../config';
 import { Coin, PriceHistoryPoint } from '../types';
-import { Delta, Metric, Modal, Skeleton, btn } from './ui/kit';
+import { Delta, Metric, Modal, Skeleton, btn, segmented } from './ui/kit';
 import { pct, usd } from './ui/format';
 
 interface PriceHistoryChartProps {
@@ -51,7 +51,7 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
   const change = first && last ? last / first - 1 : null;
   const prices = priceHistory.map(p => p.price);
   const up = (change ?? 0) >= 0;
-  const color = up ? '#3FA586' : '#C8464F';
+  const color = up ? '#4FD1A5' : '#E06C75';
 
   return (
     <Modal title={`${selectedCoin.name} · ${selectedCoin.symbol.toUpperCase()}`} labelledBy="chart-title" onClose={onClose} width="max-w-4xl">
@@ -62,10 +62,10 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
           <Metric label={`${timeRange}d high`} value={prices.length ? usd(Math.max(...prices)) : '—'} />
           <Metric label={`${timeRange}d low`} value={prices.length ? usd(Math.min(...prices)) : '—'} />
         </div>
-        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Range">
+        <div className={segmented.track} role="group" aria-label="Range">
           {RANGES.map(r => (
             <button key={r} type="button" aria-pressed={timeRange === r} onClick={() => setTimeRange(r)}
-                    className={`num rounded px-2.5 py-1 text-xs ${timeRange === r ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`}>
+                    className={segmented.option(timeRange === r)}>
               {r === 365 ? '1Y' : `${r}D`}
             </button>
           ))}
@@ -87,12 +87,12 @@ const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onC
                   <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#222938" vertical={false} />
+              <CartesianGrid stroke="#1C2433" vertical={false} />
               <XAxis dataKey="timestamp" tickFormatter={t => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                     stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} minTickGap={40} />
+                     stroke="#5F6B82" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} minTickGap={40} />
               <YAxis domain={['auto', 'auto']} tickFormatter={v => usd(v)} width={84} orientation="right"
-                     stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                     stroke="#5F6B82" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+              <Tooltip contentStyle={{ background: '#141B2A', border: '1px solid #2A3447', borderRadius: 6, fontSize: 12 }}
                        labelFormatter={t => new Date(t as number).toLocaleDateString()} formatter={(v: number) => [usd(v), 'Price']} />
               <Area type="monotone" dataKey="price" stroke={color} strokeWidth={1.5} fill="url(#phFill)" dot={false} />
             </AreaChart>

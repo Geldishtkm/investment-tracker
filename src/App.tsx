@@ -43,7 +43,7 @@ const PAGES: { key: Page; label: string }[] = [
 
 const PAGE_TITLES: Record<Page, { title: string; subtitle: string }> = {
   portfolio: { title: 'Portfolio', subtitle: 'Positions, cash and performance against your starting bankroll' },
-  coins: { title: 'Markets', subtitle: 'Top 100 coins by market capitalisation · quotes refresh every 10 minutes' },
+  coins: { title: 'Markets', subtitle: 'Top 500 coins by market capitalisation · quotes refresh every 10 minutes' },
   analytics: { title: 'Analytics', subtitle: 'Risk-adjusted performance, diversification and per-asset attribution' },
   var: { title: 'Value at Risk', subtitle: 'Loss distribution, tail risk and exposure by asset' },
   rebalancing: { title: 'Rebalancing', subtitle: 'Target weights from MVO or Black-Litterman, and the trades to reach them' },
@@ -328,7 +328,7 @@ function App() {
     : null;
 
   return (
-    <div className="min-h-screen bg-term-bg text-term-text">
+    <div className="min-h-screen text-term-text">
       {/* Terminal bar */}
       <header className="sticky top-0 z-40 border-b border-term-line bg-term-bg/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1800px] items-center gap-6 px-4 sm:px-6">

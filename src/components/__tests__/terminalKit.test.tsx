@@ -54,7 +54,7 @@ describe('Delta and Sparkline', () => {
 
   it('draws a trend line in the direction of the move', () => {
     render(<Sparkline data={[1, 2, 3]} label="BTC trend" />);
-    expect(screen.getByRole('img', { name: 'BTC trend' }).querySelector('polyline')).toHaveAttribute('stroke', '#3FA586');
+    expect(screen.getByRole('img', { name: 'BTC trend' }).querySelector('polyline')).toHaveAttribute('stroke', '#4FD1A5');
   });
 });
 
