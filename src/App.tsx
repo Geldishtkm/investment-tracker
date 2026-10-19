@@ -46,7 +46,7 @@ const PAGE_TITLES: Record<Page, { title: string; subtitle: string }> = {
   portfolio: { title: 'Portfolio', subtitle: 'Positions, cash and performance against your starting bankroll' },
   coins: { title: 'Markets', subtitle: 'Top 500 coins by market capitalisation · quotes refresh every 10 minutes' },
   analytics: { title: 'Analytics', subtitle: 'Risk-adjusted performance, allocation and per-asset attribution' },
-  var: { title: 'Value at Risk', subtitle: 'Loss distribution, tail risk and exposure by asset' },
+  var: { title: 'Value at Risk', subtitle: 'Loss distribution, tail risk and return profile' },
   rebalancing: { title: 'Rebalancing', subtitle: 'Target weights from MVO or Black-Litterman, and the trades to reach them' },
   institutional: { title: 'Institutional Evaluation', subtitle: 'Trader Index Score (0–1000) across risk, behavior, consistency and execution' },
 };

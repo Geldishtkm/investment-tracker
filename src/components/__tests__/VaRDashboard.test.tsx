@@ -25,13 +25,9 @@ describe('VaRDashboard', () => {
     expect(account).toHaveTextContent('coins $5,089 · cash $4,911');
     expect(screen.getByTestId('var-headline')).toHaveTextContent('1.80% of value'); // $180 of $10,000
 
-    const cash = screen.getByTestId('var-cash-row');
-    expect(cash).toHaveTextContent('49.1%');
-    expect(cash).toHaveTextContent('riskless');
-    const table = screen.getByRole('table', { name: 'Exposure breakdown' });
-    // A −50% shock hits only the coins: $2,544.50, 25.4% of the account
-    const rows = within(table).getAllByRole('row');
-    expect(rows[rows.length - 1]).toHaveTextContent('-$2,544.50');
+    // The exposure breakdown and its price-shock table are gone
+    expect(screen.queryByRole('table', { name: 'Exposure breakdown' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/shock/i)).not.toBeInTheDocument();
   });
 
   it('recalculates when positions change', async () => {

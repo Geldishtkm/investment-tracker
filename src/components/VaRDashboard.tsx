@@ -4,7 +4,6 @@ import { RefreshCw } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { authService } from '../services/authService';
 import PortfolioEmptyState from './PortfolioEmptyState';
-import { SLICE_COLORS } from './PortfolioPage';
 import Term from './ui/Term';
 import InfoTip from './ui/InfoTip';
 import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonMetrics, btn, segmented } from './ui/kit';
@@ -84,7 +83,6 @@ function fetchVaR(version: number, confidence: number, horizon: number, force: b
   return promise;
 }
 const HORIZONS = [1, 7, 30];
-const SHOCKS = [-0.1, -0.3, -0.5];
 
 /** Same thresholds as the backend's risk level: historical VaR above 10% of value is high, above 5% medium. */
 export function riskLevel(varFraction: number): 'LOW' | 'MEDIUM' | 'HIGH' {
@@ -172,13 +170,6 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
       bins: histogram(r, 48, cutoff),
     };
   }, [calc, confidenceLevel]);
-
-  const exposures = useMemo(() => {
-    if (!calc) return [];
-    return Object.entries(calc.assetWeights ?? {})
-      .map(([name, weight]) => ({ name, weight, value: weight * calc.portfolioValue, meanDaily: calc.assetReturns?.[name] ?? null }))
-      .sort((a, b) => b.weight - a.weight);
-  }, [calc]);
 
   if (portfolioEmpty) return <PortfolioEmptyState onAddAsset={onAddAsset} />;
 
@@ -279,7 +270,7 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
               ) : <p className="text-sm text-term-muted">No return history available.</p>}
             </Panel>
 
-            <div className="space-y-4">
+            <div className="flex flex-col gap-4">
               <Panel title="Method comparison" subtitle={`${timeHorizon}-day loss at ${pct(confidenceLevel, 0)}`}>
                 <ul className="space-y-3">
                   {methods.map(m => (
@@ -294,7 +285,7 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
                 </ul>
                 {calc.historicalVaRMethod && <p className="mt-3 text-[11px] text-term-dim">Historical: {calc.historicalVaRMethod}.</p>}
               </Panel>
-              <Panel title="Return profile">
+              <Panel title="Return profile" className="flex-1">
                 <div className="grid grid-cols-2 gap-3" data-testid="return-profile">
                   <ProfileCard label="Volatility" info={VOLATILITY_INFO}
                                value={pct(calc.annualizedVolatility ?? calc.volatility * Math.sqrt(365), 1)}
@@ -307,63 +298,6 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
               </Panel>
             </div>
           </div>
-
-          <Panel flush title="Exposure breakdown"
-                 subtitle={`Share of the account, and the loss each position would cause under a price shock${cash > 0 ? ` · ${pct(calc.exposure ?? invested / (v || 1), 1)} of the account is in coins` : ''}`}>
-            <div className="overflow-auto">
-              <table className="w-full min-w-[820px] text-sm" aria-label="Exposure breakdown">
-                <thead className="text-[11px] uppercase tracking-wider text-term-dim">
-                  <tr className="border-b border-term-line">
-                    <th scope="col" className="px-3 py-2 text-left font-medium">Asset</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Weight</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium">Exposure</th>
-                    <th scope="col" className="px-3 py-2 text-right font-medium"><Term term="Expected return">Mean daily return</Term></th>
-                    {SHOCKS.map(s => <th key={s} scope="col" className="px-3 py-2 text-right font-medium">{pct(s, 0)} shock</th>)}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-term-line">
-                  {exposures.map((e, i) => (
-                    <tr key={e.name} className="hover:bg-term-hover">
-                      <td className="px-3 py-2.5">
-                        <span className="flex items-center gap-2 font-medium text-term-text">
-                          <span className="h-2 w-2 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{e.name}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5"><div className="ml-auto w-24"><div className="num text-right text-xs">{pct(e.weight, 1)}</div><ShareBar value={e.weight} className="mt-1" /></div></td>
-                      <td className="num px-3 py-2.5 text-right text-term-text">{usd(e.value)}</td>
-                      <td className={`num px-3 py-2.5 text-right ${e.meanDaily == null ? 'text-term-dim' : e.meanDaily >= 0 ? 'text-term-up' : 'text-term-down'}`}>
-                        {pct(e.meanDaily, 3, true)}
-                      </td>
-                      {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right text-term-down">{usd(e.value * s)}</td>)}
-                    </tr>
-                  ))}
-                  {cash > 0 && (
-                    <tr className="hover:bg-term-hover" data-testid="var-cash-row">
-                      <td className="px-3 py-2.5"><span className="flex items-center gap-2 font-medium text-term-text">
-                        <span className="h-2 w-2 rounded-sm bg-term-dim" />Cash</span></td>
-                      <td className="px-3 py-2.5"><div className="ml-auto w-24"><div className="num text-right text-xs">{pct(cash / v, 1)}</div>
-                        <ShareBar value={cash / v} tone="muted" className="mt-1" /></div></td>
-                      <td className="num px-3 py-2.5 text-right text-term-text">{usd(cash)}</td>
-                      <td className="num px-3 py-2.5 text-right text-term-dim">riskless</td>
-                      {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right text-term-dim">{usd(0)}</td>)}
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot className="border-t border-term-line2">
-                  <tr>
-                    <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-term-dim" colSpan={2}>Account</td>
-                    <td className="num px-3 py-2.5 text-right font-semibold text-term-text">{usd(v)}</td>
-                    <td />
-                    {SHOCKS.map(s => (
-                      <td key={s} className="num px-3 py-2.5 text-right font-semibold text-term-down">
-                        {usd(invested * s)} <span className="text-xs font-normal text-term-dim">({pct(v ? (invested * s) / v : 0, 1)})</span>
-                      </td>
-                    ))}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </Panel>
 
           <p className="text-xs text-term-dim">
             Monte Carlo uses {calc.numberOfSimulations ? num(calc.numberOfSimulations, 0) : 'simulated'} paths. VaR is the loss not exceeded with the
