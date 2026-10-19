@@ -465,7 +465,8 @@ function App() {
           && !loading && assets.length === 0 && <PortfolioEmptyState onAddAsset={goToMarkets} />}
 
         {currentPage === 'analytics' && !assetsLoadError && assets.length > 0 && (
-          <AnalyticsPage onAddAsset={goToMarkets} refreshKey={dataVersion} />
+          <AnalyticsPage onAddAsset={goToMarkets} refreshKey={dataVersion} cash={account?.cash ?? null}
+                         onTraded={() => void afterTrade()} onShowToast={showToast} />
         )}
         {currentPage === 'var' && !assetsLoadError && assets.length > 0 && (
           <VaRDashboard onAddAsset={goToMarkets} refreshKey={dataVersion} />

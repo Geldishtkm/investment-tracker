@@ -4,6 +4,7 @@ import { Account, AssetWithPrice, TradeRequest } from '../types';
 import { assetService } from '../services/api';
 import { findCoin, useMarketData } from '../hooks/useMarketData';
 import TradeModal from './TradeModal';
+import AssetActionSheet from './AssetActionSheet';
 import PortfolioEmptyState, { AssetsLoadError } from './PortfolioEmptyState';
 import Term from './ui/Term';
 import { CoinIcon, Delta, Metric, Modal, Panel, ShareBar, SkeletonMetrics, SkeletonRows, Sparkline, btn, input } from './ui/kit';
@@ -54,6 +55,7 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
   const [ticket, setTicket] = useState<{ asset: AssetWithPrice; price: number; side: TradeRequest['side'] } | null>(null);
   const [editing, setEditing] = useState<AssetWithPrice | null>(null);
   const [menuFor, setMenuFor] = useState<number | null>(null);
+  const [actionFor, setActionFor] = useState<HoldingRow | null>(null);
 
   const rows = useMemo<HoldingRow[]>(() => {
     const priced = assets.map(asset => {
@@ -83,6 +85,9 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
   const cash = account?.cash ?? null;
   const s0 = account?.initialBankroll ?? null;
   const equity = cash != null ? cash + holdingsValue : null;
+  // Realized P&L from closed trades: with S₀, cash = S₀ − buys + sells, so cash + open cost basis − S₀ is
+  // exactly what the sells made over the average cost of the units sold
+  const realized = cash != null && s0 != null ? cash + costBasis - s0 : null;
   const change24h = rows.reduce((s, r) => s + (r.change24h == null ? 0 : r.value - r.value / (1 + r.change24h / 100)), 0);
   const has24h = rows.some(r => r.change24h != null);
 
@@ -107,7 +112,7 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
     <div className="space-y-4">
       {/* Account strip */}
       {loading && assets.length === 0 ? <SkeletonMetrics count={6} /> : (
-        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line sm:grid-cols-3 xl:grid-cols-6"
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-term-line bg-term-line sm:grid-cols-4 2xl:grid-cols-7"
              data-testid="account-strip">
           <div className="bg-term-panel p-4"><Metric label="Equity" value={usd(equity)} sub={s0 != null ? <>vs <Term term="S₀">S₀</Term> {usd(s0, 0)}</> : undefined} size="lg" /></div>
           <div className="bg-term-panel p-4"><Metric label="Return on S₀" term="S₀" value={equity != null && s0 ? pct(equity / s0 - 1, 2, true) : '—'}
@@ -117,6 +122,8 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
           <div className="bg-term-panel p-4"><Metric label="Holdings" term="Allocation" value={usd(holdingsValue)} sub={`${rows.length} position${rows.length === 1 ? '' : 's'}`} size="lg" /></div>
           <div className="bg-term-panel p-4"><Metric label="Unrealized P&L" value={usd(unrealized)} tone={toneOf(unrealized, 0.005)}
                                                       sub={costBasis > 0 ? pct(unrealized / costBasis, 2, true) : undefined} size="lg" /></div>
+          <div className="bg-term-panel p-4" data-testid="realized-pnl"><Metric label="Realized P&L" term="Unrealized P&L" value={usd(realized)}
+                                                      tone={realized == null ? undefined : toneOf(realized, 0.005)} sub="closed trades, at average cost" size="lg" /></div>
           <div className="bg-term-panel p-4"><Metric label="24h change" term="Unrealized P&L" value={has24h ? usd(change24h) : '—'}
                                                       tone={has24h ? toneOf(change24h, 0.005) : undefined}
                                                       sub={has24h && holdingsValue > 0 ? pct(change24h / (holdingsValue - change24h), 2, true) : undefined} size="lg" /></div>
@@ -172,7 +179,10 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
                 </thead>
                 <tbody className="divide-y divide-term-line">
                   {rows.map((r, i) => (
-                    <tr key={r.asset.id} className="group hover:bg-term-hover" data-testid={`position-${r.asset.name}`}>
+                    <tr key={r.asset.id} className="group cursor-pointer transition-colors duration-100 hover:bg-white/[0.03] focus-visible:bg-white/[0.04] focus-visible:outline-none"
+                        data-testid={`position-${r.asset.name}`} tabIndex={0} title={`Trade ${r.asset.name}`}
+                        onClick={() => setActionFor(r)}
+                        onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setActionFor(r); } }}>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2.5">
                           <span className="h-6 w-1 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} aria-hidden="true" />
@@ -200,7 +210,8 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
                         <div className="text-xs"><Delta value={r.pnlPct} format={v => pct(v, 2, true)} /></div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <div className="relative flex items-center justify-end gap-1.5">
+                        {/* Buttons act on their own, not as a row click */}
+                        <div className="relative flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
                           <button type="button" className={btn.buy} aria-label={`Buy ${r.asset.name}`}
                                   onClick={() => setTicket({ asset: r.asset, price: r.price, side: 'BUY' })}>Buy</button>
                           <button type="button" className={btn.sell} aria-label={`Sell ${r.asset.name}`}
@@ -240,6 +251,11 @@ const PortfolioPage: React.FC<Props> = ({ assets, account, loading, loadError, o
         </Panel>
       )}
 
+      {actionFor && (
+        <AssetActionSheet asset={actionFor.asset} price={actionFor.price} cash={cash}
+                          onClose={() => setActionFor(null)}
+                          onSaved={message => { setActionFor(null); onShowToast('success', message); onChanged(); }} />
+      )}
       {ticket && (
         <TradeModal asset={ticket.asset} currentPrice={ticket.price} initialSide={ticket.side} cash={cash}
                     onClose={() => setTicket(null)}

@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { RefreshCw } from 'lucide-react';
 import { assetService } from '../services/api';
-import { PortfolioAnalytics } from '../types';
+import { Asset, AssetBreakdownItem, PortfolioAnalytics } from '../types';
+import AssetActionSheet from './AssetActionSheet';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { SLICE_COLORS } from './PortfolioPage';
 import { correlationLabel } from './institutional/DiversificationCard';
@@ -15,10 +16,16 @@ interface AnalyticsPageProps {
   onAddAsset: () => void;
   /** Changes after every trade, so the figures reload on the new positions. */
   refreshKey?: number;
+  /** Cash available, for the order ticket. */
+  cash?: number | null;
+  /** Called after a trade from this page (reloads positions, cash and the score everywhere). */
+  onTraded?: () => void;
+  onShowToast?: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
 /** Risk-adjusted performance, diversification and per-asset attribution, all computed by the backend. */
-const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 0 }) => {
+const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 0, cash = null, onTraded, onShowToast }) => {
+  const [actionFor, setActionFor] = useState<Asset | null>(null);
   const [data, setData] = useState<PortfolioAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,7 +157,7 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
         </Panel>
       </div>
 
-      <Panel flush title="Attribution" subtitle="Each position’s share of value and of total unrealized P&L"
+      <Panel flush title="Attribution" subtitle="Each position’s share of value and of total unrealized P&L · click a position to trade it"
              actions={<button type="button" className={btn.secondary} onClick={() => void load()} aria-label="Refresh analytics">
                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
              </button>}>
@@ -167,7 +174,10 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
             </thead>
             <tbody className="divide-y divide-term-line">
               {rows.map((r, i) => (
-                <tr key={r.id} className="hover:bg-term-hover">
+                <tr key={r.id} className="cursor-pointer transition-colors duration-100 hover:bg-white/[0.03] focus-visible:bg-white/[0.04] focus-visible:outline-none"
+                    tabIndex={0} title={`Trade ${r.name}`} data-testid={`attribution-${r.name}`}
+                    onClick={() => setActionFor(toAsset(r))}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActionFor(toAsset(r)); } }}>
                   <td className="px-3 py-2.5">
                     <span className="flex items-center gap-2 font-medium text-term-text">
                       <span className="h-2 w-2 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{r.name}
@@ -188,6 +198,12 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
         </div>
       </Panel>
 
+      {actionFor && (
+        <AssetActionSheet asset={actionFor} price={actionFor.pricePerUnit} cash={cash}
+                          onClose={() => setActionFor(null)}
+                          onSaved={message => { setActionFor(null); onShowToast?.('success', message); onTraded?.(); }} />
+      )}
+
       {risk && (
         <p className="text-xs text-term-dim">
           Based on {data.observations ?? '—'} daily returns{data.historyStart ? ` (${data.historyStart} → ${data.historyEnd})` : ''},
@@ -197,5 +213,11 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
     </div>
   );
 };
+
+/** A breakdown row as the holding the order ticket trades. */
+function toAsset(r: AssetBreakdownItem): Asset {
+  return { id: r.id, name: r.name, quantity: r.quantity, pricePerUnit: r.currentPrice,
+           purchasePricePerUnit: r.purchasePrice, initialInvestment: r.initialInvestment };
+}
 
 export default AnalyticsPage;

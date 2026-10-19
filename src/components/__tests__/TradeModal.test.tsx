@@ -50,7 +50,7 @@ describe('TradeModal', () => {
     expect(screen.getByLabelText(/Quantity/)).toHaveValue(10); // a sell starts as the whole position
     await userEvent.click(screen.getByRole('button', { name: 'Record sell' }));
 
-    expect(onSaved).toHaveBeenCalledWith(expect.stringContaining('the position is closed'));
+    expect(onSaved).toHaveBeenCalledWith(expect.stringContaining('position is closed'));
   });
 
   it('shows the backend error message', async () => {
@@ -68,7 +68,7 @@ describe('TradeModal', () => {
     expect(screen.getByLabelText(/Price per unit/)).toHaveValue(150);
     await userEvent.click(screen.getByRole('button', { name: '25%' }));
     expect(screen.getByLabelText(/Quantity/)).toHaveValue(2.5);
-    await userEvent.click(screen.getByRole('button', { name: 'All' }));
+    await userEvent.click(screen.getByRole('button', { name: '100% / Max' }));
     expect(screen.getByLabelText(/Quantity/)).toHaveValue(10);
     await userEvent.click(screen.getByRole('button', { name: '50%' }));
     await userEvent.click(screen.getByRole('button', { name: 'Record sell' }));
@@ -94,5 +94,17 @@ describe('TradeModal', () => {
     await userEvent.type(screen.getByLabelText(/Quantity/), '1');
     await userEvent.click(screen.getByRole('button', { name: 'Record buy' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Current cash balance: $120.00');
+  });
+
+  it('previews the cash proceeds and realized P&L of a sell, and reports them after', async () => {
+    api.recordTrade.mockResolvedValue({ asset, positionClosed: false });
+    const onSaved = vi.fn();
+    render(<TradeModal asset={asset} currentPrice={150} initialSide="SELL" cash={1000} onClose={() => {}} onSaved={onSaved} />);
+    await userEvent.click(screen.getByRole('button', { name: '50%' }));
+    expect(screen.getByTestId('ticket-notional')).toHaveTextContent('$750.00');   // 5 × $150 back to cash
+    expect(screen.getByTestId('ticket-realized')).toHaveTextContent('+$150.00');  // 5 × ($150 − $120 avg cost)
+    expect(screen.getByText('$1,750.00')).toBeInTheDocument();                     // cash after
+    await userEvent.click(screen.getByRole('button', { name: 'Record sell' }));
+    expect(onSaved).toHaveBeenCalledWith('Sold 5 Solana: $750.00 credited to cash (+$150.00 realized).');
   });
 });

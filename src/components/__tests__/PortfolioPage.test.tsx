@@ -82,4 +82,36 @@ describe('PortfolioPage', () => {
                             onAddAsset={() => {}} onChanged={() => {}} onDelete={() => {}} onShowToast={() => {}} />);
     expect(screen.getByText('Your portfolio is currently empty')).toBeInTheDocument();
   });
+
+  it('opens Buy More / Sell / Liquidate from a row click, and the sell ticket is pre-filled', async () => {
+    renderPage();
+    await userEvent.click(screen.getByTestId('position-Ethereum'));
+    const sheet = screen.getByRole('dialog', { name: 'Ethereum' });
+    expect(sheet).toHaveTextContent('$2,000.00');
+    await userEvent.click(within(sheet).getByRole('button', { name: 'Sell / Liquidate' }));
+    const ticket = screen.getByRole('dialog', { name: 'Trade Ethereum' });
+    expect(within(ticket).getByLabelText(/Quantity/)).toHaveValue(1);
+    expect(within(ticket).getByLabelText(/Price per unit/)).toHaveValue(2000);
+    expect(within(ticket).getByRole('button', { name: '100% / Max' })).toBeInTheDocument();
+  });
+
+  it('opens Buy More from the keyboard, while the row buttons keep their own action', async () => {
+    renderPage();
+    screen.getByTestId('position-Bitcoin').focus();
+    await userEvent.keyboard('{Enter}');
+    await userEvent.click(within(screen.getByRole('dialog', { name: 'Bitcoin' })).getByRole('button', { name: 'Buy More' }));
+    expect(within(screen.getByRole('dialog', { name: 'Trade Bitcoin' })).getByRole('button', { name: 'Record buy' })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sell Bitcoin' }));
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    expect(screen.getByRole('dialog', { name: 'Trade Bitcoin' })).toBeInTheDocument();
+  });
+
+  it('shows realized P&L: cash plus open cost basis minus S₀', () => {
+    renderPage(); // 500 cash + (7,000 + 2,500) cost − 10,000 = 0
+    expect(screen.getByTestId('realized-pnl')).toHaveTextContent('$0.00');
+    renderPage({ account: { ...account, cash: 1500 } });
+    expect(screen.getAllByTestId('realized-pnl')[1]).toHaveTextContent('$1,000.00');
+  });
 });

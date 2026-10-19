@@ -30,6 +30,9 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
   const [saving, setSaving] = useState(false);
   const today = todayLocal();
   const notional = (parseFloat(quantity) || 0) * (parseFloat(price) || 0);
+  const avgCost = asset.purchasePricePerUnit || asset.pricePerUnit;
+  const sellQty = Math.min(parseFloat(quantity) || 0, asset.quantity);
+  const realizedPreview = sellQty * ((parseFloat(price) || 0) - avgCost);
   const px = parseFloat(price) || 0;
 
   const setSide = (next: TradeRequest['side']) => {
@@ -69,9 +72,16 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
     setShortOf(null);
     try {
       const result = await assetService.recordTrade(asset.id, { side, quantity: qty, price: px, date });
-      onSaved(result.positionClosed
-        ? `Sold all ${asset.name}; the position is closed and kept in your trade history.`
-        : `${side === 'BUY' ? 'Bought' : 'Sold'} ${qty} ${asset.name}.`);
+      if (side === 'SELL') {
+        // Proceeds go back to cash; P&L is against the average cost of the units sold
+        const realized = qty * (px - avgCost);
+        const pnl = `${realized >= 0 ? '+' : '-'}${usd(Math.abs(realized))}`;
+        onSaved(result.positionClosed
+          ? `Sold all ${asset.name}: ${usd(qty * px)} credited to cash (${pnl} realized). The position is closed and kept in your trade history.`
+          : `Sold ${qty} ${asset.name}: ${usd(qty * px)} credited to cash (${pnl} realized).`);
+      } else {
+        onSaved(`Bought ${qty} ${asset.name}.`);
+      }
     } catch (e) {
       if (e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS') {
         setShortOf(typeof e.details.cash === 'number' ? e.details.cash : cash ?? 0);
@@ -104,7 +114,7 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
             {[0.25, 0.5, 0.75, 1].map(share => (
               <button key={share} type="button" onClick={() => fill(share)}
                       className={`num flex-1 rounded-md border border-term-line py-1 text-xs text-term-muted transition-colors duration-150 hover:border-white/20 hover:text-term-text ${focusRing}`}>
-                {side === 'SELL' ? (share === 1 ? 'All' : `${share * 100}%`) : `${share * 100}% cash`}
+                {side === 'SELL' ? (share === 1 ? '100% / Max' : `${share * 100}%`) : `${share * 100}% cash`}
               </button>
             ))}
           </div>
@@ -120,8 +130,8 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
         </label>
 
         <dl className="grid grid-cols-2 gap-2 rounded-md border border-term-line bg-black/20 px-3 py-2 text-xs">
-          <dt className="text-term-dim">Order value</dt>
-          <dd className="num text-right text-term-text">{usd(notional)}</dd>
+          <dt className="text-term-dim">{side === 'SELL' ? 'Proceeds to cash' : 'Order value'}</dt>
+          <dd className="num text-right text-term-text" data-testid="ticket-notional">{usd(notional)}</dd>
           {side === 'BUY' && cash != null && (
             <>
               <dt className="text-term-dim">Cash available</dt>
@@ -130,6 +140,17 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
           )}
           {side === 'SELL' && (
             <>
+              <dt className="text-term-dim">Realized P&amp;L</dt>
+              <dd className={`num text-right ${realizedPreview > 0.005 ? 'text-term-up' : realizedPreview < -0.005 ? 'text-term-down' : 'text-term-muted'}`}
+                  data-testid="ticket-realized">
+                {realizedPreview >= 0 ? '+' : '-'}{usd(Math.abs(realizedPreview))}
+              </dd>
+              {cash != null && (
+                <>
+                  <dt className="text-term-dim">Cash after</dt>
+                  <dd className="num text-right text-term-muted">{usd(cash + notional)}</dd>
+                </>
+              )}
               <dt className="text-term-dim">Position after</dt>
               <dd className="num text-right text-term-muted">{fmtQty(Math.max(0, asset.quantity - (parseFloat(quantity) || 0)))}</dd>
             </>
