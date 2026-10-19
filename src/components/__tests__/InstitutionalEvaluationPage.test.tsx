@@ -115,10 +115,9 @@ describe('InstitutionalEvaluationPage', () => {
     const gate = screen.getByTestId('gate-600');
     expect(gate).toHaveTextContent('Tier 5 and above');
     expect(within(gate).getAllByLabelText('met')).toHaveLength(1);
-    expect(within(gate).getAllByLabelText('not met')).toHaveLength(2);
-    expect(gate).toHaveTextContent('fewer than 2 sells');
-    expect(within(gate).getByTestId('req-Trading Longevity'))
-      .toHaveTextContent('Trading Longevity: 16 trades over 1 day (Target: Minimum 90-day track record, 10+ trades)');
+    expect(within(gate).getAllByLabelText('not met')).toHaveLength(1);
+    expect(within(gate).getByTestId('req-Trade Count')).toHaveTextContent('Trade Count: 4 trades (Target: ≥ 10 trades)');
+    expect(gate).not.toHaveTextContent(/day track record|Profit Factor|Sharpe/);
   });
 
   it('presents limits as a compliance check: cooling-period caps and locked tiers as checklists', async () => {
@@ -126,7 +125,7 @@ describe('InstitutionalEvaluationPage', () => {
       score: 299, rawScore: 541,
       caps: [
         { id: 'impulsive-deployment', maxScore: 299, title: 'Rapid Capital Deployment Warning',
-          detail: 'Deploying over 75% of capital in a single day triggers a 90-day risk cooling period to encourage disciplined scaling. On 2026-10-19, 99.0% went into 3 buys.' },
+          detail: 'Deploying over 75% of capital in a single day triggers a risk cooling period to encourage disciplined scaling. It lifts after 5 further trades each under 10% of capital (2 of 5 so far), or after 90 days. On 2026-10-19, 99.0% went into 3 buys.' },
         { id: 'gate-600', maxScore: 599, title: 'Tier 5 Advancement Locked', detail: 'Still needed: …' },
       ],
     }));
@@ -136,14 +135,15 @@ describe('InstitutionalEvaluationPage', () => {
     const cooling = screen.getByTestId('cap-impulsive-deployment');
     expect(cooling).toHaveTextContent('Rapid Capital Deployment Warning');
     expect(cooling).toHaveTextContent('Score Temporarily Capped at 299');
-    expect(cooling).toHaveTextContent('Deploying over 75% of capital in a single day triggers a 90-day risk cooling period to encourage disciplined scaling.');
+    expect(cooling).toHaveTextContent('Deploying over 75% of capital in a single day triggers a risk cooling period to encourage disciplined scaling.');
+    expect(cooling).toHaveTextContent('It lifts after 5 further trades each under 10% of capital (2 of 5 so far), or after 90 days.');
     expect(cooling).toHaveTextContent('On 2026-10-19, 99.0% went into 3 buys.');
 
     const lock = screen.getByTestId('cap-gate-600');
     expect(lock).toHaveTextContent('Tier 5 Advancement Locked');
     const checklist = within(lock).getByRole('list', { name: 'Tier 5 Advancement Locked checklist' });
     expect(within(checklist).getByTestId('req-Return on Capital')).toHaveTextContent('Return on Capital: +17.0% (Target: ≥ +5.0%)');
-    expect(within(checklist).getByRole('progressbar', { name: 'Trading Longevity progress' })).toHaveAttribute('aria-valuenow', '1');
+    expect(within(checklist).getByRole('progressbar', { name: 'Trade Count progress' })).toHaveAttribute('aria-valuenow', '40');
     expect(lock).not.toHaveTextContent('Still needed');
   });
 

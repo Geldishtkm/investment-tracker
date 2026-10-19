@@ -18,14 +18,16 @@ import java.util.*;
  * <p>The weighted total (the raw score) is then capped by evidence rules, so a high rank has to be
  * earned with proven results rather than inferred from little or flat data:
  * <ul>
- *   <li>allocation caps: in the last 90 days, a single speculative buy of half the capital or more
- *       caps the score in Tier 10 (≤ 149); a speculative buy of 25%+, any buy of 50%+, or 75%+ of the
- *       capital deployed in one day caps it in Tier 9 (≤ 299)</li>
+ *   <li>allocation caps (risk cooling periods): a single speculative buy of half the capital or more
+ *       caps the score in Tier 10 (≤ 149); a speculative buy of 25%+, any buy of 50%+, or a peak of 75%+
+ *       of the capital deployed in one day caps it in Tier 9 (≤ 299). A cap applies as soon as the trade
+ *       is made and lifts once the user has made 5 further disciplined trades (each under 10% of
+ *       capital), or after 90 days</li>
  *   <li>hard caps: stagnant portfolios stay at or below Tier 8 (≤ 399); provisional scores, no
  *       recorded sells, a thin trade history, or no positive return on capital stay at or below
  *       Tier 7 (≤ 499)</li>
- *   <li>tier gates: Tier 5 and above, Tier 3 and above, and Tier 1 each require minimum return on
- *       capital, profit factor, Sharpe ratio and trade history; failing a gate caps the score just
+ *   <li>tier gates: Tier 5 and above, Tier 3 and above, and Tier 1 each require a minimum return on
+ *       capital and number of trades, with no waiting period; failing a gate caps the score just
  *       below it</li>
  * </ul>
  */
@@ -54,6 +56,9 @@ public final class TraderScoring {
     static final double IMPULSIVE_SPECULATIVE_SHARE = 0.25;
     static final double IMPULSIVE_TRADE_SHARE = 0.50;
     static final double IMPULSIVE_DAY_SHARE = 0.75;
+    /** A cooling-period cap lifts after this many later trades, each under DISCIPLINED_SHARE of capital. */
+    static final int COOLING_RELEASE_TRADES = 5;
+    static final double DISCIPLINED_SHARE = 0.10;
 
     // Behavioral detection thresholds
     static final double FOMO_RUN_UP = 0.15;          // bought after a 7-day rally of at least +15%
@@ -272,8 +277,59 @@ public final class TraderScoring {
      * (or day) it came from for the explanation.
      */
     record Allocation(TradeSize largestBuy, TradeSize largestSpeculativeBuy, LocalDate busiestDay,
-                      double busiestDayShare, int busiestDayBuys) {
-        static final Allocation NONE = new Allocation(null, null, null, 0.0, 0);
+                      double busiestDayShare, int busiestDayBuys,
+                      int disciplinedSinceLargest, int disciplinedSinceSpeculative, int disciplinedSinceBusiestDay) {
+        static final Allocation NONE = new Allocation(null, null, null, 0.0, 0, 0, 0, 0);
+    }
+
+    /** The most capital put to work on one day, and how many buys that day took. */
+    /** peakTradeId: the trade at which the day's deployment peaked; discipline is counted from there. */
+    record DayDeployment(LocalDate date, double peakShare, int buys, long peakTradeId, List<TradeSize> buysMade) {}
+
+    /**
+     * Per day, the peak net capital deployed: buys add their share of capital and sells take theirs back,
+     * in the order they were placed. Recycling the same money in and out the same day doesn't add up;
+     * putting most of the bankroll to work at once does.
+     */
+    static Map<LocalDate, DayDeployment> dailyDeployment(Inputs in, Sizing sizing, LocalDate since) {
+        Map<LocalDate, List<TradeEvent>> byDay = new TreeMap<>();
+        for (TradeEvent t : in.trades()) {
+            if (!t.dateKnown() || t.imported() || (since != null && t.date().isBefore(since))) continue;
+            byDay.computeIfAbsent(t.date(), d -> new ArrayList<>()).add(t);
+        }
+        Map<LocalDate, DayDeployment> out = new TreeMap<>();
+        for (Map.Entry<LocalDate, List<TradeEvent>> e : byDay.entrySet()) {
+            List<TradeEvent> day = new ArrayList<>(e.getValue());
+            day.sort(Comparator.comparingLong(TradeEvent::id));
+            double running = 0.0, peak = 0.0;
+            long peakId = day.get(0).id();
+            List<TradeSize> buys = new ArrayList<>();
+            for (TradeEvent t : day) {
+                TradeSize size = sizing.of(t);
+                if (t.side() == Side.BUY) {
+                    running += size.share();
+                    buys.add(size);
+                } else {
+                    running = Math.max(0.0, running - size.share());
+                }
+                if (running > peak) {
+                    peak = running;
+                    peakId = t.id();
+                }
+            }
+            if (!buys.isEmpty()) out.put(e.getKey(), new DayDeployment(e.getKey(), peak, buys.size(), peakId, buys));
+        }
+        return out;
+    }
+
+    /** Later trades (by recording order) that each moved less than DISCIPLINED_SHARE of capital. */
+    static int disciplinedTradesAfter(Inputs in, Sizing sizing, long tradeId) {
+        int count = 0;
+        for (TradeEvent t : in.trades()) {
+            if (t.imported() || !t.dateKnown() || t.id() <= tradeId) continue;
+            if (sizing.of(t).share() < DISCIPLINED_SHARE) count++;
+        }
+        return count;
     }
 
     static Evidence evidence(Inputs in, LotBook book, Sizing sizing) {
@@ -296,7 +352,6 @@ public final class TraderScoring {
         if (!(sizing.capitalBase() > 0)) return Allocation.NONE;
         LocalDate since = in.today().minusDays(ALLOCATION_WINDOW_DAYS);
         TradeSize largest = null, largestSpeculative = null;
-        Map<LocalDate, double[]> byDay = new TreeMap<>(); // [capital share, buys]
         for (TradeEvent t : in.trades()) {
             if (t.side() != Side.BUY || !t.dateKnown() || t.imported() || t.date().isBefore(since)) continue;
             TradeSize size = sizing.of(t);
@@ -304,55 +359,42 @@ public final class TraderScoring {
             if (size.asset().speculative() && (largestSpeculative == null || size.share() > largestSpeculative.share())) {
                 largestSpeculative = size;
             }
-            double[] day = byDay.computeIfAbsent(t.date(), d -> new double[2]);
-            day[0] += size.share();
-            day[1]++;
         }
-        LocalDate busiest = null;
-        double busiestShare = 0.0;
-        int busiestBuys = 0;
-        for (Map.Entry<LocalDate, double[]> e : byDay.entrySet()) {
-            if (e.getValue()[0] > busiestShare) {
-                busiest = e.getKey();
-                busiestShare = e.getValue()[0];
-                busiestBuys = (int) e.getValue()[1];
-            }
+        DayDeployment busiest = null;
+        for (DayDeployment d : dailyDeployment(in, sizing, since).values()) {
+            if (busiest == null || d.peakShare() > busiest.peakShare()) busiest = d;
         }
-        return new Allocation(largest, largestSpeculative, busiest, busiestShare, busiestBuys);
+        return new Allocation(largest, largestSpeculative,
+                busiest == null ? null : busiest.date(), busiest == null ? 0.0 : busiest.peakShare(), busiest == null ? 0 : busiest.buys(),
+                largest == null ? 0 : disciplinedTradesAfter(in, sizing, largest.trade().id()),
+                largestSpeculative == null ? 0 : disciplinedTradesAfter(in, sizing, largestSpeculative.trade().id()),
+                busiest == null ? 0 : disciplinedTradesAfter(in, sizing, busiest.peakTradeId()));
     }
 
-    /** Gate thresholds: {min score, return on S0, profit factor, Sharpe, dated trades, active days}. */
+    /**
+     * Gate thresholds: {min score, return on S0, dated trades}. Advancement depends on results and activity
+     * only, never on calendar time, so it can be reached as soon as it is earned.
+     */
     private static final double[][] GATES = {
-            {600, 0.05, 1.2, 0.5, 10, 90},
-            {750, 0.15, 1.5, 1.0, 20, 180},
-            {900, 0.30, 2.0, 1.5, 40, 365},
+            {600, 0.05, 10},
+            {750, 0.15, 20},
+            {900, 0.30, 40},
     };
 
     static List<TierGate> tierGates(Evidence e) {
-        // Judge each value at the precision it is shown with, so "1.50" never fails "at least 1.5"
-        double ret = round(e.bankrollReturn(), 3), pf = round(e.profitFactor(), 2), sharpe = round(e.sharpe(), 2);
+        // Judge the return at the precision it is shown with, so "+5.0%" never fails "at least 5%"
+        double ret = round(e.bankrollReturn(), 3);
         List<TierGate> gates = new ArrayList<>();
         for (double[] g : GATES) {
             int min = (int) g[0];
-            int trades = (int) g[4], days = (int) g[5];
+            int trades = (int) g[2];
             List<Requirement> reqs = List.of(
                     new Requirement("Return on capital (S₀) of at least " + pct0(g[1]), ret >= g[1],
                             Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn()),
                             "Return on Capital", "≥ " + signedPct1(g[1]), progress(ret, g[1])),
-                    new Requirement("Profit factor of at least " + fmt1(g[2]) + " on closed trades", pf >= g[2],
-                            Double.isNaN(e.profitFactor()) ? "fewer than " + MIN_SELLS + " sells"
-                                    : Double.isInfinite(e.profitFactor()) ? "∞ (no losses)" : fmt2(e.profitFactor()),
-                            "Profit Factor", "≥ " + fmt2(g[2]) + " on closed trades",
-                            Double.isInfinite(pf) ? 1.0 : progress(pf, g[2])),
-                    new Requirement("Sharpe ratio of at least " + fmt1(g[3]), sharpe >= g[3],
-                            Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe()),
-                            "Risk-Adjusted Return (Sharpe)", "≥ " + fmt2(g[3]), progress(sharpe, g[3])),
-                    new Requirement("At least " + trades + " dated trades over " + days + "+ days",
-                            e.datedTrades() >= trades && e.activeDays() >= days,
-                            e.datedTrades() + " trade" + (e.datedTrades() == 1 ? "" : "s") + " over "
-                                    + e.activeDays() + " day" + (e.activeDays() == 1 ? "" : "s"),
-                            "Trading Longevity", "Minimum " + days + "-day track record, " + trades + "+ trades",
-                            Math.min(progress(e.datedTrades(), trades), progress(e.activeDays(), days))));
+                    new Requirement("At least " + trades + " recorded trades", e.datedTrades() >= trades,
+                            e.datedTrades() + " trade" + (e.datedTrades() == 1 ? "" : "s"),
+                            "Trade Count", "≥ " + trades + " trades", progress(e.datedTrades(), trades)));
             gates.add(new TierGate(min, tierFor(min).rank() == 1 ? "Tier 1" : "Tier " + tierFor(min).rank() + " and above",
                     reqs.stream().allMatch(Requirement::met), reqs));
         }
@@ -416,34 +458,43 @@ public final class TraderScoring {
     static List<ScoreCap> allocationCaps(Allocation a) {
         List<ScoreCap> caps = new ArrayList<>();
         TradeSize spec = a.largestSpeculativeBuy();
-        if (spec != null && spec.share() >= RECKLESS_SPECULATIVE_SHARE) {
+        boolean specCooling = spec != null && a.disciplinedSinceSpeculative() < COOLING_RELEASE_TRADES;
+        if (specCooling && spec.share() >= RECKLESS_SPECULATIVE_SHARE) {
             caps.add(new ScoreCap("reckless-allocation", RECKLESS_CAP, "Oversized Speculative Position",
                     "Putting " + pct0(RECKLESS_SPECULATIVE_SHARE) + " or more of capital into one speculative coin triggers a "
-                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to protect the account. On "
+                            + "risk cooling period to protect the account. " + release(a.disciplinedSinceSpeculative()) + " On "
                             + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name() + ", a "
                             + spec.asset().label() + "."));
-        } else if (spec != null && spec.share() >= IMPULSIVE_SPECULATIVE_SHARE) {
+        } else if (specCooling && spec.share() >= IMPULSIVE_SPECULATIVE_SHARE) {
             caps.add(new ScoreCap("speculative-over-allocation", IMPULSIVE_CAP, "Speculative Concentration Warning",
                     "Putting over " + pct0(IMPULSIVE_SPECULATIVE_SHARE) + " of capital into one speculative coin triggers a "
-                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to encourage disciplined sizing. On "
-                            + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name() + ", a "
-                            + spec.asset().label() + "."));
+                            + "risk cooling period to encourage disciplined sizing. " + release(a.disciplinedSinceSpeculative())
+                            + " On " + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name()
+                            + ", a " + spec.asset().label() + "."));
         }
         TradeSize largest = a.largestBuy();
-        if (largest != null && largest.share() >= IMPULSIVE_TRADE_SHARE) {
+        if (largest != null && largest.share() >= IMPULSIVE_TRADE_SHARE && a.disciplinedSinceLargest() < COOLING_RELEASE_TRADES) {
             caps.add(new ScoreCap("over-allocation", IMPULSIVE_CAP, "Position Concentration Warning",
-                    "A single buy of " + pct0(IMPULSIVE_TRADE_SHARE) + " or more of capital triggers a " + ALLOCATION_WINDOW_DAYS
-                            + "-day risk cooling period to encourage disciplined sizing. On " + largest.trade().date() + ", "
-                            + pct1(largest.share()) + " went into " + largest.trade().name() + "."));
+                    "A single buy of " + pct0(IMPULSIVE_TRADE_SHARE) + " or more of capital triggers a risk cooling period "
+                            + "to encourage disciplined sizing. " + release(a.disciplinedSinceLargest()) + " On "
+                            + largest.trade().date() + ", " + pct1(largest.share()) + " went into " + largest.trade().name() + "."));
         }
-        if (a.busiestDay() != null && a.busiestDayShare() >= IMPULSIVE_DAY_SHARE) {
+        if (a.busiestDay() != null && a.busiestDayShare() >= IMPULSIVE_DAY_SHARE
+                && a.disciplinedSinceBusiestDay() < COOLING_RELEASE_TRADES) {
             caps.add(new ScoreCap("impulsive-deployment", IMPULSIVE_CAP, "Rapid Capital Deployment Warning",
-                    "Deploying over " + pct0(IMPULSIVE_DAY_SHARE) + " of capital in a single day triggers a "
-                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to encourage disciplined scaling. On "
+                    "Deploying over " + pct0(IMPULSIVE_DAY_SHARE) + " of capital in a single day triggers a risk cooling "
+                            + "period to encourage disciplined scaling. " + release(a.disciplinedSinceBusiestDay()) + " On "
                             + a.busiestDay() + ", " + pct1(a.busiestDayShare()) + " went into " + a.busiestDayBuys() + " buy"
                             + (a.busiestDayBuys() == 1 ? "" : "s") + "."));
         }
         return caps;
+    }
+
+    /** How a cooling period ends: by trading with discipline, or with time. */
+    private static String release(int disciplinedSoFar) {
+        return "It lifts after " + COOLING_RELEASE_TRADES + " further trades each under " + pct0(DISCIPLINED_SHARE)
+                + " of capital (" + Math.min(disciplinedSoFar, COOLING_RELEASE_TRADES) + " of " + COOLING_RELEASE_TRADES
+                + " so far), or after " + ALLOCATION_WINDOW_DAYS + " days.";
     }
 
     private static Pillar pillar(String key, String name, List<Component> components) {
@@ -966,28 +1017,21 @@ public final class TraderScoring {
      * across all buys that day; full marks at 25% or less and none at 75%.
      */
     static void deploymentPacingComponent(Inputs in, Sizing sizing, List<Flag> flags, List<Component> out) {
-        Map<LocalDate, List<TradeSize>> byDay = new TreeMap<>();
-        for (TradeEvent t : in.trades()) {
-            if (t.side() != Side.BUY || !t.dateKnown() || t.imported()) continue;
-            byDay.computeIfAbsent(t.date(), d -> new ArrayList<>()).add(sizing.of(t));
-        }
+        Map<LocalDate, DayDeployment> byDay = dailyDeployment(in, sizing, null);
         if (byDay.isEmpty() || !(sizing.capitalBase() > 0)) {
             out.add(unavailable("deployment-pacing", "Deployment pacing", 40, "Needs dated buys."));
             return;
         }
-        LocalDate busiest = null;
-        double busiestShare = -1.0;
-        for (Map.Entry<LocalDate, List<TradeSize>> e : byDay.entrySet()) {
-            double share = e.getValue().stream().mapToDouble(TradeSize::share).sum();
-            if (share > busiestShare) {
-                busiest = e.getKey();
-                busiestShare = share;
-            }
+        DayDeployment top = null;
+        for (DayDeployment d : byDay.values()) {
+            if (top == null || d.peakShare() > top.peakShare()) top = d;
         }
-        List<TradeSize> day = byDay.get(busiest);
+        LocalDate busiest = top.date();
+        double busiestShare = top.peakShare();
+        List<TradeSize> day = top.buysMade();
         out.add(component("deployment-pacing", "Deployment pacing", 40, busiestShare,
                 "most in one day: " + pct1(busiestShare) + " of capital (" + busiest + ")", inv(busiestShare, 0.25, 0.75),
-                "Largest share of capital bought on a single day; 25% or less scores full marks, 75% none"));
+                "Most capital deployed at once on a single day (buys less sells, in order); 25% or less scores full marks, 75% none"));
         if (busiestShare >= 0.5) {
             List<String> names = day.stream().map(s -> s.trade().name()).distinct().toList();
             flags.add(new Flag("impulsive-deployment", busiestShare >= IMPULSIVE_DAY_SHARE ? Severity.HIGH : Severity.MEDIUM,

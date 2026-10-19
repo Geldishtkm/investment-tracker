@@ -693,8 +693,9 @@ class TraderScoringTest {
             assertEquals("impulsive-deployment", binding.id());
             assertEquals("Rapid Capital Deployment Warning", binding.title());
             assertEquals(299, binding.maxScore());
-            assertTrue(binding.detail().startsWith("Deploying over 75% of capital in a single day triggers a 90-day risk cooling "
-                    + "period to encourage disciplined scaling."), binding.detail());
+            assertTrue(binding.detail().startsWith("Deploying over 75% of capital in a single day triggers a risk cooling "
+                    + "period to encourage disciplined scaling. It lifts after 5 further trades each under 10% of capital "
+                    + "(0 of 5 so far), or after 90 days."), binding.detail());
             assertTrue(binding.detail().endsWith("On " + TODAY + ", 98.5% went into 3 buys."), binding.detail());
             assertFalse(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")), "a new portfolio isn't stagnant");
             assertEquals(0.0, component(e, "deployment-pacing").score(), EPS);
@@ -729,6 +730,39 @@ class TraderScoringTest {
             assertEquals(0.0, component(allIn, "position-sizing").score(), EPS);
             assertEquals(1.0, component(scaledIn, "position-sizing").score(), EPS);
             assertEquals(1.0, component(scaledIn, "deployment-pacing").score(), EPS);
+        }
+
+        @Test
+        @DisplayName("A cooling cap lifts after 5 disciplined trades, not after 4; the pacing penalty stays")
+        void coolingLiftsWithDiscipline() {
+            List<TradeEvent> trades = new ArrayList<>(List.of(buy(1, "btc", 0.04, 82_500, TODAY), buy(2, "eth", 1.3, 2_500, TODAY),
+                    buy(3, "sol", 22, 150, TODAY)));
+            List<Holding> holdings = List.of(new Holding("btc", "btc", 3_300), new Holding("eth", "eth", 3_250), new Holding("sol", "sol", 3_300));
+            Map<String, Double> caps = Map.of("btc", LARGE_CAP, "eth", LARGE_CAP, "sol", LARGE_CAP);
+            // Four small sells (5% of capital each), later the same day
+            for (int i = 0; i < 4; i++) trades.add(sell(10 + i, "btc", 0.006, 82_500, TODAY));
+            Evaluation four = TraderScoring.evaluate(account(10_000, holdings, trades, caps));
+            ScoreCap cap = four.caps().stream().filter(c -> c.id().equals("impulsive-deployment")).findFirst().orElseThrow();
+            assertTrue(cap.detail().contains("(4 of 5 so far)"), cap.detail());
+
+            trades.add(buy(20, "eth", 0.2, 2_500, TODAY));   // a fifth small trade
+            Evaluation five = TraderScoring.evaluate(account(10_000, holdings, trades, caps));
+            assertTrue(five.caps().stream().noneMatch(c -> c.id().equals("impulsive-deployment")), five.caps().toString());
+            assertTrue(five.score() > 299 || five.caps().stream().anyMatch(c -> c.maxScore() <= 299 && !c.id().equals("impulsive-deployment")));
+            assertTrue(component(five, "deployment-pacing").score() < 0.1, "the behavioral penalty stays in the pillar");
+        }
+
+        @Test
+        @DisplayName("Recycling the same money in and out during a day isn't counted as deploying it")
+        void roundTripsAreNotDeployment() {
+            List<TradeEvent> trades = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {       // ten round trips of 10% of capital, all today
+                trades.add(buy(2L * i, "btc", 0.0121, 82_500, TODAY));
+                trades.add(sell(2L * i + 1, "btc", 0.0121, 82_500, TODAY));
+            }
+            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(), trades, Map.of("btc", LARGE_CAP)));
+            assertTrue(e.caps().stream().noneMatch(c -> c.id().equals("impulsive-deployment")), e.caps().toString());
+            assertEquals(0.0998, component(e, "deployment-pacing").value(), 1e-3);
         }
 
         @Test
@@ -898,10 +932,9 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Tier 5 needs a real profit factor: 1.1 keeps the score at 599 and says why")
-        void tier5NeedsProfitFactor() {
-            // 6 winners at +5.5 and 6 losers at −5 give a profit factor of 1.1; an open ETH position up 40%
-            // keeps the return on capital clearly positive, so only the profit factor fails the gate
+        @DisplayName("Profit factor and Sharpe no longer gate tiers: they count in the pillars instead")
+        void gatesUseReturnAndCountOnly() {
+            // Profit factor 1.1 and a weak record still pass Tier 5: return on capital is positive and 24 trades are recorded
             List<TradeEvent> trades = new ArrayList<>();
             for (int i = 0; i < 12; i++) {
                 LocalDate d = TODAY.minusDays(300 - i * 20L);
@@ -915,12 +948,28 @@ class TraderScoringTest {
             Evaluation e = TraderScoring.evaluate(in);
 
             assertEquals(1.1, TraderScoring.profitFactor(in, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
-            assertEquals(599, e.score());
-            ScoreCap cap = e.caps().get(0);
-            assertEquals("gate-600", cap.id());
-            assertEquals("Tier 5 Advancement Locked", cap.title());
-            assertTrue(cap.detail().contains("Profit Factor 1.10 (target ≥ 1.20 on closed trades)"), cap.detail());
-            assertFalse(cap.detail().contains("Sharpe"), "only the failed requirements are listed");
+            assertTrue(e.gates().get(0).unlocked());
+            assertTrue(e.score() > 599, "score " + e.score());
+            for (TierGate g : e.gates()) {
+                assertEquals(List.of("Return on Capital", "Trade Count"), g.requirements().stream().map(Requirement::name).toList());
+            }
+        }
+
+        @Test
+        @DisplayName("Tiers unlock the day they're earned: no waiting period")
+        void noTimeLock() {
+            // 10 trades all made today, +12% on capital
+            List<TradeEvent> trades = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                trades.add(buy(2L * i, "btc", 0.5, 100, TODAY));
+                trades.add(sell(2L * i + 1, "btc", 0.5, 124, TODAY));
+            }
+            var e = new TraderScoring.Evidence(0.5, -0.6, 0.12, 1.0, 5, 10, 1, 3, TraderScoring.Allocation.NONE);
+            TierGate tier5 = TraderScoring.tierGates(e).get(0);
+            assertTrue(tier5.unlocked(), tier5.requirements().toString());
+            assertFalse(TraderScoring.tierGates(e).get(1).unlocked()); // Tier 3 needs +15% and 20 trades
+            assertTrue(TraderScoring.scoreCaps(e, 4, 4, TraderScoring.tierGates(e)).stream()
+                    .noneMatch(c -> c.id().equals("gate-600")));
         }
 
         @Test
@@ -956,13 +1005,13 @@ class TraderScoringTest {
             assertEquals(0.08, ret.progress(), 1e-9);
             assertFalse(ret.met());
 
-            Requirement longevity = tier5.requirements().get(3);
-            assertEquals("Trading Longevity", longevity.name());
-            assertEquals("16 trades over 1 day", longevity.actual());
-            assertEquals("Minimum 90-day track record, 10+ trades", longevity.target());
-            assertEquals(1.0 / 90, longevity.progress(), 1e-9); // trades are enough; days are not
-            assertEquals(0.0, tier5.requirements().get(2).progress(), EPS); // a negative Sharpe is no progress
-            assertEquals(0.0, tier5.requirements().get(1).progress(), EPS); // no profit factor yet
+            Requirement count = tier5.requirements().get(1);
+            assertEquals("Trade Count", count.name());
+            assertEquals("16 trades", count.actual());
+            assertEquals("≥ 10 trades", count.target());
+            assertTrue(count.met());                       // 16 trades over a single day are enough
+            assertEquals(1.0, count.progress(), EPS);
+            assertEquals(2, tier5.requirements().size());
 
             ScoreCap lock = TraderScoring.scoreCaps(e, 4, 4, TraderScoring.tierGates(e)).stream()
                     .filter(c -> c.id().equals("gate-600")).findFirst().orElseThrow();
@@ -971,13 +1020,12 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Requirements are judged at their displayed precision: 1.4996 shows as 1.50 and meets 1.5")
+        @DisplayName("Requirements are judged at their displayed precision: +4.996% shows as +5.0% and meets 5%")
         void displayedPrecision() {
-            var e = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.4996, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
-            TierGate tier3 = TraderScoring.tierGates(e).get(1);
-            assertTrue(tier3.unlocked(), tier3.requirements().toString());
-            var below = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.494, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
-            assertFalse(TraderScoring.tierGates(below).get(1).unlocked());
+            var e = new TraderScoring.Evidence(0.4, 1.0, 0.04996, 1.5, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
+            assertTrue(TraderScoring.tierGates(e).get(0).unlocked());
+            var below = new TraderScoring.Evidence(0.4, 1.0, 0.0494, 1.5, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
+            assertFalse(TraderScoring.tierGates(below).get(0).unlocked());
         }
 
         @Test

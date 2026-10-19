@@ -27,10 +27,7 @@ export function scoreFixture(overrides: Partial<InstitutionalScore> = {}): Insti
     gates: [
       { minScore: 600, name: 'Tier 5 and above', unlocked: false, requirements: [
         { label: 'Return on capital (S₀) of at least 5%', met: true, actual: '+17.0%', name: 'Return on Capital', target: '≥ +5.0%', progress: 1 },
-        { label: 'Profit factor of at least 1.2 on closed trades', met: false, actual: 'fewer than 2 sells', name: 'Profit Factor',
-          target: '≥ 1.20 on closed trades', progress: 0 },
-        { label: 'At least 10 dated trades over 90+ days', met: false, actual: '16 trades over 1 day', name: 'Trading Longevity',
-          target: 'Minimum 90-day track record, 10+ trades', progress: 1 / 90 },
+        { label: 'At least 10 recorded trades', met: false, actual: '4 trades', name: 'Trade Count', target: '≥ 10 trades', progress: 0.4 },
       ] },
       { minScore: 750, name: 'Tier 3 and above', unlocked: false, requirements: [] },
       { minScore: 900, name: 'Tier 1', unlocked: false, requirements: [] },
