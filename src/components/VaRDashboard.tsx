@@ -6,6 +6,7 @@ import { authService } from '../services/authService';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { SLICE_COLORS } from './PortfolioPage';
 import Term from './ui/Term';
+import InfoTip from './ui/InfoTip';
 import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonMetrics, btn, segmented } from './ui/kit';
 import { num, pct, usd } from './ui/format';
 
@@ -107,6 +108,21 @@ export function histogram(returns: number[], bins: number, cutoff: number) {
   counts.forEach(b => { b.tail = b.to <= cutoff + 1e-12; });
   return counts.map(b => ({ ...b, mid: (b.from + b.to) / 2 }));
 }
+
+export const VOLATILITY_INFO = "Measures how wildly your portfolio's value swings day-to-day. Lower volatility indicates smoother, more predictable capital growth.";
+export const EXPECTED_RETURN_INFO = 'The average daily statistical growth rate of your portfolio based on recent price performance and asset weights.';
+
+/** One figure of the return profile: label with an info tooltip, a large high-contrast value, and its basis. */
+const ProfileCard: React.FC<{ label: string; info: string; value: string; sub: string; tone?: 'up' | 'down' }> = ({ label, info, value, sub, tone }) => (
+  <div className="rounded-lg border border-term-line bg-black/20 p-3" data-testid={`profile-${label}`}>
+    <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.1em] text-term-muted">
+      {label}
+      <InfoTip title={label} what={info} />
+    </div>
+    <div className={`num mt-1.5 text-2xl font-medium ${tone === 'up' ? 'text-term-up' : tone === 'down' ? 'text-term-down' : 'text-term-text'}`}>{value}</div>
+    <div className="mt-0.5 text-[11px] text-term-dim">{sub}</div>
+  </div>
+);
 
 interface VaRDashboardProps {
   /** Opens the add-asset flow; shown when the portfolio turns out to be empty. */
@@ -279,13 +295,14 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 
                 {calc.historicalVaRMethod && <p className="mt-3 text-[11px] text-term-dim">Historical: {calc.historicalVaRMethod}.</p>}
               </Panel>
               <Panel title="Return profile">
-                <div className="grid grid-cols-2 gap-4">
-                  <Metric size="sm" label="Volatility" value={pct(calc.annualizedVolatility ?? calc.volatility * Math.sqrt(365), 1)} sub={`${pct(calc.volatility, 2)} daily`} />
-                  <Metric size="sm" label="Expected return" value={pct(calc.expectedReturn, 3, true)} sub="mean daily" tone={calc.expectedReturn >= 0 ? 'up' : 'down'} />
-                  <Metric size="sm" label="Skewness" value={num(calc.skewness, 2)} tone={calc.skewness < -0.5 ? 'down' : undefined}
-                          sub={calc.skewness < 0 ? 'left tail heavier' : 'right tail heavier'} />
-                  <Metric size="sm" label="Kurtosis" value={num(calc.kurtosis, 2)} tone={calc.kurtosis > 3 ? 'down' : undefined}
-                          sub={calc.kurtosis > 3 ? 'fat tails' : 'near-normal tails'} />
+                <div className="grid grid-cols-2 gap-3" data-testid="return-profile">
+                  <ProfileCard label="Volatility" info={VOLATILITY_INFO}
+                               value={pct(calc.annualizedVolatility ?? calc.volatility * Math.sqrt(365), 1)}
+                               sub={`annualized · ${pct(calc.volatility, 2)} daily`} />
+                  <ProfileCard label="Expected return" info={EXPECTED_RETURN_INFO}
+                               value={pct(calc.expectedReturn, 3, true)}
+                               sub={`mean daily · ${pct(calc.expectedReturn * 365, 1, true)} a year projected`}
+                               tone={calc.expectedReturn >= 0 ? 'up' : 'down'} />
                 </div>
               </Panel>
             </div>

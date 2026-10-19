@@ -1,4 +1,5 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
+import Popover from './Popover';
 
 /** Plain-language definitions for the quantitative terms used across the terminal. */
 export const GLOSSARY: Record<string, string> = {
@@ -21,8 +22,6 @@ export const GLOSSARY: Record<string, string> = {
   'Parametric VaR': 'VaR assuming returns are normally distributed, from the portfolio’s mean and volatility.',
   'Monte Carlo VaR': 'VaR from thousands of simulated portfolio paths drawn from the assets’ joint return distribution.',
   CVaR: 'Conditional VaR (expected shortfall): the average loss in the worst cases beyond VaR.',
-  Skewness: 'Asymmetry of returns. Negative skew means occasional large losses.',
-  Kurtosis: 'Tail heaviness of returns. Above 3 means extreme moves happen more often than a normal distribution predicts.',
   'Expected return': 'Mean daily return of the portfolio over the history, annualized where stated.',
   'Market cap': 'Circulating supply × price.',
   'Volume 24h': 'Value traded across exchanges in the last 24 hours. Low volume relative to market cap means thinner liquidity.',
@@ -47,23 +46,23 @@ interface TermProps {
 const Term: React.FC<TermProps> = ({ term, children, className = '' }) => {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const button = useRef<HTMLButtonElement>(null);
   const definition = GLOSSARY[term];
   const label = children ?? term;
   if (!definition) return <span className={className}>{label}</span>;
   return (
     <span className={`relative inline-flex items-center ${className}`}
           onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" aria-describedby={open ? id : undefined}
+      <button ref={button} type="button" aria-describedby={open ? id : undefined}
               onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
               onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
               className="cursor-help border-b border-dotted border-term-dim/70 leading-tight text-inherit [text-transform:inherit] [letter-spacing:inherit] hover:border-term-muted focus:outline-none focus-visible:border-term-accent">
         {label}
       </button>
       {open && (
-        <span role="tooltip" id={id}
-              className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-64 -translate-x-1/2 rounded-md border border-term-line2 bg-term-raised px-3 py-2 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-term-text shadow-xl shadow-black/50">
+        <Popover anchor={button.current} id={id} width={256}>
           {definition}
-        </span>
+        </Popover>
       )}
     </span>
   );

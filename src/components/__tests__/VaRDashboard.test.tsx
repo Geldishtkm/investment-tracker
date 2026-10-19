@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import VaRDashboard, { VaRCalculation, resetVaRCache } from '../VaRDashboard';
+import VaRDashboard, { EXPECTED_RETURN_INFO, VOLATILITY_INFO, VaRCalculation, resetVaRCache } from '../VaRDashboard';
 
 const auth = vi.hoisted(() => ({ authFetch: vi.fn() }));
 vi.mock('../../services/authService', () => ({ authService: auth }));
@@ -57,5 +57,24 @@ describe('VaRDashboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Recalculate' }));
     await screen.findByTestId('var-account');
     await vi.waitFor(() => expect(auth.authFetch).toHaveBeenCalledTimes(3));
+  });
+
+  it('shows a clean return profile: volatility and expected return only, each with an explanation', async () => {
+    auth.authFetch.mockResolvedValue(ok(calc()));
+    render(<VaRDashboard onAddAsset={() => {}} />);
+    const profile = await screen.findByTestId('return-profile');
+    expect(within(profile).getAllByTestId(/^profile-/)).toHaveLength(2);
+    expect(screen.getByTestId('profile-Volatility')).toHaveTextContent('23.0%');
+    expect(screen.getByTestId('profile-Volatility')).toHaveTextContent('annualized · 1.20% daily');
+    expect(screen.getByTestId('profile-Expected return')).toHaveTextContent('+0.020%');
+    expect(screen.getByTestId('profile-Expected return')).toHaveTextContent('mean daily · +7.3% a year projected');
+    expect(screen.queryByText(/Skewness|Kurtosis/)).not.toBeInTheDocument();
+
+    fireEvent.focus(within(profile).getByRole('button', { name: 'About Volatility' }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(VOLATILITY_INFO);
+    expect(screen.getByRole('tooltip')).not.toHaveTextContent('How to improve it');
+    fireEvent.blur(within(profile).getByRole('button', { name: 'About Volatility' }));
+    fireEvent.focus(within(profile).getByRole('button', { name: 'About Expected return' }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(EXPECTED_RETURN_INFO);
   });
 });
