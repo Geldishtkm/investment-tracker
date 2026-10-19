@@ -6,7 +6,6 @@ import { Asset, AssetBreakdownItem, PortfolioAnalytics } from '../types';
 import AssetActionSheet from './AssetActionSheet';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { SLICE_COLORS } from './PortfolioPage';
-import { correlationLabel } from './institutional/DiversificationCard';
 import Term from './ui/Term';
 import { Delta, Metric, Panel, ShareBar, SkeletonMetrics, SkeletonRows, btn } from './ui/kit';
 import { num, pct, qty, toneOf, usd } from './ui/format';
@@ -81,11 +80,10 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
   const risk = data.riskMetricsAvailable;
   const pnl = data.totalValue - data.totalInitialInvestment;
   const roi = data.totalInitialInvestment > 0 ? pnl / data.totalInitialInvestment : null;
-  const divScore = data.diversificationScore ?? null;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4 2xl:grid-cols-8" data-testid="analytics-scorecard">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4 2xl:grid-cols-7" data-testid="analytics-scorecard">
         <div className="bg-term-panel p-4"><Metric label="Holdings value" term="Allocation" value={usd(data.totalValue)} sub={`${data.totalAssets} positions`} /></div>
         <div className="bg-term-panel p-4"><Metric label="Cost basis" term="Avg cost" value={usd(data.totalInitialInvestment)} /></div>
         <div className="bg-term-panel p-4"><Metric label="Unrealized P&L" value={usd(pnl)} tone={toneOf(pnl, 0.005)} sub={pct(roi, 2, true)} /></div>
@@ -95,8 +93,6 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
                                                     tone={risk ? toneOf(data.sharpeRatio) : undefined} /></div>
         <div className="bg-term-panel p-4"><Metric label="Volatility" value={risk ? pct(data.volatility, 1) : '—'} sub="annualized" /></div>
         <div className="bg-term-panel p-4"><Metric label="Beta" value={risk ? num(data.beta, 2) : '—'} sub={data.benchmark ? `vs ${data.benchmark}` : undefined} /></div>
-        <div className="bg-term-panel p-4"><Metric label="Diversification" value={divScore != null && risk ? `${num(divScore, 0)}/100` : '—'}
-                                                    tone={divScore == null || !risk ? undefined : divScore >= 60 ? 'up' : divScore < 35 ? 'down' : 'flat'} /></div>
       </div>
 
       {!risk && data.riskMetricsMessage && (
@@ -105,57 +101,31 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel title="Allocation" className="xl:col-span-1">
-          <div className="flex items-center gap-4">
-            <div className="h-44 w-44 shrink-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={rows} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="100%" stroke="#0E131F" strokeWidth={2} isAnimationActive={false}>
-                    {rows.map((r, i) => <Cell key={r.id} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: '#141B2A', border: '1px solid #2A3447', borderRadius: 6, fontSize: 12 }}
-                           formatter={(v: number, n: string) => [usd(v), n]} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <ul className="min-w-0 flex-1 space-y-1.5 text-sm">
-              {rows.map((r, i) => (
-                <li key={r.id} className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2 truncate text-term-muted">
-                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{r.name}
-                  </span>
-                  <span className="num text-term-text">{pct(r.weight, 1)}</span>
-                </li>
-              ))}
-            </ul>
+    <Panel title="Allocation">
+        <div className="flex items-center gap-4">
+          <div className="h-44 w-44 shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={rows} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="100%" stroke="#0E131F" strokeWidth={2} isAnimationActive={false}>
+                  {rows.map((r, i) => <Cell key={r.id} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
+                </Pie>
+                <Tooltip contentStyle={{ background: '#141B2A', border: '1px solid #2A3447', borderRadius: 6, fontSize: 12 }}
+                         formatter={(v: number, n: string) => [usd(v), n]} />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
-        </Panel>
-
-        <Panel title="Diversification" className="xl:col-span-2"
-               subtitle="Concentration and correlation of current holdings">
-          {risk ? (
-            <div className="space-y-4">
-              <div>
-                <div className="mb-1 flex justify-between text-xs text-term-muted">
-                  <Term term="Diversification">Diversification score</Term>
-                  <span className="num text-term-text">{num(divScore, 1)} / 100</span>
-                </div>
-                <ShareBar value={(divScore ?? 0) / 100} tone={(divScore ?? 0) >= 60 ? 'up' : (divScore ?? 0) < 35 ? 'down' : 'accent'} className="h-1.5" />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Metric label="HHI" value={data.herfindahlIndex == null ? '—' : data.herfindahlIndex.toFixed(2)} sub="Σ w² · 1.00 = a single holding" />
-                <Metric label="Effective holdings" term="N_eff"
-                        value={data.effectiveNumberOfAssets == null ? '—' : `${num(data.effectiveNumberOfAssets, 2)} of ${data.totalAssets}`}
-                        sub={`${data.totalAssets === 1 ? 'holding' : 'holdings'}, weighted by size`} />
-                <Metric label="Avg correlation" term="ρ̄" value={data.averageCorrelation == null ? '—' : data.averageCorrelation.toFixed(2)}
-                        sub={data.averageCorrelation == null ? 'needs two or more holdings' : correlationLabel(data.averageCorrelation)}
-                        tone={data.averageCorrelation == null ? undefined : data.averageCorrelation >= 0.7 ? 'down' : data.averageCorrelation <= 0.3 ? 'up' : 'flat'} />
-              </div>
-            </div>
-          ) : <p className="text-sm text-term-muted">Needs price history for your holdings.</p>}
-        </Panel>
-      </div>
+          <ul className="grid min-w-0 max-w-4xl flex-1 grid-cols-1 gap-x-10 gap-y-1.5 text-sm sm:grid-cols-2 xl:grid-cols-3">
+            {rows.map((r, i) => (
+              <li key={r.id} className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2 truncate text-term-muted">
+                  <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{r.name}
+                </span>
+                <span className="num text-term-text">{pct(r.weight, 1)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Panel>
 
       <Panel flush title="Attribution" subtitle="Each position’s share of value and of total unrealized P&L · click a position to trade it"
              actions={<button type="button" className={btn.secondary} onClick={() => void load()} aria-label="Refresh analytics">
