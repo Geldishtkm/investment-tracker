@@ -49,9 +49,10 @@ export const METRIC_GUIDE: Record<string, MetricGuide> = {
     improve: 'Decide an exit before you buy (a stop-loss or a review date) and stick to it, win or lose.',
   },
   fomo: {
-    what: 'Whether you buy right after a coin has already jumped (fear of missing out). Each buy is compared with the price 24 hours before it: up to +5% is a clean entry, +5–15% a moderate chase (half credit), above +15% a severe chase (none). Bigger buys count more.',
-    improve: 'Wait for a pullback or buy in smaller steps instead of chasing a spike. A chase with 10% or more of your capital wipes out this score; keep any chase to 1–2%.',
+    what: 'Whether you buy right after a coin has already jumped (fear of missing out). Each buy is compared with the price 24 hours before it: up to +5% is a clean entry, +5–15% a moderate chase, above +15% a severe chase. Each chase takes off points in proportion to its size and how often it happens.',
+    improve: 'Wait for a pullback or buy in smaller steps instead of chasing a spike. One chase costs a little; repeatedly chasing pumps with large amounts costs all 50 points. Keep any chase to 1–2% of capital.',
   },
+
 
   panic: {
     what: 'How often you sell during a sharp one-day drop, right at the low point.',

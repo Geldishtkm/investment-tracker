@@ -440,14 +440,14 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("FOMO bands at full size: ≤+5% clean 50/50, +5–15% moderate 25/50, above +15% severe 0/50")
+        @DisplayName("FOMO bands: a clean entry costs nothing; one full-size chase in a short history is a graduated deduction")
         void fomoBands() {
-            assertEquals(50.0, component(singleBuy(104, 10), "fomo").points(), 1e-9);      // +4%
-            assertEquals(25.0, component(singleBuy(110, 1000.0 / 110), "fomo").points(), 1e-9); // +10%, 10% of capital
-            Evaluation pump = singleBuy(130, 1000.0 / 130);                                  // +30%, 10% of capital
-            assertEquals(0.0, component(pump, "fomo").points(), 1e-9);
+            assertEquals(50.0, component(singleBuy(104, 10), "fomo").points(), 1e-9);            // +4%: clean
+            assertEquals(37.5, component(singleBuy(110, 1000.0 / 110), "fomo").points(), 1e-9);  // +10%, 10% of capital
+            Evaluation pump = singleBuy(130, 1000.0 / 130);                                        // +30%, 10% of capital
+            assertEquals(25.0, component(pump, "fomo").points(), 1e-9);                           // not 0 for one chase
             Flag f = flag(pump, "fomo").orElseThrow();
-            assertEquals(Severity.HIGH, f.severity());
+            assertEquals(Severity.MEDIUM, f.severity());
             assertEquals("Severe FOMO Chase", f.title());
             assertTrue(f.detail().contains("after a +30.0% run-up in 24 hours (previous day's close)"), f.detail());
             assertEquals(1.0, TraderScoring.fomoBandScore(0.05), EPS);
@@ -458,10 +458,36 @@ class TraderScoringTest {
         @Test
         @DisplayName("A chase costs in proportion to its size: 1% of capital barely, 10% or more in full")
         void fomoSizeWeighted() {
-            assertEquals(45.0, component(singleBuy(130, 100.0 / 130), "fomo").points(), 1e-6);  // 1% into +30%
-            assertEquals(25.0, component(singleBuy(130, 500.0 / 130), "fomo").points(), 1e-6);  // 5% into +30%
-            assertEquals(0.0, component(singleBuy(130, 2500.0 / 130), "fomo").points(), 1e-6); // 25% into +30%
-            assertEquals(Severity.MEDIUM, flag(singleBuy(130, 100.0 / 130), "fomo").orElseThrow().severity());
+            assertEquals(47.5, component(singleBuy(130, 100.0 / 130), "fomo").points(), 1e-6);  // 1% into +30%
+            assertEquals(37.5, component(singleBuy(130, 500.0 / 130), "fomo").points(), 1e-6);  // 5% into +30%
+            assertEquals(25.0, component(singleBuy(130, 2500.0 / 130), "fomo").points(), 1e-6); // 25% (counts as full size)
+            assertEquals(Severity.LOW, flag(singleBuy(130, 100.0 / 130), "fomo").orElseThrow().severity());
+        }
+
+        /** 11 dated buys of 10% of capital each: `severe` of them bought into a +30% run-up, the rest at the prior close. */
+        private Component elevenBuys(int severe) {
+            Map<LocalDate, Double> closes = new HashMap<>();
+            List<TradeEvent> trades = new ArrayList<>();
+            for (int i = 0; i < 11; i++) {
+                LocalDate day = TODAY.minusDays(100 - 7L * i);
+                closes.put(day.minusDays(1), 100.0);
+                double price = i < severe ? 130 : 100;
+                trades.add(buy(i, "btc", 1000.0 / price, price, day));
+            }
+            return component(TraderScoring.evaluate(new Inputs(List.of(), null, null, "No price history.", trades,
+                    Map.of("btc", prices(closes)), Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0)), "fomo");
+        }
+
+        @Test
+        @DisplayName("Proportional: 1 full-size severe chase in 11 buys scores about 38/50; only repeated large chases reach 0")
+        void fomoProportional() {
+            assertEquals(50.0, elevenBuys(0).points(), 1e-6);
+            assertEquals(50 * (1 - 2.5 / 11), elevenBuys(1).points(), 1e-6);   // ≈ 38.6
+            assertTrue(elevenBuys(1).points() >= 35 && elevenBuys(1).points() <= 40);
+            assertEquals(50 * (1 - 2.5 * 2 / 11), elevenBuys(2).points(), 1e-6); // ≈ 27.3
+            assertTrue(elevenBuys(4).points() > 0, "four is heavy but not yet total");
+            assertEquals(0.0, elevenBuys(5).points(), 1e-6);                     // a repeated pattern
+            for (int k = 0; k < 6; k++) assertTrue(elevenBuys(k + 1).points() <= elevenBuys(k).points(), "monotone at " + k);
         }
 
         @Test
@@ -482,7 +508,7 @@ class TraderScoringTest {
             Inputs in = new Inputs(List.of(), null, null, "No price history.", List.of(pumpBuy), Map.of("btc", daily),
                     Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0, null, Map.of("btc", hourly));
             Evaluation e = TraderScoring.evaluate(in);
-            assertEquals(0.0, component(e, "fomo").points(), 1e-9);
+            assertEquals(25.0, component(e, "fomo").points(), 1e-9);   // one full-size severe chase
             assertTrue(flag(e, "fomo").orElseThrow().detail().contains("+30.0% run-up in 24 hours (hourly prices)"));
 
             // Without hourly data the same buy falls back to the previous close and sees no run-up

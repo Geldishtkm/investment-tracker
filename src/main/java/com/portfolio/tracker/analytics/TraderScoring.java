@@ -37,6 +37,13 @@ public final class TraderScoring {
     static final double FOMO_CLEAN_RUN_UP = 0.05;    // up to +5%: a clean entry (full credit)
     static final double FOMO_RUN_UP = 0.15;          // +5% to +15%: a moderate chase (half); above +15%: a severe chase (none)
     static final double FOMO_FULL_SIZE_SHARE = 0.10; // a chase's penalty grows with its size, in full from 10% of capital
+    /**
+     * FOMO points lost = 50 × min(1, FOMO_SEVERITY × Σ chase penalties / max(buys, FOMO_MIN_BUYS)). One full-size
+     * severe chase among 11 buys costs about 11 points; 0/50 takes repeated large chases. The floor on the
+     * number of buys keeps a single chase in a short history from wiping out the score.
+     */
+    static final double FOMO_SEVERITY = 2.5;
+    static final int FOMO_MIN_BUYS = 5;
     static final double PANIC_DROP = -0.08;          // sold on a day the coin fell 8% or more in 24h...
     static final int PANIC_WINDOW_DAYS = 3;          // ...at the lowest price within ±3 days
     static final double PANIC_TROUGH_TOLERANCE = 0.01;
@@ -659,18 +666,17 @@ public final class TraderScoring {
             if (entry != null) entries.add(entry);
         }
         if (!entries.isEmpty()) {
-            double worst = 0.0, totalPenalty = 0.0, totalWeight = 0.0;
+            double worst = 0.0, totalPenalty = 0.0;
             FomoEntry worstEntry = null;
             for (FomoEntry f : entries) {
                 totalPenalty += f.penalty();
-                totalWeight += f.weight();
                 if (f.penalty() > worst) {
                     worst = f.penalty();
                     worstEntry = f;
                 }
             }
-            // The worst single chase, or the size-weighted average over all buys, whichever is worse
-            double penalty = Math.min(1.0, Math.max(worst, totalPenalty / Math.max(1.0, totalWeight)));
+            // Proportional: each chase costs by its severity and size, relative to how many buys there are
+            double penalty = Math.min(1.0, FOMO_SEVERITY * totalPenalty / Math.max(entries.size(), FOMO_MIN_BUYS));
             long severe = entries.stream().filter(f -> f.runUp() > FOMO_RUN_UP).count();
             long moderate = entries.stream().filter(f -> f.runUp() > FOMO_CLEAN_RUN_UP && f.runUp() <= FOMO_RUN_UP).count();
             out.add(component("fomo", "FOMO chasing", 50, penalty,
@@ -678,14 +684,15 @@ public final class TraderScoring {
                             + (moderate == 1 ? "" : "s"),
                     1.0 - penalty,
                     "Each buy's price against the price 24 hours before it: up to +5% is a clean entry, +5–15% a moderate chase "
-                            + "(half credit), above +15% a severe chase (none). A chase costs in proportion to its size, in full from "
-                            + pct0(FOMO_FULL_SIZE_SHARE) + " of capital; the worst single chase or the size-weighted average counts, "
-                            + "whichever is worse"));
+                            + "(half), above +15% a severe chase. Each chase deducts in proportion to its severity and size (in full from "
+                            + pct0(FOMO_FULL_SIZE_SHARE) + " of capital), relative to the number of buys (at least " + FOMO_MIN_BUYS
+                            + "); 0/50 takes repeated large chases"));
             if (worstEntry != null && worst > 0) {
                 TradeEvent t = worstEntry.size().trade();
                 boolean full = worstEntry.size().share() >= FOMO_FULL_SIZE_SHARE;
-                Severity severity = worstEntry.runUp() > FOMO_RUN_UP ? (full ? Severity.HIGH : Severity.MEDIUM)
-                        : full ? Severity.MEDIUM : Severity.LOW;
+                // HIGH only for a repeated pattern that costs most of the points; one chase is MEDIUM at most
+                Severity severity = penalty >= 0.6 ? Severity.HIGH
+                        : worstEntry.runUp() > FOMO_RUN_UP && full ? Severity.MEDIUM : Severity.LOW;
                 flags.add(new Flag("fomo", severity, "behavior", worstEntry.runUp() > FOMO_RUN_UP ? "Severe FOMO Chase" : "FOMO Chasing Flagged",
                         "Bought " + t.name() + " at " + money(t.price()) + " after a " + signedPct1(worstEntry.runUp()) + " run-up in 24 hours ("
                                 + worstEntry.basis() + "), putting " + pct1(worstEntry.size().share()) + " of your capital into it"
