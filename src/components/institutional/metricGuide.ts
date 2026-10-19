@@ -10,9 +10,10 @@ export interface MetricGuide {
 export const METRIC_GUIDE: Record<string, MetricGuide> = {
   // Risk Control & Tail Risk
   sharpe: {
-    what: 'Measures how much return you earn for every unit of risk you take. Above 1 is good; below 0 means the risk wasn’t paid for.',
-    improve: 'Trim positions that swing a lot without adding return, and keep part of the portfolio in steadier assets.',
+    what: 'Measures how much return you earn for every unit of risk you take. Risk is the higher of the past year’s and the last 30 days’ swings, one-day spikes are ignored, and very volatile portfolios need a higher Sharpe (up to 3.0) for full marks.',
+    improve: 'Earn steady returns rather than relying on sudden pumps, and trim positions that swing a lot without adding return.',
   },
+
   sortino: {
     what: 'Like Sharpe, but only counts the bad swings: how much return you earn per unit of downside risk.',
     improve: 'Cut back the positions behind your worst down days, and set exit levels so losses stay small.',

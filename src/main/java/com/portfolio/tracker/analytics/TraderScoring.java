@@ -415,12 +415,18 @@ public final class TraderScoring {
         boolean hasHistory = rp != null && volatility > 0;
         double annualReturn = rp == null ? Double.NaN : RiskMath.mean(rp) * periods;
 
-        // Sharpe ratio
+        // Sharpe ratio, made conservative: the return leaves out one-day spikes, the risk is the higher of the
+        // full-period and the last 30 days' volatility, and more volatile portfolios need a higher Sharpe for full marks
         if (hasHistory) {
-            double sharpe = (annualReturn - in.riskFreeRate()) / volatility;
-            out.add(component("sharpe", "Sharpe ratio", 60, sharpe, fmt2(sharpe), lin(sharpe, -0.5, 2.0),
-                    "(annualized return − " + pct1(in.riskFreeRate()) + " risk-free) / annualized volatility, "
-                            + rp.length + " daily returns"));
+            SharpeInputs si = sharpeInputs(rp, periods);
+            double sharpe = (si.annualReturn() - in.riskFreeRate()) / si.volatility();
+            double best = sharpeTarget(si.volatility());
+            out.add(component("sharpe", "Sharpe ratio", 60, sharpe, fmt2(sharpe) + (best > SHARPE_TARGET + 1e-9 ? " (target " + fmt1(best) + ")" : ""),
+                    lin(sharpe, -0.5, best),
+                    "(annualized return without one-day spikes − " + pct1(in.riskFreeRate()) + " risk-free) / the higher of the "
+                            + rp.length + "-day volatility (" + pct1(si.fullVolatility()) + ") and the last " + RECENT_VOL_DAYS
+                            + " days' (" + pct1(si.recentVolatility()) + "); full marks at " + fmt1(best)
+                            + ", which rises from 2.0 for portfolios more volatile than 50% a year"));
             if (sharpe < 0) {
                 flags.add(new Flag("negative-sharpe", Severity.MEDIUM, "risk", "Negative Risk-Adjusted Return",
                         "Sharpe ratio " + fmt2(sharpe) + ": over the last " + rp.length + " days the portfolio returned "
@@ -608,6 +614,33 @@ public final class TraderScoring {
                             + against + ").",
                     "Blend in steadier assets or trim the most aggressive coins so a market drop doesn't hit the portfolio harder than the market."));
         }
+    }
+
+    /** Sharpe ratio needed for full marks at volatility up to 50% a year. */
+    static final double SHARPE_TARGET = 2.0;
+    /** Days of recent returns whose volatility is weighed against the full period's. */
+    static final int RECENT_VOL_DAYS = 30;
+
+    /** The return and volatility a conservative Sharpe ratio is built from (annualized). */
+    record SharpeInputs(double annualReturn, double volatility, double fullVolatility, double recentVolatility) {}
+
+    /**
+     * Return without one-day spikes (outliers trimmed as for volatility), and as risk the higher of the full-period
+     * and the most recent RECENT_VOL_DAYS days' volatility, so a coin that is volatile right now raises the risk at
+     * once and a short pump can't inflate the return.
+     */
+    static SharpeInputs sharpeInputs(double[] rp, int periods) {
+        double[] trimmed = trimOutliers(rp);
+        double full = RiskMath.sampleStdDev(trimmed) * Math.sqrt(periods);
+        double recent = rp.length >= RECENT_VOL_DAYS
+                ? RiskMath.sampleStdDev(Arrays.copyOfRange(trimmed, trimmed.length - RECENT_VOL_DAYS, trimmed.length)) * Math.sqrt(periods)
+                : full;
+        return new SharpeInputs(RiskMath.mean(trimmed) * periods, Math.max(full, recent), full, recent);
+    }
+
+    /** Sharpe for full marks: 2.0 up to 50% annual volatility, rising linearly to 3.0 at 150% and above. */
+    static double sharpeTarget(double annualVol) {
+        return SHARPE_TARGET + Math.max(0.0, Math.min(1.0, (annualVol - 0.5) / 1.0));
     }
 
     /** Daily returns with one-day outliers (beyond VOLATILITY_TRIM_SIGMAS robust deviations of the median) clamped. */

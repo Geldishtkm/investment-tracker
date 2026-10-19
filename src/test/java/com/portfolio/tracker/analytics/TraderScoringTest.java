@@ -180,13 +180,57 @@ class TraderScoringTest {
 
             double vol = RiskMath.sampleStdDev(r) * Math.sqrt(365);
             double annual = RiskMath.mean(r) * 365;
-            assertEquals((annual - 0.04) / vol, component(e, "sharpe").value(), 1e-12);
+            // Sharpe takes the higher of the full and the last 30 days' volatility (no outliers to trim here)
+            TraderScoring.SharpeInputs si = TraderScoring.sharpeInputs(r, 365);
+            assertEquals(annual, si.annualReturn(), 1e-12);
+            assertEquals(Math.max(vol, si.recentVolatility()), si.volatility(), 1e-12);
+            assertEquals((annual - 0.04) / si.volatility(), component(e, "sharpe").value(), 1e-12);
             assertEquals(vol, component(e, "volatility").value(), 1e-12);
 
             double rfDaily = 0.04 / 365, sumSq = 0;
             for (double x : r) sumSq += Math.pow(Math.min(x - rfDaily, 0), 2);
             double downside = Math.sqrt(sumSq / r.length) * Math.sqrt(365);
             assertEquals((annual - 0.04) / downside, component(e, "sortino").value(), 1e-12);
+        }
+
+        @Test
+        @DisplayName("Sharpe weighs recent volatility: a calm year then a volatile month raises the risk at once")
+        void sharpeUsesRecentVolatility() {
+            Random rnd = new Random(5);
+            double[] r = new double[364];
+            for (int t = 0; t < 364; t++) r[t] = 0.002 + rnd.nextGaussian() * (t < 334 ? 0.01 : 0.05);
+            TraderScoring.SharpeInputs si = TraderScoring.sharpeInputs(r, 365);
+            assertTrue(si.recentVolatility() > 2 * si.fullVolatility(), si.toString());
+            assertEquals(si.recentVolatility(), si.volatility(), EPS);
+            Component c = component(TraderScoring.evaluate(inputs(equalHoldings(4), r, r, List.of(), Map.of(), Map.of(), null)), "sharpe");
+            assertEquals((si.annualReturn() - 0.04) / si.recentVolatility(), c.value(), 1e-9);
+        }
+
+        @Test
+        @DisplayName("A one-day pump doesn't inflate the Sharpe ratio")
+        void sharpeIgnoresOneDayPump() {
+            double[] base = returns(364, 0.0005, 0.02);
+            double[] pumped = base.clone();
+            pumped[363] = 0.80;                                       // +80% on the last day
+            double s0 = component(TraderScoring.evaluate(inputs(equalHoldings(4), base, base, List.of(), Map.of(), Map.of(), null)), "sharpe").value();
+            double s1 = component(TraderScoring.evaluate(inputs(equalHoldings(4), pumped, base, List.of(), Map.of(), Map.of(), null)), "sharpe").value();
+            assertTrue(Math.abs(s1 - s0) < 0.25, s0 + " → " + s1);
+        }
+
+        @Test
+        @DisplayName("Full marks need a higher Sharpe the more volatile the portfolio: 2.0 up to 50%, 3.0 from 150%")
+        void sharpeTargetScales() {
+            assertEquals(2.0, TraderScoring.sharpeTarget(0.40), EPS);
+            assertEquals(2.5, TraderScoring.sharpeTarget(1.00), EPS);
+            assertEquals(3.0, TraderScoring.sharpeTarget(2.00), EPS);
+
+            // A high-volatility coin pumping over its last week: nowhere near 60/60
+            Random rnd = new Random(9);
+            double[] r = new double[364];
+            for (int t = 0; t < 364; t++) r[t] = t < 357 ? rnd.nextGaussian() * 0.06 : 0.12;
+            Component c = component(TraderScoring.evaluate(inputs(equalHoldings(1), r, r, List.of(), Map.of(), Map.of(), null)), "sharpe");
+            assertTrue(c.points() < 40, c.points() + " · " + c.displayValue());
+            assertTrue(c.displayValue().contains("target"), c.displayValue());
         }
 
         @Test
