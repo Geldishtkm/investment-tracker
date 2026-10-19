@@ -1,4 +1,4 @@
-import { InstitutionalScore, ScorePillar } from '../../types';
+import { InstitutionalScore, PortfolioDiversification, ScorePillar } from '../../types';
 
 const TIERS = [
   [1, 'Sovereign Quantitative Director', 900, 1000], [2, 'Chief Risk Officer (CRO)', 800, 899],
@@ -47,9 +47,30 @@ export function scoreFixture(overrides: Partial<InstitutionalScore> = {}): Insti
     ],
     strengths: ['Liquidity impact: largest trade 0.00% of 24h volume'],
     coverage: { trades: 4, datedTrades: 0, closedLots: 0, observations: 364 },
+    diversification: diversificationFixture(),
     riskTargetVolatility: null,
     dataFreshness: { pricesAsOf: '2026-10-18T19:59:00Z', stalePrices: [], historyThrough: '2026-10-18', historyStale: false },
     generatedAt: '2026-10-18T20:00:00Z',
+    ...overrides,
+  };
+}
+
+export function diversificationFixture(overrides: Partial<PortfolioDiversification> = {}): PortfolioDiversification {
+  return {
+    holdings: 3, hhi: 0.38, effectiveHoldings: 2.63, averageCorrelation: 0.82, effectiveBets: 1.21,
+    diversificationRatio: 1.1, concentrationScore: 0.775, correlationScore: 0.073, betsScore: 0.07, score: 30.6,
+    positions: [
+      { id: 'bitcoin', name: 'Bitcoin', weight: 0.5, volatility: 0.45 },
+      { id: 'ethereum', name: 'Ethereum', weight: 0.3, volatility: 0.6 },
+      { id: 'solana', name: 'Solana', weight: 0.2, volatility: 0.8 },
+    ],
+    correlations: [[1, 0.86, 0.79], [0.86, 1, 0.84], [0.79, 0.84, 1]],
+    pairs: [
+      { a: 'Bitcoin', b: 'Ethereum', correlation: 0.86, combinedWeight: 0.8 },
+      { a: 'Ethereum', b: 'Solana', correlation: 0.84, combinedWeight: 0.5 },
+      { a: 'Bitcoin', b: 'Solana', correlation: 0.79, combinedWeight: 0.7 },
+    ],
+    observations: 364, correlationReason: null,
     ...overrides,
   };
 }

@@ -215,6 +215,97 @@ class TraderScoringTest {
             assertTrue(flag(e, "concentration").isEmpty());
         }
 
+        /** n holdings driven by one market factor with the given share of variance; returns per holding and portfolio. */
+        private Inputs correlatedInputs(int n, double marketShare, long seed) {
+            Random rnd = new Random(seed);
+            double[][] assets = new double[365][n];
+            double[] portfolio = new double[365], bench = new double[365];
+            for (int t = 0; t < 365; t++) {
+                double market = rnd.nextGaussian();
+                bench[t] = 0.03 * market;
+                for (int i = 0; i < n; i++) {
+                    assets[t][i] = 0.001 + 0.03 * (Math.sqrt(marketShare) * market + Math.sqrt(1 - marketShare) * rnd.nextGaussian());
+                    portfolio[t] += assets[t][i] / n;
+                }
+            }
+            return new Inputs(equalHoldings(n), portfolio, bench, null, List.of(), Map.of(), Map.of(), Map.of(), null,
+                    0.04, 365, TODAY, assets);
+        }
+
+        @Test
+        @DisplayName("Diversification is worth 60 of the 250 risk points, split across three components")
+        void diversificationWeights() {
+            Evaluation e = TraderScoring.evaluate(correlatedInputs(4, 0.3, 29));
+            double total = pillar(e, "risk").components().stream().mapToDouble(Component::weight).sum();
+            assertEquals(250.0, total, EPS);
+            assertEquals(20.0, component(e, "concentration").weight(), EPS);
+            assertEquals(20.0, component(e, "correlation").weight(), EPS);
+            assertEquals(20.0, component(e, "independent-bets").weight(), EPS);
+            assertNotNull(e.diversification());
+            assertEquals(4, e.diversification().holdings());
+            assertEquals(6, e.diversification().pairs().size());
+        }
+
+        @Test
+        @DisplayName("Holdings that move in lockstep lose risk points and are flagged, despite equal weights")
+        void correlatedHoldingsPenalized() {
+            Evaluation lockstep = TraderScoring.evaluate(correlatedInputs(5, 0.9, 31));
+            Evaluation independent = TraderScoring.evaluate(correlatedInputs(5, 0.05, 31));
+            assertEquals(1.0, component(lockstep, "concentration").score(), EPS); // same weights...
+            assertTrue(component(lockstep, "correlation").score() < 0.1);       // ...but no real diversification
+            assertTrue(component(lockstep, "independent-bets").value() < 1.3);
+            assertTrue(component(independent, "independent-bets").value() > 3.5);
+            assertTrue(component(lockstep, "correlation").points() + component(lockstep, "independent-bets").points()
+                    < component(independent, "correlation").points() + component(independent, "independent-bets").points() - 25);
+            Flag f = flag(lockstep, "correlated-holdings").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertTrue(f.detail().contains("independent bet"), f.detail());
+            assertTrue(flag(independent, "correlated-holdings").isEmpty());
+        }
+
+        @Test
+        @DisplayName("Lockstep coins are flagged even when a small uncorrelated holding lowers the average")
+        void lockstepBehindStablecoin() {
+            Random rnd = new Random(37);
+            double[][] assets = new double[365][4];
+            double[] portfolio = new double[365];
+            double[] w = {0.30, 0.30, 0.30, 0.10};
+            for (int t = 0; t < 365; t++) {
+                double market = rnd.nextGaussian();
+                for (int i = 0; i < 3; i++) assets[t][i] = 0.03 * (Math.sqrt(0.85) * market + Math.sqrt(0.15) * rnd.nextGaussian());
+                assets[t][3] = 0.0005 * rnd.nextGaussian(); // a stablecoin
+                for (int i = 0; i < 4; i++) portfolio[t] += w[i] * assets[t][i];
+            }
+            List<Holding> holdings = List.of(new Holding("btc", "Bitcoin", 300), new Holding("eth", "Ethereum", 300),
+                    new Holding("sol", "Solana", 300), new Holding("usdc", "USDC", 100));
+            Evaluation e = TraderScoring.evaluate(new Inputs(holdings, portfolio, assets[0].length == 4 ? portfolio : null, null,
+                    List.of(), Map.of(), Map.of(), Map.of(), null, 0.04, 365, TODAY, assets));
+            assertTrue(e.diversification().averageCorrelation() < 0.7, "ρ̄ " + e.diversification().averageCorrelation());
+            Flag f = flag(e, "correlated-holdings").orElseThrow();
+            assertTrue(f.detail().contains("90% of the capital is in holdings that move in lockstep"), f.detail());
+            assertEquals(Severity.HIGH, f.severity());
+        }
+
+        @Test
+        @DisplayName("A single holding scores nothing for correlation or independent bets")
+        void singleHoldingDiversification() {
+            Evaluation e = TraderScoring.evaluate(holdingsOnly(List.of(new Holding("eth", "Ethereum", 5000))));
+            assertEquals(0.0, component(e, "correlation").score(), EPS);
+            assertTrue(component(e, "correlation").available());
+            assertEquals(1.0, component(e, "independent-bets").value(), EPS);
+            assertEquals(0.0, component(e, "independent-bets").points(), EPS);
+        }
+
+        @Test
+        @DisplayName("Without per-holding returns the correlation metrics are left out, not guessed")
+        void correlationNeedsHistory() {
+            Evaluation e = TraderScoring.evaluate(holdingsOnly(equalHoldings(3)));
+            assertFalse(component(e, "correlation").available());
+            assertFalse(component(e, "independent-bets").available());
+            assertTrue(component(e, "concentration").available());
+            assertFalse(e.diversification().correlationAvailable());
+        }
+
         @Test
         @DisplayName("Beta that keeps changing between windows scores lower than a steady beta")
         void betaStability() {

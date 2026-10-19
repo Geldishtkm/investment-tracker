@@ -233,6 +233,34 @@ export interface TierGate {
   requirements: { label: string; met: boolean; actual: string }[];
 }
 
+/** Concentration and correlation of the current holdings (see Diversification.java). */
+export interface PortfolioDiversification {
+  holdings: number;
+  /** Herfindahl–Hirschman index: Σ w², 1 = a single holding. */
+  hhi: number;
+  /** N_eff = 1 / HHI. */
+  effectiveHoldings: number;
+  /** Weight-averaged pairwise correlation ρ̄; null without history or with one holding. */
+  averageCorrelation: number | null;
+  /** Correlation-adjusted effective number of independent bets (diversification ratio²). */
+  effectiveBets: number | null;
+  diversificationRatio: number | null;
+  /** Component scores, 0–1. */
+  concentrationScore: number;
+  correlationScore: number | null;
+  betsScore: number | null;
+  /** 0–100. */
+  score: number;
+  positions: { id: string; name: string; weight: number; volatility: number | null }[];
+  /** Correlation matrix in position order; null without history. */
+  correlations: number[][] | null;
+  /** Every pair, most correlated first. */
+  pairs: { a: string; b: string; correlation: number; combinedWeight: number }[];
+  observations: number;
+  /** Why correlations are missing, or null when they are present. */
+  correlationReason: string | null;
+}
+
 export interface InstitutionalScore {
   /** Final score after evidence caps. */
   score: number;
@@ -251,6 +279,8 @@ export interface InstitutionalScore {
   flags: DiagnosticFlag[];
   strengths: string[];
   coverage: { trades: number; datedTrades: number; closedLots: number; observations: number };
+  /** Null when there are no current holdings. */
+  diversification: PortfolioDiversification | null;
   riskTargetVolatility: number | null;
   /** How current the inputs are: prices older than 15 minutes, or history ending before yesterday, are stale. */
   dataFreshness: {

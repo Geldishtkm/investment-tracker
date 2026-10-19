@@ -84,6 +84,7 @@ public class BehavioralAnalyticsService {
 
         // Daily return history of the current holdings
         double[] portfolioReturns = null, benchmarkReturns = null;
+        double[][] assetReturns = null;
         String historyReason = null;
         LocalDate historyThrough = null;
         if (holdings.isEmpty()) {
@@ -93,6 +94,7 @@ public class BehavioralAnalyticsService {
                 PortfolioSnapshot snapshot = portfolioDataService.snapshot(assets, true);
                 portfolioReturns = snapshot.portfolioReturns();
                 benchmarkReturns = snapshot.benchmark();
+                assetReturns = alignedReturns(snapshot, holdings);
                 historyThrough = snapshot.dates().get(snapshot.dates().size() - 1);
             } catch (PortfolioDataException e) {
                 historyReason = e.getMessage();
@@ -124,10 +126,24 @@ public class BehavioralAnalyticsService {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
                 historyReason, events, dailyPrices, currentPrices, volumes, user.getRiskTargetVolatility(),
-                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today));
+                properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns));
         // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
         boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
         return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));
+    }
+
+    /** Each holding's daily returns, in holding order, or null if a holding isn't in the snapshot. */
+    private static double[][] alignedReturns(PortfolioSnapshot snapshot, List<TraderScoring.Holding> holdings) {
+        int[] columns = new int[holdings.size()];
+        for (int i = 0; i < columns.length; i++) {
+            columns[i] = snapshot.indexOf(holdings.get(i).coinId());
+            if (columns[i] < 0) return null;
+        }
+        double[][] out = new double[snapshot.observations()][columns.length];
+        for (int t = 0; t < out.length; t++) {
+            for (int i = 0; i < columns.length; i++) out[t][i] = snapshot.returns()[t][columns[i]];
+        }
+        return out;
     }
 
     private String coinIdOrNull(String name, Map<String, String> cache) {

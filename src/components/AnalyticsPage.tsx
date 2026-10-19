@@ -366,7 +366,7 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
                 <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
                   {riskMetrics.diversificationScore.toFixed(1)}/100
                 </div>
-                <div className="text-xs text-gray-500 mt-2">Portfolio spread</div>
+                <div className="text-xs text-gray-500 mt-2">Concentration &amp; correlation</div>
               </div>
             </div>
           </div>

@@ -5,6 +5,7 @@ import { DiagnosticFlag, InstitutionalScore, ScoreCap, ScorePillar, TierGate } f
 import PortfolioEmptyState from './PortfolioEmptyState';
 import ScoreGauge from './institutional/ScoreGauge';
 import PillarRadar from './institutional/PillarRadar';
+import DiversificationCard from './institutional/DiversificationCard';
 import { PILLAR_SHORT_NAME, SEVERITY_STYLE, tierColor } from './institutional/styles';
 
 interface InstitutionalEvaluationPageProps {
@@ -107,6 +108,11 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           {data.pillars.map(p => <PillarCard key={p.key} pillar={p} />)}
         </div>
       </section>
+
+      {data.diversification && (
+        <DiversificationCard diversification={data.diversification}
+                             riskComponents={data.pillars.find(p => p.key === 'risk')?.components ?? []} />
+      )}
 
       {/* Diagnostics */}
       <section aria-labelledby="diagnostics-heading">

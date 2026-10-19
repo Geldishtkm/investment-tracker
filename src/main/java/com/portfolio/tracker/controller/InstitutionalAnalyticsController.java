@@ -51,6 +51,7 @@ public class InstitutionalAnalyticsController {
         body.put("flags", e.flags());
         body.put("strengths", e.strengths());
         body.put("coverage", e.coverage());
+        body.put("diversification", e.diversification());
         body.put("riskTargetVolatility", user.getRiskTargetVolatility());
         BehavioralAnalyticsService.Freshness f = result.freshness();
         Map<String, Object> freshness = new LinkedHashMap<>();

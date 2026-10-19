@@ -1,6 +1,7 @@
 package com.portfolio.tracker.service;
 
 import com.portfolio.tracker.analytics.AnalyticsProperties;
+import com.portfolio.tracker.analytics.Diversification;
 import com.portfolio.tracker.analytics.PortfolioDataException;
 import com.portfolio.tracker.analytics.PortfolioSnapshot;
 import com.portfolio.tracker.analytics.RiskMath;
@@ -19,7 +20,9 @@ import java.util.Map;
  *   <li>volatility: annualized sample standard deviation of daily portfolio returns</li>
  *   <li>Sharpe ratio: (annualized mean return - risk-free rate) / annualized volatility</li>
  *   <li>beta: cov(portfolio, benchmark) / var(benchmark) on daily returns</li>
- *   <li>diversification score: 100 x (1 - Herfindahl-Hirschman index of the weights)</li>
+ *   <li>diversification score (0-100): concentration (Herfindahl-Hirschman index) combined with the
+ *       average pairwise correlation and the correlation-adjusted number of independent bets; see
+ *       {@link Diversification}</li>
  * </ul>
  */
 @Service
@@ -53,8 +56,11 @@ public class RiskMetricsService {
         out.put("annualizedReturn", r.annualizedReturn());
         out.put("beta", r.beta());
         out.put("diversificationScore", r.diversificationScore());
-        out.put("effectiveNumberOfAssets", r.effectiveAssets());
-        out.put("diversificationRatio", r.diversificationRatio());
+        out.put("effectiveNumberOfAssets", r.diversification().effectiveHoldings());
+        out.put("herfindahlIndex", r.diversification().hhi());
+        out.put("averageCorrelation", r.diversification().averageCorrelation());
+        out.put("effectiveIndependentBets", r.diversification().effectiveBets());
+        out.put("diversificationRatio", r.diversification().diversificationRatio());
         out.put("riskFreeRate", properties.getRiskFreeRate());
         out.put("benchmark", properties.getBenchmarkCoinId());
         out.put("observations", r.observations());
@@ -64,8 +70,12 @@ public class RiskMetricsService {
     }
 
     private record Result(double sharpeRatio, double volatility, double annualizedReturn, double beta,
-                          double diversificationScore, double effectiveAssets,
-                          double diversificationRatio, int observations, String historyStart, String historyEnd) {
+                          Diversification.Result diversification, int observations,
+                          String historyStart, String historyEnd) {
+
+        double diversificationScore() {
+            return diversification.score();
+        }
     }
 
     private Result compute(List<Asset> assets) {
@@ -90,18 +100,10 @@ public class RiskMetricsService {
         }
         double beta = RiskMath.covariance(rp, s.benchmark()) / benchmarkVariance;
 
-        double hhi = 0.0;
-        for (double w : s.weights()) hhi += w * w;
-        double diversificationScore = 100.0 * (1.0 - hhi);
+        Diversification.Result diversification = Diversification.analyze(s.coinIds(), s.names(), s.values(),
+                s.returns(), periods, null);
 
-        // Diversification ratio (Choueifaty & Coignard, 2008): weighted average volatility / portfolio volatility
-        double[][] cov = RiskMath.covarianceMatrix(s.returns());
-        double weightedVol = 0.0;
-        for (int i = 0; i < s.size(); i++) weightedVol += s.weights()[i] * Math.sqrt(cov[i][i]);
-        double diversificationRatio = weightedVol / Math.sqrt(RiskMath.quadraticForm(s.weights(), cov));
-
-        return new Result(sharpe, volatility, annualReturn, beta, diversificationScore, 1.0 / hhi,
-                diversificationRatio, s.observations(), s.dates().get(0).toString(),
+        return new Result(sharpe, volatility, annualReturn, beta, diversification, s.observations(), s.dates().get(0).toString(),
                 s.dates().get(s.dates().size() - 1).toString());
     }
 }

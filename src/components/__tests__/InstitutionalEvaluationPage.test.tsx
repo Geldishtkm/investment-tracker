@@ -57,6 +57,19 @@ describe('InstitutionalEvaluationPage', () => {
     expect(screen.getByText(/Liquidity impact: largest trade/)).toBeInTheDocument();
   });
 
+  it('shows the Risk & Diversification card under the pillar breakdown, and hides it without holdings', async () => {
+    api.getInstitutionalScore.mockResolvedValueOnce(scoreFixture());
+    const { unmount } = render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    const card = await screen.findByTestId('diversification-card');
+    expect(within(card).getByRole('heading', { name: 'Risk & Diversification' })).toBeInTheDocument();
+    unmount();
+
+    api.getInstitutionalScore.mockResolvedValueOnce(scoreFixture({ diversification: null }));
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    await screen.findByRole('meter', { name: 'Trader Index Score' });
+    expect(screen.queryByTestId('diversification-card')).not.toBeInTheDocument();
+  });
+
   it('says so when no issues are flagged', async () => {
     api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4, caps: [] }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);

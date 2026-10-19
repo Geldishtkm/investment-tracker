@@ -80,6 +80,8 @@ public final class TraderScoring {
      * @param currentPrices            current price per coin, for valuing open lots
      * @param dailyVolumes             current 24h trading volume in USD per coin
      * @param riskTargetVolatility     the user's target annual volatility, or null if not set
+     * @param assetReturns             assetReturns[t][i] = daily return of holdings[i] on the same days as
+     *                                 portfolioReturns, for correlations; null if unavailable
      */
     public record Inputs(List<Holding> holdings,
                          double[] portfolioReturns,
@@ -92,7 +94,19 @@ public final class TraderScoring {
                          Double riskTargetVolatility,
                          double riskFreeRate,
                          int periodsPerYear,
-                         LocalDate today) {}
+                         LocalDate today,
+                         double[][] assetReturns) {
+
+        /** Inputs without per-holding returns: diversification is then judged on concentration alone. */
+        public Inputs(List<Holding> holdings, double[] portfolioReturns, double[] benchmarkReturns,
+                      String historyUnavailableReason, List<TradeEvent> trades,
+                      Map<String, SortedMap<LocalDate, Double>> dailyPrices, Map<String, Double> currentPrices,
+                      Map<String, Double> dailyVolumes, Double riskTargetVolatility, double riskFreeRate,
+                      int periodsPerYear, LocalDate today) {
+            this(holdings, portfolioReturns, benchmarkReturns, historyUnavailableReason, trades, dailyPrices,
+                    currentPrices, dailyVolumes, riskTargetVolatility, riskFreeRate, periodsPerYear, today, null);
+        }
+    }
 
     /** A scored metric. score is 0–1 and points = weight × score; both are 0 when unavailable. */
     public record Component(String key, String name, boolean available, Double value, String displayValue,
@@ -121,10 +135,12 @@ public final class TraderScoring {
     /**
      * score is the final, capped score; rawScore the weighted total before evidence caps.
      * caps lists every cap that applies, lowest first. tier is null only when no pillar could be scored.
+     * diversification is null when there are no current holdings.
      */
     public record Evaluation(int score, int rawScore, boolean provisional, int pillarsScored, Tier tier,
                              List<Pillar> pillars, List<ScoreCap> caps, List<TierGate> gates,
-                             List<Flag> flags, List<String> strengths, Coverage coverage) {}
+                             List<Flag> flags, List<String> strengths, Coverage coverage,
+                             Diversification.Result diversification) {}
 
     public static final List<Tier> TIERS = List.of(
             new Tier(1, "Sovereign Quantitative Director", 900, 1000),
@@ -152,9 +168,10 @@ public final class TraderScoring {
     public static Evaluation evaluate(Inputs in) {
         List<Flag> flags = new ArrayList<>();
         LotBook book = matchLots(in.trades());
+        Diversification.Result diversification = diversification(in);
 
         List<Pillar> pillars = List.of(
-                pillar("risk", "Risk Control & Tail Risk", riskComponents(in, flags)),
+                pillar("risk", "Risk Control & Tail Risk", riskComponents(in, diversification, flags)),
                 pillar("behavior", "Behavioral Psychology", behaviorComponents(in, book, flags)),
                 pillar("consistency", "Consistency & Return Quality", consistencyComponents(in, book, flags)),
                 pillar("execution", "Execution Discipline", executionComponents(in, flags)));
@@ -190,7 +207,7 @@ public final class TraderScoring {
         int observations = in.portfolioReturns() == null ? 0 : in.portfolioReturns().length;
         return new Evaluation(score, rawScore, scored < pillars.size(), scored, scored == 0 ? null : tierFor(score),
                 pillars, caps, gates, flags, strengths,
-                new Coverage(in.trades().size(), dated, book.closed().size(), observations));
+                new Coverage(in.trades().size(), dated, book.closed().size(), observations), diversification);
     }
 
     // ---------------------------------------------------------------------
@@ -306,7 +323,7 @@ public final class TraderScoring {
     // Pillar 1: Risk Control & Tail Risk
     // ---------------------------------------------------------------------
 
-    static List<Component> riskComponents(Inputs in, List<Flag> flags) {
+    static List<Component> riskComponents(Inputs in, Diversification.Result div, List<Flag> flags) {
         List<Component> out = new ArrayList<>();
         double[] rp = in.portfolioReturns();
         int periods = in.periodsPerYear();
@@ -319,7 +336,7 @@ public final class TraderScoring {
         // Sharpe ratio
         if (hasHistory) {
             double sharpe = (annualReturn - in.riskFreeRate()) / volatility;
-            out.add(component("sharpe", "Sharpe ratio", 70, sharpe, fmt2(sharpe), lin(sharpe, -0.5, 2.0),
+            out.add(component("sharpe", "Sharpe ratio", 65, sharpe, fmt2(sharpe), lin(sharpe, -0.5, 2.0),
                     "(annualized return − " + pct1(in.riskFreeRate()) + " risk-free) / annualized volatility, "
                             + rp.length + " daily returns"));
             if (sharpe < 0) {
@@ -330,7 +347,7 @@ public final class TraderScoring {
                                 + "or hold part of the portfolio in lower-volatility assets."));
             }
         } else {
-            out.add(unavailable("sharpe", "Sharpe ratio", 70, noHistory));
+            out.add(unavailable("sharpe", "Sharpe ratio", 65, noHistory));
         }
 
         // Sortino ratio: only downside deviation (returns below the risk-free rate) counts as risk
@@ -345,19 +362,19 @@ public final class TraderScoring {
             double excess = annualReturn - in.riskFreeRate();
             if (downside > 0) {
                 double sortino = excess / downside;
-                out.add(component("sortino", "Sortino ratio", 60, sortino, fmt2(sortino), lin(sortino, -0.5, 3.0),
+                out.add(component("sortino", "Sortino ratio", 55, sortino, fmt2(sortino), lin(sortino, -0.5, 3.0),
                         "(annualized return − risk-free) / annualized downside deviation " + pct1(downside)));
             } else {
-                out.add(component("sortino", "Sortino ratio", 60, null, "∞ (no down days)", excess > 0 ? 1.0 : 0.0,
+                out.add(component("sortino", "Sortino ratio", 55, null, "∞ (no down days)", excess > 0 ? 1.0 : 0.0,
                         "No daily return fell below the risk-free rate"));
             }
         } else {
-            out.add(unavailable("sortino", "Sortino ratio", 60, noHistory));
+            out.add(unavailable("sortino", "Sortino ratio", 55, noHistory));
         }
 
         // Volatility level
         if (hasHistory) {
-            out.add(component("volatility", "Annualized volatility", 40, volatility, pct1(volatility),
+            out.add(component("volatility", "Annualized volatility", 35, volatility, pct1(volatility),
                     inv(volatility, 0.20, 1.20), "Sample standard deviation of daily returns × √" + periods));
             if (volatility > 0.5) {
                 flags.add(new Flag("high-volatility", volatility > 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
@@ -366,7 +383,7 @@ public final class TraderScoring {
                         "Reduce position sizes or blend in less volatile assets until volatility matches what you can hold through."));
             }
         } else {
-            out.add(unavailable("volatility", "Annualized volatility", 40, noHistory));
+            out.add(unavailable("volatility", "Annualized volatility", 35, noHistory));
         }
 
         // Beta stability: how much the market exposure drifts between rolling windows
@@ -375,7 +392,7 @@ public final class TraderScoring {
         if (betas.size() >= MIN_BETA_WINDOWS) {
             double[] b = betas.stream().mapToDouble(Double::doubleValue).toArray();
             double spread = RiskMath.sampleStdDev(b);
-            out.add(component("beta-stability", "Beta stability", 40, spread, "β " + fmt2(RiskMath.mean(b)) + " ± " + fmt2(spread),
+            out.add(component("beta-stability", "Beta stability", 35, spread, "β " + fmt2(RiskMath.mean(b)) + " ± " + fmt2(spread),
                     inv(spread, 0.10, 0.60), "Std. deviation of " + b.length + " rolling " + BETA_WINDOW + "-day betas"));
             if (spread > 0.4) {
                 flags.add(new Flag("unstable-beta", Severity.LOW, "risk", "Unstable Market Exposure",
@@ -384,33 +401,102 @@ public final class TraderScoring {
                         "Keep a consistent mix instead of rotating between high- and low-beta coins."));
             }
         } else {
-            out.add(unavailable("beta-stability", "Beta stability", 40, rp == null ? noHistory
+            out.add(unavailable("beta-stability", "Beta stability", 35, rp == null ? noHistory
                     : "Needs at least " + (BETA_WINDOW + BETA_STEP * (MIN_BETA_WINDOWS - 1)) + " days of shared history."));
         }
 
-        // Concentration: Herfindahl–Hirschman index of current weights
-        double total = in.holdings().stream().mapToDouble(Holding::value).sum();
-        if (total > 0) {
-            double hhi = 0.0;
-            Holding top = null;
-            for (Holding h : in.holdings()) {
-                double w = h.value() / total;
-                hhi += w * w;
-                if (top == null || h.value() > top.value()) top = h;
-            }
-            double topWeight = top.value() / total;
-            out.add(component("concentration", "Concentration (HHI)", 40, hhi, fmt2(hhi) + " · " + fmt1(1.0 / hhi) + " effective holdings",
-                    inv(hhi, 0.20, 1.0), "Sum of squared portfolio weights; 1.00 means a single holding"));
-            if (hhi >= 0.5) {
-                flags.add(new Flag("concentration", topWeight >= 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
-                        "Concentration Risk Flagged", pct1(topWeight) + " of the portfolio is in " + top.name()
-                        + " (HHI " + fmt2(hhi) + ").",
-                        "Cap single positions at a fixed share of the portfolio (for example 25–40%) so one coin can't decide the outcome."));
-            }
-        } else {
-            out.add(unavailable("concentration", "Concentration (HHI)", 40, "No current holdings."));
-        }
+        diversificationComponents(div, flags, out);
         return out;
+    }
+
+    /**
+     * Diversification, worth 60 of the pillar's 250 points: concentration (HHI and effective number of
+     * holdings), the weighted average pairwise correlation, and the correlation-adjusted effective number
+     * of independent bets. Concentration needs only current values; the other two need price history.
+     */
+    static void diversificationComponents(Diversification.Result div, List<Flag> flags, List<Component> out) {
+        if (div == null) {
+            out.add(unavailable("concentration", "Concentration (HHI)", 20, "No current holdings."));
+            out.add(unavailable("correlation", "Average pairwise correlation", 20, "No current holdings."));
+            out.add(unavailable("independent-bets", "Independent bets (correlation-adjusted)", 20, "No current holdings."));
+            return;
+        }
+        double hhi = div.hhi();
+        out.add(component("concentration", "Concentration (HHI)", 20, hhi,
+                fmt2(hhi) + " · " + fmt1(div.effectiveHoldings()) + " effective of " + div.holdings(),
+                div.concentrationScore(), "HHI = Σ w² of portfolio weights; effective holdings N = 1 / HHI. "
+                        + "1.00 means a single holding; 0.20 (5 equal holdings) or lower scores full marks"));
+        Diversification.Position top = div.positions().stream()
+                .max(Comparator.comparingDouble(Diversification.Position::weight)).orElseThrow();
+        if (hhi >= 0.5) {
+            flags.add(new Flag("concentration", top.weight() >= 0.8 ? Severity.HIGH : Severity.MEDIUM, "risk",
+                    "Concentration Risk Flagged", pct1(top.weight()) + " of the portfolio is in " + top.name()
+                    + " (HHI " + fmt2(hhi) + ", " + fmt1(div.effectiveHoldings()) + " effective holdings out of "
+                    + div.holdings() + ").",
+                    "Cap single positions at a fixed share of the portfolio (for example 25–40%) so one coin can't decide the outcome."));
+        }
+
+        if (div.holdings() == 1) {
+            out.add(component("correlation", "Average pairwise correlation", 20, null, "n/a (one holding)", 0.0,
+                    "A single holding has nothing to offset it"));
+            out.add(component("independent-bets", "Independent bets (correlation-adjusted)", 20, 1.0, "1.0", 0.0,
+                    "A single holding is one bet"));
+            return;
+        }
+        if (!div.correlationAvailable()) {
+            out.add(unavailable("correlation", "Average pairwise correlation", 20, div.correlationReason()));
+            out.add(unavailable("independent-bets", "Independent bets (correlation-adjusted)", 20, div.correlationReason()));
+            return;
+        }
+        double rho = div.averageCorrelation();
+        out.add(component("correlation", "Average pairwise correlation", 20, rho, "ρ̄ " + fmt2(rho),
+                div.correlationScore(), "Weight-averaged correlation of daily returns across all " + div.pairs().size()
+                        + " pairs over " + div.observations() + " days; −0.20 or lower scores full marks, 0.90 or higher none"));
+        if (div.effectiveBets() != null) {
+            double bets = div.effectiveBets();
+            out.add(component("independent-bets", "Independent bets (correlation-adjusted)", 20, bets,
+                    fmt1(bets) + " of " + fmt1(div.effectiveHoldings()) + " effective holdings",
+                    div.betsScore(), "Diversification ratio² = (Σ wσ / σ_portfolio)²: how many uncorrelated positions "
+                            + "the portfolio's risk is equivalent to; 4 or more scores full marks"));
+        } else {
+            out.add(unavailable("independent-bets", "Independent bets (correlation-adjusted)", 20,
+                    "The portfolio's value didn't move over the history, so its risk can't be decomposed."));
+        }
+
+        // Lockstep pairs can hide behind a small uncorrelated holding that pulls the average down, so the
+        // share of capital in them counts as well as the average
+        List<Diversification.Pair> lockstep = div.pairs().stream()
+                .filter(p -> p.correlation() >= Diversification.HIGH_CORRELATION).toList();
+        Set<String> lockstepNames = new HashSet<>();
+        for (Diversification.Pair p : lockstep) { lockstepNames.add(p.a()); lockstepNames.add(p.b()); }
+        double lockstepWeight = div.positions().stream().filter(p -> lockstepNames.contains(p.name()))
+                .mapToDouble(Diversification.Position::weight).sum();
+        if (rho >= 0.7 || lockstepWeight >= 0.5) {
+            Double bets = div.effectiveBets();
+            String pairs = lockstep.isEmpty() ? "" : " Most correlated: " + String.join(", ", lockstep.stream().limit(3)
+                    .map(p -> p.a() + " / " + p.b() + " (" + fmt2(p.correlation()) + ")").toList()) + ".";
+            String share = lockstep.isEmpty() ? "" : " " + pct0(lockstepWeight) + " of the capital is in holdings that move in lockstep.";
+            String betsText = bets == null ? "" : " Your " + div.holdings() + " holdings behave like "
+                    + fmt1(bets) + " independent bet" + (bets < 1.05 ? "" : "s") + ".";
+            boolean severe = rho >= 0.85 || (bets != null && bets < 1.25);
+            flags.add(new Flag("correlated-holdings", severe ? Severity.HIGH : Severity.MEDIUM, "risk",
+                    "Holdings Move Together", "Average pairwise correlation is " + fmt2(rho) + "." + share + betsText + pairs,
+                    "Adding more coins that follow the same market adds little protection. Diversify across assets "
+                            + "with different return drivers (low or negative correlation), or hold a stable reserve."));
+        }
+    }
+
+    /** Diversification of the current holdings, with correlations when aligned per-holding returns are supplied. */
+    static Diversification.Result diversification(Inputs in) {
+        List<Holding> held = in.holdings().stream().filter(h -> h.value() > 0).toList();
+        if (held.isEmpty()) return null;
+        double[][] returns = in.assetReturns();
+        boolean aligned = returns != null && held.size() == in.holdings().size()
+                && (returns.length == 0 || returns[0].length == held.size());
+        String reason = in.historyUnavailableReason() != null ? in.historyUnavailableReason()
+                : "Price history for your holdings is unavailable.";
+        return Diversification.analyze(held.stream().map(Holding::coinId).toList(), held.stream().map(Holding::name).toList(),
+                held.stream().mapToDouble(Holding::value).toArray(), aligned ? returns : null, in.periodsPerYear(), reason);
     }
 
     static List<Double> rollingBetas(double[] rp, double[] bench) {
