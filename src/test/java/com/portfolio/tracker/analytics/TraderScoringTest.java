@@ -357,7 +357,7 @@ class TraderScoringTest {
             Component c = component(TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null)), "disposition");
             assertEquals(2.0, c.value(), EPS);
             assertEquals(0.5, c.score(), EPS);
-            assertEquals(42.5, c.points(), EPS);
+            assertEquals(37.5, c.points(), EPS);
         }
 
         @Test
@@ -501,6 +501,14 @@ class TraderScoringTest {
                     0.04, 365, TODAY, null, caps);
         }
 
+        /** Like sized, with a starting bankroll S₀. */
+        private Inputs withBankroll(double s0, List<TradeEvent> trades, Map<String, Double> caps) {
+            Map<String, Double> volumes = new HashMap<>();
+            for (TradeEvent t : trades) volumes.put(t.coinId(), 1e12);
+            return new Inputs(List.of(), null, null, "No price history.", trades, Map.of(), Map.of(), volumes, null,
+                    0.04, 365, TODAY, null, caps, s0);
+        }
+
         @Test
         @DisplayName("Impact: dust counts 0, 10% counts 1, and a speculative trade escalates by 1 per extra 5%")
         void impactScale() {
@@ -517,10 +525,9 @@ class TraderScoringTest {
         @Test
         @DisplayName("$5 of a micro-cap on a $10,000 portfolio is dust: no penalty")
         void dustMicroCap() {
-            List<TradeEvent> trades = List.of(buy(1, "btc", 99.95, 100, TODAY.minusDays(60)),
-                    buy(2, "pepe", 5, 1, TODAY.minusDays(10)));
-            Evaluation e = TraderScoring.evaluate(sized(trades, Map.of("btc", LARGE_CAP, "pepe", MICRO), Map.of()));
-            Component sizing = component(e, "speculative-sizing");
+            List<TradeEvent> trades = List.of(buy(2, "pepe", 5, 1, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(withBankroll(10_000, trades, Map.of("pepe", MICRO)));
+            Component sizing = component(e, "position-sizing");
             assertEquals(0.0005, sizing.value(), 1e-9);
             assertEquals(1.0, sizing.score(), EPS);
             assertEquals(0.0, component(e, "speculative-accumulation").value(), EPS);
@@ -531,14 +538,14 @@ class TraderScoringTest {
         @Test
         @DisplayName("$20 of the same micro-cap on a $100 bankroll is a 20% speculative stake: severe penalties")
         void oversizedMicroCap() {
-            List<TradeEvent> trades = List.of(buy(1, "btc", 0.8, 100, TODAY.minusDays(60)),
-                    buy(2, "pepe", 20, 1, TODAY.minusDays(10)));
-            Evaluation e = TraderScoring.evaluate(sized(trades, Map.of("btc", LARGE_CAP, "pepe", MICRO), Map.of()));
-            Component sizing = component(e, "speculative-sizing");
+            List<TradeEvent> trades = List.of(buy(2, "pepe", 20, 1, TODAY.minusDays(10)));
+            Evaluation e = TraderScoring.evaluate(withBankroll(100, trades, Map.of("pepe", MICRO)));
+            Component sizing = component(e, "position-sizing");
             assertEquals(0.20, sizing.value(), 1e-9);
             assertEquals(0.0, sizing.points(), EPS);
             assertEquals(3.0, component(e, "speculative-accumulation").value(), 1e-9);
             assertEquals(0.0, component(e, "speculative-accumulation").points(), EPS);
+            assertTrue(component(e, "position-sizing").detail().contains("starting bankroll"));
 
             Flag f = flag(e, "position-sizing").orElseThrow();
             assertEquals(Severity.HIGH, f.severity());
@@ -650,8 +657,108 @@ class TraderScoringTest {
             for (String key : List.of("risk", "behavior", "consistency", "execution")) {
                 assertEquals(250.0, pillar(e, key).components().stream().mapToDouble(Component::weight).sum(), EPS, key);
             }
-            assertEquals(25.0, component(e, "speculative-sizing").weight(), EPS);
-            assertEquals(50.0, component(e, "speculative-accumulation").weight(), EPS);
+            assertEquals(25.0, component(e, "position-sizing").weight(), EPS);
+            assertEquals(40.0, component(e, "speculative-accumulation").weight(), EPS);
+            assertEquals(40.0, component(e, "deployment-pacing").weight(), EPS);
+        }
+    }
+
+    @Nested
+    @DisplayName("Allocation caps (the old flat-399 fallback)")
+    class Allocation {
+        private static final double LARGE_CAP = 500e9, MICRO = 40e6;
+
+        /** A year of market history with a healthy rise, so the pillars that use it score well. */
+        private Inputs account(double s0, List<Holding> holdings, List<TradeEvent> trades, Map<String, Double> caps) {
+            double[] r = returns(364, 0.003, 0.02);
+            Map<String, Double> volumes = new HashMap<>();
+            for (TradeEvent t : trades) volumes.put(t.coinId(), 1e12);
+            return new Inputs(holdings, r, r, null, trades, Map.of(), Map.of(), volumes, 0.4, 0.04, 365, TODAY,
+                    null, caps, s0);
+        }
+
+        @Test
+        @DisplayName("Three large same-day buys on a fresh $10,000 bankroll land in Tier 9, not at a flat 399")
+        void impulsiveThreeAssetBuy() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.04, 82_500, TODAY), buy(2, "eth", 1.3, 2_500, TODAY),
+                    buy(3, "sol", 22, 150, TODAY));
+            List<Holding> holdings = List.of(new Holding("btc", "btc", 3_300), new Holding("eth", "eth", 3_250),
+                    new Holding("sol", "sol", 3_300));
+            Evaluation e = TraderScoring.evaluate(account(10_000, holdings, trades,
+                    Map.of("btc", LARGE_CAP, "eth", LARGE_CAP, "sol", LARGE_CAP)));
+
+            assertTrue(e.score() <= 299, "score " + e.score());
+            assertEquals(9, e.tier().rank());
+            ScoreCap binding = e.caps().get(0);
+            assertEquals("impulsive-deployment", binding.id());
+            assertTrue(binding.detail().startsWith("98.5% of your capital went into 3 buys on " + TODAY), binding.detail());
+            assertFalse(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")), "a new portfolio isn't stagnant");
+            assertEquals(0.0, component(e, "deployment-pacing").score(), EPS);
+            Flag f = flag(e, "impulsive-deployment").orElseThrow();
+            assertEquals(Severity.HIGH, f.severity());
+            assertTrue(f.detail().contains("98.5% of your capital into 3 buys (btc, eth, sol) in a single day"), f.detail());
+            assertEquals("Over-Allocated Position", flag(e, "position-sizing").orElseThrow().title());
+        }
+
+        @Test
+        @DisplayName("Half the bankroll in one speculative coin is Tier 10")
+        void recklessSpeculativeBet() {
+            List<TradeEvent> trades = List.of(buy(1, "pepe", 6_000, 1, TODAY.minusDays(5)));
+            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("pepe", "pepe", 6_000)), trades,
+                    Map.of("pepe", MICRO)));
+            assertTrue(e.score() <= 149, "score " + e.score());
+            assertEquals(10, e.tier().rank());
+            assertEquals("reckless-allocation", e.caps().get(0).id());
+            assertTrue(e.caps().get(0).detail().contains("60.0% of your capital into pepe, a micro-cap asset"), e.caps().get(0).detail());
+        }
+
+        @Test
+        @DisplayName("Raw scores reflect the over-allocation too, not only the caps")
+        void rawScorePenalized() {
+            List<Holding> holdings = List.of(new Holding("btc", "btc", 9_900));
+            Evaluation allIn = TraderScoring.evaluate(account(10_000, holdings,
+                    List.of(buy(1, "btc", 0.12, 82_500, TODAY)), Map.of("btc", LARGE_CAP)));
+            List<TradeEvent> paced = new ArrayList<>();
+            for (int i = 0; i < 10; i++) paced.add(buy(i, "btc", 0.012, 82_500, TODAY.minusDays(9L * i)));
+            Evaluation scaledIn = TraderScoring.evaluate(account(10_000, holdings, paced, Map.of("btc", LARGE_CAP)));
+            assertTrue(allIn.rawScore() < scaledIn.rawScore() - 50, allIn.rawScore() + " vs " + scaledIn.rawScore());
+            assertEquals(0.0, component(allIn, "position-sizing").score(), EPS);
+            assertEquals(1.0, component(scaledIn, "position-sizing").score(), EPS);
+            assertEquals(1.0, component(scaledIn, "deployment-pacing").score(), EPS);
+        }
+
+        @Test
+        @DisplayName("Allocation caps lapse 90 days after the buy; the pillar penalties remain")
+        void capsExpire() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.12, 82_500, TODAY.minusDays(120)));
+            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("btc", "btc", 9_900)), trades,
+                    Map.of("btc", LARGE_CAP)));
+            assertTrue(e.caps().stream().noneMatch(c -> c.maxScore() <= 299), e.caps().toString());
+            assertEquals(0.0, component(e, "position-sizing").score(), EPS);
+        }
+
+        @Test
+        @DisplayName("S₀ is the configured bankroll: unspent cash counts in the return and in sizing")
+        void bankrollIsS0() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.01, 80_000, TODAY.minusDays(40)));
+            Inputs in = account(10_000, List.of(new Holding("btc", "btc", 880)), trades, Map.of("btc", LARGE_CAP));
+            assertEquals(10_000, TraderScoring.bankroll(in), EPS);
+            TraderScoring.Sizing sizing = TraderScoring.sizing(in);
+            assertEquals(10_080, sizing.capitalBase(), EPS); // 9,200 cash + 880 holdings, above S₀
+            assertEquals(800.0 / 10_080, sizing.of(trades.get(0)).share(), EPS);
+            Inputs priced = new Inputs(in.holdings(), null, null, "No price history.", trades, Map.of(), Map.of("btc", 88_000.0),
+                    Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0);
+            // $80 gain on S₀ = $10,000, not on the $800 invested
+            assertEquals(80.0 / 10_000, TraderScoring.bankrollReturn(priced, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
+        }
+
+        @Test
+        @DisplayName("An old portfolio with a flat return is still capped as stagnant")
+        void oldFlatStillStagnant() {
+            List<TradeEvent> trades = List.of(buy(1, "btc", 0.01, 80_000, TODAY.minusDays(200)));
+            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("btc", "btc", 800)), trades,
+                    Map.of("btc", LARGE_CAP)));
+            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")));
         }
     }
 
@@ -835,10 +942,10 @@ class TraderScoringTest {
         @Test
         @DisplayName("Requirements are judged at their displayed precision: 1.4996 shows as 1.50 and meets 1.5")
         void displayedPrecision() {
-            var e = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.4996, 4, 25, 200, 5);
+            var e = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.4996, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
             TierGate tier3 = TraderScoring.tierGates(e).get(1);
             assertTrue(tier3.unlocked(), tier3.requirements().toString());
-            var below = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.494, 4, 25, 200, 5);
+            var below = new TraderScoring.Evidence(0.4, 1.0, 0.15, 1.494, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
             assertFalse(TraderScoring.tierGates(below).get(1).unlocked());
         }
 

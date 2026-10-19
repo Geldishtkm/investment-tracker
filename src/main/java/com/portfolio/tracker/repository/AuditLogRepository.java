@@ -129,4 +129,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
      */
     @Query("SELECT a FROM AuditLog a WHERE a.user.role = :role ORDER BY a.timestamp DESC")
     List<AuditLog> findByUserRoleOrderByTimestampDesc(@Param("role") String role, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("delete from AuditLog a where a.user.id = :userId")
+    int deleteByUserId(@Param("userId") Long userId);
 }

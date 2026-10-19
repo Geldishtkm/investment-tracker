@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { assetService, NewAsset } from './services/api';
+import { accountService, assetService, NewAsset } from './services/api';
 import { authService, SESSION_EXPIRED_EVENT, SessionExpiredError } from './services/authService';
-import { Asset, AssetWithPrice, User } from './types';
+import { Account, Asset, AssetWithPrice, User } from './types';
 import AssetCard from './components/AssetCard';
 import PortfolioSummary from './components/PortfolioSummary';
 import EmptyState from './components/EmptyState';
@@ -13,6 +13,8 @@ import PortfolioRebalancingDashboard from './components/PortfolioRebalancingDash
 import InstitutionalEvaluationPage from './components/InstitutionalEvaluationPage';
 import LoginPage from './components/LoginPage';
 import RegisterPage from './components/RegisterPage';
+import BankrollModal from './components/BankrollModal';
+import AccountModal from './components/AccountModal';
 
 
 // Inline Toast component for App.tsx
@@ -73,6 +75,17 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [toastCounter, setToastCounter] = useState(0);
+  // The paper-trading account: S₀ and cash. Until S₀ is set the bankroll modal blocks the app.
+  const [account, setAccount] = useState<Account | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+
+  const loadAccount = async () => {
+    try {
+      setAccount(await accountService.getAccount());
+    } catch (error) {
+      console.warn('Account details unavailable:', error);
+    }
+  };
 
   // Check authentication on app load
   useEffect(() => {
@@ -131,6 +144,8 @@ function App() {
     const onSessionExpired = (event: Event) => {
       setIsAuthenticated(false);
       setCurrentUser(null);
+      setAccount(null);
+      setShowAccount(false);
       setAssets([]);
       setAssetsWithPrices([]);
       setCurrentPage('portfolio');
@@ -143,6 +158,7 @@ function App() {
   }, []);
 
   const loadAssets = async () => {
+    void loadAccount();
     try {
       setLoading(true);
       
@@ -252,10 +268,25 @@ function App() {
     void authService.logout();
     setIsAuthenticated(false);
     setCurrentUser(null);
+    setAccount(null);
+    setShowAccount(false);
     setAssets([]);
     setAssetsWithPrices([]);
     setCurrentPage('portfolio');
     showToast('success', 'Logged out successfully');
+  };
+
+  const handleAccountDeleted = () => {
+    // The server already ended every session; just clear this browser's copy
+    authService.clearAuth();
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setAccount(null);
+    setShowAccount(false);
+    setAssets([]);
+    setAssetsWithPrices([]);
+    setCurrentPage('portfolio');
+    showToast('success', 'Your account and all its data have been permanently deleted.');
   };
 
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
@@ -394,6 +425,19 @@ function App() {
               </button>
 
               <div className="h-8 w-px bg-gradient-to-b from-gray-600/50 to-transparent mx-3"></div>
+              {account?.cash != null && (
+                <span className="px-3 py-2 text-sm text-gray-300 whitespace-nowrap" title={`Starting bankroll (S₀): $${(account.initialBankroll ?? 0).toLocaleString('en-US')}`}>
+                  Cash <span className="font-semibold text-emerald-300">
+                    {account.cash.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}
+                  </span>
+                </span>
+              )}
+              <button
+                onClick={() => { void loadAccount(); setShowAccount(true); }}
+                className="px-4 py-3 rounded-2xl text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800/60 border border-gray-700/50"
+              >
+                Account
+              </button>
               <button
                 onClick={handleLogout}
                 className="px-6 py-3 rounded-2xl text-sm font-semibold text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-all duration-300 hover:shadow-lg hover:shadow-red-900/30 border border-red-800/30 hover:border-red-700/50"
@@ -559,6 +603,18 @@ function App() {
 
         </div>
       </main>
+
+      {account?.bankrollRequired && (
+        <BankrollModal account={account} onLogout={handleLogout}
+                       onSaved={(saved) => {
+                         setAccount(saved);
+                         showToast('success', `Your starting bankroll is set. You have ${(saved.cash ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' })} to trade with.`);
+                         loadAssets();
+                       }} />
+      )}
+      {showAccount && account && (
+        <AccountModal account={account} onClose={() => setShowAccount(false)} onDeleted={handleAccountDeleted} />
+      )}
 
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">

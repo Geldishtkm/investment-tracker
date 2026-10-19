@@ -71,6 +71,25 @@ public class User {
 
     @Column(name = "verification_sent_at")
     private LocalDateTime verificationSentAt;
+
+    /** Paper-trading starting capital (S₀); null until the user sets it, then fixed. */
+    @Column(name = "initial_bankroll", precision = 20, scale = 2)
+    private java.math.BigDecimal initialBankroll;
+
+    @Column(name = "bankroll_set_at")
+    private java.time.Instant bankrollSetAt;
+
+    @Column(name = "deletion_code_hash", length = 64)
+    private String deletionCodeHash;
+
+    @Column(name = "deletion_code_expires_at")
+    private java.time.Instant deletionCodeExpiresAt;
+
+    @Column(name = "deletion_code_sent_at")
+    private java.time.Instant deletionCodeSentAt;
+
+    @Column(name = "deletion_attempts", nullable = false)
+    private int deletionAttempts = 0;
     
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private Set<Asset> assets = new HashSet<>();
@@ -200,4 +219,17 @@ public class User {
 
     public Double getRiskTargetVolatility() { return riskTargetVolatility; }
     public void setRiskTargetVolatility(Double riskTargetVolatility) { this.riskTargetVolatility = riskTargetVolatility; }
+
+    public java.math.BigDecimal getInitialBankroll() { return initialBankroll; }
+    public void setInitialBankroll(java.math.BigDecimal initialBankroll) { this.initialBankroll = initialBankroll; }
+    public java.time.Instant getBankrollSetAt() { return bankrollSetAt; }
+    public void setBankrollSetAt(java.time.Instant bankrollSetAt) { this.bankrollSetAt = bankrollSetAt; }
+    public String getDeletionCodeHash() { return deletionCodeHash; }
+    public void setDeletionCodeHash(String deletionCodeHash) { this.deletionCodeHash = deletionCodeHash; }
+    public java.time.Instant getDeletionCodeExpiresAt() { return deletionCodeExpiresAt; }
+    public void setDeletionCodeExpiresAt(java.time.Instant deletionCodeExpiresAt) { this.deletionCodeExpiresAt = deletionCodeExpiresAt; }
+    public java.time.Instant getDeletionCodeSentAt() { return deletionCodeSentAt; }
+    public void setDeletionCodeSentAt(java.time.Instant deletionCodeSentAt) { this.deletionCodeSentAt = deletionCodeSentAt; }
+    public int getDeletionAttempts() { return deletionAttempts; }
+    public void setDeletionAttempts(int deletionAttempts) { this.deletionAttempts = deletionAttempts; }
 }

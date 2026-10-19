@@ -1,5 +1,6 @@
 package com.portfolio.tracker.controller;
 
+import com.portfolio.tracker.service.AccountService;
 import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.model.Asset;
 import com.portfolio.tracker.analytics.PortfolioDataException;
@@ -146,16 +147,15 @@ public class AssetController {
             if (invalid != null) {
                 return ResponseEntity.badRequest().body(Map.of("error", invalid));
             }
+ 
+            // Paid for from the bankroll's cash, at a market price; the opening buy goes into the trade ledger
+            Asset savedAsset;
             try {
-                TradeService.validateDate(asset.getPurchaseDate());
+                savedAsset = tradeService.openHolding(user, asset, asset.getPurchaseDate());
             } catch (IllegalArgumentException e) {
                 return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
             }
-            
-            Asset savedAsset = assetService.saveAsset(asset);
-            // The holding's opening buy goes into the trade ledger for the behavioral analytics
-            tradeService.recordOpeningBuy(savedAsset, asset.getPurchaseDate());
-            
+
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "id", savedAsset.getId(),
                 "name", savedAsset.getName(),
@@ -165,6 +165,8 @@ public class AssetController {
                 "initialInvestment", savedAsset.getInitialInvestment(),
                 "message", "Asset created successfully"
             ));
+        } catch (AccountService.AccountException e) {
+            throw e;
         } catch (Exception e) {
             System.err.println("Error creating asset: " + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -193,17 +195,13 @@ public class AssetController {
         try {
             String username = authentication.getName();
             User user = userService.findByUsername(username);
-            Asset existingAsset = assetService.getAssetByIdAndUser(id, user);
-            
-            existingAsset.setName(asset.getName());
-            existingAsset.setQuantity(asset.getQuantity());
-            existingAsset.setPricePerUnit(asset.getPricePerUnit());
-            existingAsset.setPurchasePricePerUnit(asset.getPurchasePricePerUnit());
-            existingAsset.setInitialInvestment(asset.getInitialInvestment());
-            
-            Asset updatedAsset = assetService.saveAsset(existingAsset);
-            tradeService.syncCorrectedHolding(updatedAsset);
+            Asset updatedAsset = tradeService.correctHolding(user, id, asset.getName(), asset.getQuantity(),
+                    asset.getPurchasePricePerUnit());
             return ResponseEntity.ok(updatedAsset);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (AccountService.AccountException e) {
+            throw e;
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
         }

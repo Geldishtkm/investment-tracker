@@ -19,4 +19,12 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
     @Modifying
     @Query("delete from Trade t where t.assetId = :assetId")
     int deleteByAssetId(@Param("assetId") Long assetId);
+
+    /** Total value (quantity × price) of the user's trades on one side. */
+    @Query("select coalesce(sum(t.quantity * t.price), 0) from Trade t where t.userId = :userId and t.side = :side")
+    double sumNotional(@Param("userId") Long userId, @Param("side") Trade.Side side);
+
+    @Modifying
+    @Query("delete from Trade t where t.userId = :userId")
+    int deleteByUserId(@Param("userId") Long userId);
 }

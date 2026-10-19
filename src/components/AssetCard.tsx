@@ -30,7 +30,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
   const [formData, setFormData] = useState({
     name: asset.name,
     quantity: asset.quantity.toString(),
-    pricePerUnit: asset.pricePerUnit.toString()
+    purchasePrice: (asset.purchasePricePerUnit || asset.pricePerUnit).toString()
   });
 
   const handleSave = async () => {
@@ -44,18 +44,21 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
       return;
     }
 
-    if (isNaN(parseFloat(formData.pricePerUnit)) || parseFloat(formData.pricePerUnit) <= 0) {
-      onShowToast('error', 'Price per unit must be a positive number');
+    if (isNaN(parseFloat(formData.purchasePrice)) || parseFloat(formData.purchasePrice) <= 0) {
+      onShowToast('error', 'Purchase price must be a positive number');
       return;
     }
 
     try {
+      // A correction of the opening buy; the current price always comes from the market
+      const quantity = parseFloat(formData.quantity);
+      const purchasePricePerUnit = parseFloat(formData.purchasePrice);
       const updatedAsset = {
         name: formData.name.trim(),
-        quantity: parseFloat(formData.quantity),
-        pricePerUnit: parseFloat(formData.pricePerUnit),
-        purchasePricePerUnit: asset.purchasePricePerUnit || parseFloat(formData.pricePerUnit), // Keep original or use current
-        initialInvestment: asset.initialInvestment || (parseFloat(formData.quantity) * parseFloat(formData.pricePerUnit)) // Keep original or calculate
+        quantity,
+        pricePerUnit: asset.pricePerUnit,
+        purchasePricePerUnit,
+        initialInvestment: quantity * purchasePricePerUnit
       };
 
       const savedAsset = await assetService.updateAsset(asset.id, updatedAsset);
@@ -63,7 +66,7 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
       setIsEditing(false);
       onShowToast('success', 'Asset updated successfully!');
     } catch (error) {
-      onShowToast('error', 'Failed to update asset');
+      onShowToast('error', error instanceof Error ? error.message : 'Failed to update asset');
     }
   };
 
@@ -166,8 +169,11 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
       {/* Asset Details */}
       <div className="space-y-4">
         {isEditing ? (
-          // Edit Form
+          // Edit Form: fixes a typo in the opening buy; later changes go through Trade
           <div className="space-y-3">
+            <p className="text-xs text-gray-500">
+              Corrects the opening buy. Once a holding has other trades, use Trade to buy or sell instead.
+            </p>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">Asset Name</label>
               <input
@@ -189,13 +195,13 @@ const AssetCard: React.FC<AssetCardProps> = ({ asset, livePrice, onUpdate, onDel
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Current Price per Unit</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Purchase Price per Unit</label>
               <input
                 type="number"
-                value={formData.pricePerUnit}
-                onChange={(e) => setFormData(prev => ({ ...prev, pricePerUnit: e.target.value }))}
+                value={formData.purchasePrice}
+                onChange={(e) => setFormData(prev => ({ ...prev, purchasePrice: e.target.value }))}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                step="0.01"
+                step="any"
                 min="0"
               />
             </div>

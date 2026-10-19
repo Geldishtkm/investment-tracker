@@ -60,4 +60,33 @@ public class EmailService {
         mailSender.getObject().send(message);
         logger.info("Verification email sent to {}", to);
     }
+
+    /**
+     * Send the code that confirms permanently deleting an account.
+     * @throws org.springframework.mail.MailException if the SMTP server rejects or cannot be reached
+     */
+    public void sendAccountDeletionCode(String to, String username, String code, long ttlMinutes) {
+        String subject = "Confirm deleting your Portfolio Tracker account: " + code;
+        String body = "Hi " + username + ",\n\n"
+                + "Someone asked to permanently delete your Portfolio Tracker account. To confirm, enter this code:\n\n"
+                + "    " + code + "\n\n"
+                + "Deleting the account erases your holdings, trade history, bankroll and settings, and can't be undone. "
+                + "The code expires in " + ttlMinutes + " minutes.\n\n"
+                + "If you didn't ask for this, don't share the code, and change your password: the request "
+                + "needed it.\n";
+
+        if (!isConfigured()) {
+            logger.warn("MAIL_HOST is not set, so the email was not sent. Account deletion code for {} <{}>: {}",
+                    username, to, code);
+            return;
+        }
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(from);
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(body);
+        mailSender.getObject().send(message);
+        logger.info("Account deletion email sent to {}", to);
+    }
 }

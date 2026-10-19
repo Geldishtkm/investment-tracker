@@ -7,6 +7,7 @@ import com.portfolio.tracker.model.User;
 import com.portfolio.tracker.service.AssetService;
 import com.portfolio.tracker.service.RiskMetricsService;
 import com.portfolio.tracker.service.AssetPriceRefreshService;
+import com.portfolio.tracker.service.AccountService;
 import com.portfolio.tracker.service.TradeService;
 import com.portfolio.tracker.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,7 +70,8 @@ class AssetControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(assetController).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(assetController)
+                .setControllerAdvice(new com.portfolio.tracker.config.AnalyticsExceptionHandler()).build();
 
         testUser = new User();
         testUser.setId(1L);
@@ -173,8 +175,8 @@ class AssetControllerTest {
         @DisplayName("Creates an asset owned by the authenticated user")
         void shouldCreateAssetSuccessfully() throws Exception {
             givenLoggedInUser();
-            when(assetService.saveAsset(any(Asset.class))).thenAnswer(inv -> {
-                Asset saved = inv.getArgument(0);
+            when(tradeService.openHolding(eq(testUser), any(Asset.class), any())).thenAnswer(inv -> {
+                Asset saved = inv.getArgument(1);
                 saved.setId(10L);
                 saved.setInitialInvestment(saved.getQuantity() * saved.getPurchasePricePerUnit());
                 return saved;
@@ -186,7 +188,20 @@ class AssetControllerTest {
                     .andExpect(jsonPath("$.id").value(10))
                     .andExpect(jsonPath("$.initialInvestment").value(7200.0));
 
-            verify(assetService).saveAsset(argThat(a -> a.getUser() == testUser));
+            verify(tradeService).openHolding(eq(testUser), argThat(a -> a.getName().equals("Solana")), any());
+        }
+
+        @Test
+        @DisplayName("A buy the bankroll can't pay for is refused with the cash available")
+        void shouldRejectUnaffordableAsset() throws Exception {
+            givenLoggedInUser();
+            when(tradeService.openHolding(eq(testUser), any(Asset.class), any())).thenThrow(new AccountService.AccountException(
+                    HttpStatus.BAD_REQUEST, "INSUFFICIENT_FUNDS", "Not enough cash", java.util.Map.of("cash", 100.0)));
+
+            mockMvc.perform(asUser(post("/api/assets")).content(objectMapper.writeValueAsString(asset(null, "Solana", 60.0, 150.0, 120.0))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INSUFFICIENT_FUNDS"))
+                    .andExpect(jsonPath("$.cash").value(100.0));
         }
 
         @Test
@@ -216,14 +231,27 @@ class AssetControllerTest {
         @DisplayName("Updates the user's asset")
         void shouldUpdateAssetSuccessfully() throws Exception {
             givenLoggedInUser();
-            when(assetService.getAssetByIdAndUser(1L, testUser)).thenReturn(bitcoin);
-            when(assetService.saveAsset(any(Asset.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(tradeService.correctHolding(testUser, 1L, "Bitcoin", 0.75, 50000.0)).thenAnswer(inv -> {
+                bitcoin.setQuantity(0.75);
+                return bitcoin;
+            });
             Asset update = asset(null, "Bitcoin", 0.75, 61000.0, 50000.0);
 
             mockMvc.perform(asUser(put("/api/assets/1")).content(objectMapper.writeValueAsString(update)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.quantity").value(0.75))
-                    .andExpect(jsonPath("$.pricePerUnit").value(61000.0));
+                    .andExpect(jsonPath("$.quantity").value(0.75));
+        }
+
+        @Test
+        @DisplayName("Editing the quantity of a holding with trade history is refused")
+        void shouldRejectEditOfTradedHolding() throws Exception {
+            givenLoggedInUser();
+            when(tradeService.correctHolding(testUser, 1L, "Bitcoin", 9.0, 50000.0))
+                    .thenThrow(new IllegalArgumentException("Bitcoin has trade history, so its quantity and cost change through trades"));
+
+            mockMvc.perform(asUser(put("/api/assets/1")).content(objectMapper.writeValueAsString(asset(null, "Bitcoin", 9.0, 61000.0, 50000.0))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("trade history")));
         }
 
         @Test
@@ -241,7 +269,7 @@ class AssetControllerTest {
         @DisplayName("Updating another user's asset is a 404")
         void shouldReturn404WhenUpdatingForeignAsset() throws Exception {
             givenLoggedInUser();
-            when(assetService.getAssetByIdAndUser(2L, testUser))
+            when(tradeService.correctHolding(eq(testUser), eq(2L), any(), anyDouble(), anyDouble()))
                     .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset not found with id: 2"));
             Asset update = asset(null, "Ethereum", 1.0, 3000.0, 2500.0);
 

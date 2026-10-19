@@ -15,6 +15,9 @@ import java.util.List;
  * Records buys and sells in the trade ledger and applies them to the user's holdings:
  * a buy raises the quantity and averages the purchase price, a sell lowers the quantity at an
  * unchanged average cost, and selling everything closes the holding while keeping its trades.
+ *
+ * <p>Trades are paper trades against the user's bankroll: a buy must be paid for from cash, and every
+ * price must be close to the coin's market price on the trade date.
  */
 @Service
 public class TradeService {
@@ -26,10 +29,15 @@ public class TradeService {
 
     private final TradeRepository tradeRepository;
     private final AssetService assetService;
+    private final AccountService accountService;
+    private final MarketPriceGuard priceGuard;
 
-    public TradeService(TradeRepository tradeRepository, AssetService assetService) {
+    public TradeService(TradeRepository tradeRepository, AssetService assetService, AccountService accountService,
+                        MarketPriceGuard priceGuard) {
         this.tradeRepository = tradeRepository;
         this.assetService = assetService;
+        this.accountService = accountService;
+        this.priceGuard = priceGuard;
     }
 
     /** Result of a trade: the updated holding, or null if a sell closed the position. */
@@ -39,26 +47,54 @@ public class TradeService {
         return tradeRepository.findByUserIdOrderByTradeDateAscIdAsc(user.getId());
     }
 
-    /** Record the buy that opened a newly added holding. */
+    /**
+     * Add a new holding: its opening buy is checked against the market price and paid for from cash,
+     * then the holding and the buy are saved together.
+     */
     @Transactional
-    public Trade recordOpeningBuy(Asset asset, LocalDate purchaseDate) {
+    public Asset openHolding(User user, Asset asset, LocalDate purchaseDate) {
         LocalDate date = validateDate(purchaseDate);
-        return tradeRepository.save(new Trade(asset.getUser().getId(), asset.getId(), asset.getName(), Trade.Side.BUY,
-                asset.getQuantity(), asset.getPurchasePricePerUnit(), date, true, Trade.Source.MANUAL));
+        accountService.requireBankroll(user);
+        priceGuard.verify(asset.getName(), asset.getPurchasePricePerUnit(), date);
+        accountService.requireCash(user, asset.getQuantity() * asset.getPurchasePricePerUnit(), 0.0);
+        asset.setUser(user);
+        Asset saved = assetService.saveAsset(asset);
+        tradeRepository.save(new Trade(user.getId(), saved.getId(), saved.getName(), Trade.Side.BUY,
+                saved.getQuantity(), saved.getPurchasePricePerUnit(), date, true, Trade.Source.MANUAL));
+        return saved;
     }
 
     /**
-     * Keep the ledger in line when a holding is edited. A holding whose only trade is its opening
-     * buy is a typo fix, so that buy is corrected; holdings with more history keep their trades.
+     * Edit a holding. Its name, quantity and purchase price can only be corrected while its opening buy is
+     * its only trade (a typo fix, re-checked against cash and the market price); after that they change
+     * through buys and sells. The current price always comes from the market, so it isn't editable.
      */
     @Transactional
-    public void syncCorrectedHolding(Asset asset) {
+    public Asset correctHolding(User user, Long assetId, String name, double quantity, double purchasePrice) {
+        Asset asset = assetService.getAssetByIdAndUser(assetId, user);
+        String newName = name.trim();
+        boolean changed = !newName.equals(asset.getName()) || quantity != asset.getQuantity()
+                || purchasePrice != asset.getPurchasePricePerUnit();
+        if (!changed) return asset;
+
         List<Trade> trades = tradeRepository.findByAssetId(asset.getId());
-        if (trades.size() == 1 && trades.get(0).getSide() == Trade.Side.BUY
-                && asset.getQuantity() > 0 && asset.getPurchasePricePerUnit() > 0) {
-            trades.get(0).correct(asset.getName(), asset.getQuantity(), asset.getPurchasePricePerUnit());
-            tradeRepository.save(trades.get(0));
+        if (trades.size() != 1 || trades.get(0).getSide() != Trade.Side.BUY) {
+            throw new IllegalArgumentException(asset.getName() + " has trade history, so its quantity and cost change "
+                    + "through trades: use Trade → Buy or Sell.");
         }
+        Trade opening = trades.get(0);
+        // A holding imported without a date is checked against today's price
+        LocalDate date = opening.isDateKnown() ? opening.getTradeDate() : LocalDate.now(ZoneOffset.UTC);
+        priceGuard.verify(newName, purchasePrice, date);
+        accountService.requireCash(user, quantity * purchasePrice, opening.getQuantity() * opening.getPrice());
+
+        asset.setName(newName);
+        asset.setQuantity(quantity);
+        asset.setPurchasePricePerUnit(purchasePrice);
+        Asset saved = assetService.saveAsset(asset);
+        opening.correct(newName, quantity, purchasePrice);
+        tradeRepository.save(opening);
+        return saved;
     }
 
     @Transactional
@@ -69,6 +105,13 @@ public class TradeService {
         LocalDate tradeDate = validateDate(date);
         Asset asset = assetService.getAssetByIdAndUser(assetId, user);
         double held = asset.getQuantity();
+        if (side == Trade.Side.SELL && quantity > held * (1 + DUST)) {
+            throw new IllegalArgumentException("You can't sell " + format(quantity) + " " + asset.getName()
+                    + ": the holding is only " + format(held) + ".");
+        }
+        if (side == Trade.Side.BUY) accountService.requireBankroll(user);
+        priceGuard.verify(asset.getName(), price, tradeDate);
+        if (side == Trade.Side.BUY) accountService.requireCash(user, quantity * price, 0.0);
 
         Trade trade = tradeRepository.save(new Trade(user.getId(), asset.getId(), asset.getName(), side,
                 quantity, price, tradeDate, true, Trade.Source.MANUAL));
@@ -81,10 +124,6 @@ public class TradeService {
             return new TradeResult(trade, assetService.saveAsset(asset));
         }
 
-        if (quantity > held * (1 + DUST)) {
-            throw new IllegalArgumentException("You can't sell " + format(quantity) + " " + asset.getName()
-                    + ": the holding is only " + format(held) + ".");
-        }
         double remaining = held - quantity;
         if (remaining <= held * DUST) {
             assetService.removeHolding(asset);

@@ -1,4 +1,4 @@
-import { Asset, AssetWithPrice, Coin, InstitutionalScore, PortfolioAnalytics, PriceRefreshResult, TradeRequest, TradeResult } from '../types';
+import { Account, Asset, AssetWithPrice, Coin, InstitutionalScore, PortfolioAnalytics, PriceRefreshResult, TradeRequest, TradeResult } from '../types';
 import { API_BASE_URL } from '../config';
 import { authService } from './authService';
 
@@ -50,48 +50,24 @@ export const assetService = {
     }
   },
 
+  /** Buy a new holding from the bankroll's cash; errors carry the server's reason (e.g. INSUFFICIENT_FUNDS). */
   addAsset: async (asset: NewAsset): Promise<Asset> => {
-    try {
-      const response = await authService.authFetch(`${API_BASE_URL}/api/assets`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(asset)
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to add asset: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error adding asset:', error);
-      throw error;
-    }
+    const response = await authService.authFetch(`${API_BASE_URL}/api/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(asset)
+    });
+    return jsonOrThrow<Asset>(response, 'Failed to add asset');
   },
 
+  /** Correct a holding's name, quantity or purchase price (only while its opening buy is its only trade). */
   updateAsset: async (id: number, asset: Omit<Asset, 'id'>): Promise<Asset> => {
-    try {
-      const response = await authService.authFetch(`${API_BASE_URL}/api/assets/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(asset)
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to update asset: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error updating asset:', error);
-      throw error;
-    }
+    const response = await authService.authFetch(`${API_BASE_URL}/api/assets/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(asset)
+    });
+    return jsonOrThrow<Asset>(response, 'Failed to update asset');
   },
 
   deleteAsset: async (id: number): Promise<void> => {
@@ -200,5 +176,42 @@ export const assetService = {
       body: JSON.stringify({ targetVolatility })
     });
     await jsonOrThrow<unknown>(response, 'Failed to save the risk target');
+  },
+};
+
+export const accountService = {
+  getAccount: async (): Promise<Account> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/account`);
+    return jsonOrThrow<Account>(response, 'Failed to load your account');
+  },
+
+  /** Set S₀ once. resetPortfolio clears existing holdings and trades first. */
+  setBankroll: async (amount: number, resetPortfolio = false): Promise<Account> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/account/bankroll`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, resetPortfolio })
+    });
+    return jsonOrThrow<Account>(response, 'Failed to set your bankroll');
+  },
+
+  /** Checks the password and emails a confirmation code. */
+  requestDeletion: async (password: string): Promise<{ message: string; expiresInSeconds: number }> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/account/delete/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    return jsonOrThrow(response, 'Failed to request account deletion');
+  },
+
+  /** Permanently deletes the account once the emailed code matches. */
+  confirmDeletion: async (code: string): Promise<void> => {
+    const response = await authService.authFetch(`${API_BASE_URL}/api/account/delete/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code })
+    });
+    if (!response.ok) await jsonOrThrow(response, 'Failed to delete the account');
   },
 };

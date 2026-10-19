@@ -130,7 +130,7 @@ public class BehavioralAnalyticsService {
         Evaluation evaluation = TraderScoring.evaluate(new TraderScoring.Inputs(holdings, portfolioReturns, benchmarkReturns,
                 historyReason, events, dailyPrices, currentPrices, market.volumes(), user.getRiskTargetVolatility(),
                 properties.getRiskFreeRate(), properties.getPeriodsPerYear(), today, assetReturns,
-                market.marketCaps()));
+                market.marketCaps(), user.getInitialBankroll() == null ? null : user.getInitialBankroll().doubleValue()));
         // CoinGecko's daily series includes today, so history ending before yesterday came from an old saved copy
         boolean historyStale = historyThrough != null && historyThrough.isBefore(today.minusDays(1));
         return new Result(evaluation, new Freshness(prices.oldestPriceAt(), prices.stale(), historyThrough, historyStale));

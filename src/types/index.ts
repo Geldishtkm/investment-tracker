@@ -313,3 +313,21 @@ export interface TradeResult {
   asset: Asset | null;
   positionClosed: boolean;
 }
+
+/** The signed-in user's paper-trading account (GET /api/account). */
+export interface Account {
+  username: string;
+  email: string | null;
+  /** S₀: the starting bankroll, null until the user sets it. */
+  initialBankroll: number | null;
+  bankrollSetAt: string | null;
+  /** True until S₀ is set: the app asks for it before anything else. */
+  bankrollRequired: boolean;
+  /** S₀ − buys + sells; null without S₀. */
+  cash: number | null;
+  /** Buys − sells recorded so far. */
+  netInvested: number;
+  /** The smallest S₀ that covers the trades already recorded. */
+  minimumBankroll: number;
+  hasPortfolio: boolean;
+}
