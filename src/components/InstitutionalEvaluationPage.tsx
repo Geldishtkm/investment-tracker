@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Circle, Lock, RefreshCw, Unlock } from 'lucide-react';
+import { RefreshCw, TrendingUp } from 'lucide-react';
 import { ApiError } from '../services/api';
 import { useScore } from '../hooks/useScore';
-import { DiagnosticFlag, GateRequirement, InstitutionalScore, ScoreCap, ScorePillar, TierGate } from '../types';
+import { DiagnosticFlag, InstitutionalScore, ScorePillar } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import ScoreGauge from './institutional/ScoreGauge';
 import PillarRadar from './institutional/PillarRadar';
@@ -90,7 +90,7 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           <ScoreGauge score={data.score} maxScore={data.maxScore} tier={data.tier}
                       provisional={data.provisional} pillarsScored={data.pillarsScored} />
           <div className="mt-4 grid grid-cols-3 gap-3 border-t border-term-line pt-3">
-            <Metric size="sm" label="Raw total" term="TIS" value={data.rawScore} sub="before caps" />
+            <Metric size="sm" label="Pillar sum" term="TIS" value={data.score} sub="no caps" />
             <Metric size="sm" label="Pillars" term="TIS" value={`${data.pillarsScored}/4`} sub="scored" />
             <Metric size="sm" label="Trades" term="TIS" value={data.coverage.trades} sub={`${data.coverage.datedTrades} dated`} />
           </div>
@@ -112,10 +112,7 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
         </Panel>
 
         <div className="space-y-4">
-          <ScoreCaps score={data.score} rawScore={data.rawScore} caps={data.caps} gates={data.gates} />
-          {data.caps.length === 0 && (
-            <Panel title="Score limits"><p className="text-sm text-term-up">No caps apply: the score is the pillar total.</p></Panel>
-          )}
+          <ScoreOptimization score={data.score} milestone={data.milestone} tips={data.tips} />
           <TierLadder tiers={data.tiers} currentRank={data.tier.rank} accent={color.text} />
         </div>
       </div>
@@ -178,8 +175,6 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           </Panel>
         )}
       </div>
-
-      <TierGates gates={data.gates} />
 
       <p className="text-xs text-term-dim">
         Based on {data.coverage.observations} daily returns, {data.coverage.trades} recorded trades
@@ -275,104 +270,54 @@ export const FreshnessNotice: React.FC<{ freshness?: InstitutionalScore['dataFre
   );
 };
 
-/** Caps that hold the score down for 90 days after an oversized or impulsive buy. */
-const COOLING_CAPS = new Set(['impulsive-deployment', 'over-allocation', 'speculative-over-allocation', 'reckless-allocation']);
-
-/** "Tier 5 Advancement Locked" caps carry the gate they belong to in their id: gate-600. */
-const gateOf = (cap: ScoreCap, gates: TierGate[]) =>
-  cap.id.startsWith('gate-') ? gates.find(g => `gate-${g.minScore}` === cap.id) : undefined;
-
-/** First sentence (the rule), then the specifics. */
-function splitNote(detail: string): [string, string] {
-  const end = detail.indexOf('. ');
-  return end < 0 ? [detail, ''] : [detail.slice(0, end + 1), detail.slice(end + 2)];
-}
-
-/** One requirement as a checklist line with a progress bar: "Return on Capital: +0.4% (Target: ≥ +5.0%)". */
-export const RequirementRow: React.FC<{ r: GateRequirement }> = ({ r }) => (
-  <li className="py-1.5" data-testid={`req-${r.name}`}>
-    <div className="flex items-start gap-2 text-[13px]">
-      {r.met ? <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-term-up" aria-label="met" />
-        : <Circle size={14} className="mt-0.5 shrink-0 text-term-warn/80" aria-label="not met" />}
-      <div className="min-w-0 flex-1">
-        <span className="font-medium text-term-text">{r.name}:</span>{' '}
-        <span className={`num ${r.met ? 'text-term-up' : 'text-term-text'}`}>{r.actual}</span>{' '}
-        <span className="text-term-dim">(Target: {r.target})</span>
-      </div>
-      <span className="num shrink-0 text-[11px] text-term-dim">{Math.round(r.progress * 100)}%</span>
-    </div>
-    <div className="ml-6 mt-1 h-1 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label={`${r.name} progress`}
-         aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(r.progress * 100)}>
-      <div className={`h-full rounded-full transition-[width] duration-500 ${r.met ? 'bg-term-up/80' : 'bg-term-warn/70'}`}
-           style={{ width: `${Math.max(r.met ? 100 : 2, r.progress * 100)}%` }} />
-    </div>
-  </li>
-);
+const PILLAR_TONE: Record<string, string> = { risk: 'Risk', behavior: 'Behavior', consistency: 'Consistency', execution: 'Execution' };
 
 /**
- * Why the score is lower than the pillar total, as a compliance check: cooling-period caps with their
- * temporary ceiling, locked tiers as checklists, then any other limits.
+ * Score optimization: how far the next tier is, and where points were lost with the action that wins each
+ * back. Tiers are only badges on the score, so this is a progress diagnostic, not a lock.
  */
-export const ScoreCaps: React.FC<{ score: number; rawScore: number; caps: ScoreCap[]; gates?: TierGate[] }> = ({ score, rawScore, caps, gates = [] }) => {
-  if (caps.length === 0) return null;
-  const capped = score < rawScore;
-  return (
-    <section className="overflow-hidden rounded-xl border border-term-warn/25 border-l-2 border-l-term-warn/70 bg-term-panel/75 backdrop-blur-md"
-             aria-labelledby="caps-heading">
-      <h3 id="caps-heading" className="flex items-center gap-2 border-b border-term-line px-4 py-2.5 text-[13px] font-semibold text-term-warn">
-        <Lock size={14} /> {capped ? `Score capped at ${score} (pillar total ${rawScore})` : 'Score limits that apply'}
-      </h3>
-      <ul className="max-h-[26rem] divide-y divide-term-line overflow-auto">
-        {caps.map(c => {
-          const gate = gateOf(c, gates);
-          const cooling = COOLING_CAPS.has(c.id);
-          const [rule, facts] = splitNote(c.detail);
-          return (
-            <li key={c.id} className="px-4 py-3" data-testid={`cap-${c.id}`}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[13px] font-semibold text-term-text">{c.title}</span>
-                <span className="num rounded border border-term-warn/30 bg-term-warn/10 px-1.5 py-0.5 text-[11px] text-term-warn">
-                  {cooling ? `Score Temporarily Capped at ${c.maxScore}` : `≤ ${c.maxScore}`}
-                </span>
-              </div>
-              {gate ? (
-                <ul className="mt-1.5" aria-label={`${c.title} checklist`}>
-                  {gate.requirements.map(r => <RequirementRow key={r.name} r={r} />)}
-                </ul>
-              ) : cooling ? (
-                <>
-                  <p className="mt-1 text-xs leading-relaxed text-term-muted">{rule}</p>
-                  {facts && <p className="mt-0.5 text-[11px] text-term-dim">{facts}</p>}
-                </>
-              ) : (
-                <p className="mt-1 text-xs leading-relaxed text-term-muted">{c.detail}</p>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-};
-
-const TierGates: React.FC<{ gates: TierGate[] }> = ({ gates }) => (
-  <Panel title="Tier requirements" id="gates">
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      {gates.map(g => (
-        <div key={g.minScore} data-testid={`gate-${g.minScore}`}
-             className={`rounded-lg border p-3 ${g.unlocked ? 'border-term-up/30 bg-term-up/[0.04]' : 'border-term-line bg-black/10'}`}>
-          <div className="mb-1 flex items-center gap-2 text-[13px] font-semibold">
-            {g.unlocked ? <Unlock size={14} className="text-term-up" /> : <Lock size={14} className="text-term-warn/80" />}
-            <span className={g.unlocked ? 'text-term-up' : 'text-term-text'}>{g.name}</span>
-            <span className="num ml-auto text-[11px] font-normal text-term-dim">{g.minScore}+</span>
-          </div>
-          <ul>
-            {g.requirements.map(r => <RequirementRow key={r.name} r={r} />)}
-          </ul>
+export const ScoreOptimization: React.FC<{ score: number; milestone: InstitutionalScore['milestone']; tips: InstitutionalScore['tips'] }> = ({
+  score, milestone, tips,
+}) => (
+  <section className="overflow-hidden rounded-xl border border-term-line bg-term-panel/75 backdrop-blur-md" aria-labelledby="optimization-heading">
+    <h3 id="optimization-heading" className="flex items-center gap-2 border-b border-term-line px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-term-muted">
+      <TrendingUp size={14} className="text-term-accent" /> Score optimization tips
+    </h3>
+    {milestone ? (
+      <div className="border-b border-term-line px-4 py-3" data-testid="milestone">
+        <div className="flex items-baseline justify-between gap-2 text-[13px]">
+          <span className="text-term-text">
+            <span className="num font-semibold text-term-accent">{milestone.pointsNeeded} pts</span> to Tier {milestone.next.rank}
+            <span className="text-term-muted"> · {milestone.next.name}</span>
+          </span>
+          <span className="num text-[11px] text-term-dim">{score} / {milestone.next.minScore}</span>
         </div>
-      ))}
-    </div>
-  </Panel>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Progress to next tier"
+             aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(milestone.progress * 100)}>
+          <div className="h-full rounded-full bg-term-accent/80 transition-[width] duration-500" style={{ width: `${Math.max(2, milestone.progress * 100)}%` }} />
+        </div>
+      </div>
+    ) : (
+      <p className="border-b border-term-line px-4 py-3 text-[13px] text-term-gold" data-testid="milestone">Top tier reached.</p>
+    )}
+    {tips.length === 0 ? (
+      <p className="px-4 py-3 text-sm text-term-up">Every scored metric is at or near full marks.</p>
+    ) : (
+      <ul className="max-h-[22rem] divide-y divide-term-line overflow-auto" aria-label="Where to gain points">
+        {tips.map(t => (
+          <li key={t.key} className="flex gap-3 px-4 py-2.5" data-testid={`tip-${t.key}`}>
+            <span className="num mt-0.5 shrink-0 rounded border border-term-up/30 bg-term-up/10 px-1.5 py-0.5 text-[11px] font-semibold text-term-up">
+              +{t.gain} pts
+            </span>
+            <div className="min-w-0 text-[13px]">
+              <div className="text-term-text">{t.action}</div>
+              <div className="mt-0.5 text-[11px] text-term-dim">{PILLAR_TONE[t.pillar]} · {t.metric}: {t.current}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
 );
 
 const TierLadder: React.FC<{ tiers: InstitutionalScore['tiers']; currentRank: number; accent: string }> = ({ tiers, currentRank, accent }) => (

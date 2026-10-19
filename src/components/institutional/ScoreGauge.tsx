@@ -14,8 +14,8 @@ interface ScoreGaugeProps {
 const ScoreGauge: React.FC<ScoreGaugeProps> = ({ score, maxScore, tier, provisional, pillarsScored }) => {
   const color = tierColor(tier.rank);
   const filled = Math.max(0, Math.min(maxScore, score));
-  // Tier boundaries along the arc (150, 300, ... 900)
-  const ticks = [150, 300, 400, 500, 600, 700, 750, 800, 900].map(v => {
+  // Tier boundaries along the arc (300, 375, ... 900)
+  const ticks = [300, 375, 450, 525, 600, 675, 750, 825, 900].map(v => {
     const a = Math.PI * (1 - v / maxScore);
     return { v, x1: 120 + 88 * Math.cos(a), y1: 120 - 88 * Math.sin(a), x2: 120 + 112 * Math.cos(a), y2: 120 - 112 * Math.sin(a) };
   });

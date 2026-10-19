@@ -10,56 +10,27 @@ import java.util.*;
  *
  * <p>Each pillar is made of weighted components. A component scores 0–1 through a linear band
  * between a "worst" and a "best" value, and earns weight × score points. Components without the
- * data they need are left out and the pillar is scaled over the components that remain; pillars
- * without enough usable components (less than {@link #MIN_PILLAR_COVERAGE} of their points) are left
- * out and the total is scaled over the pillars that remain, marked provisional. Nothing is ever
- * filled in with assumed values.
+ * data they need are left out and the pillar is scaled over the components that remain. A pillar with
+ * no data at all is left out and the total is scaled over the pillars that remain, marked provisional.
+ * Nothing is ever filled in with assumed values.
  *
- * <p>The weighted total (the raw score) is then capped by evidence rules, so a high rank has to be
- * earned with proven results rather than inferred from little or flat data:
- * <ul>
- *   <li>allocation caps (risk cooling periods): a single speculative buy of half the capital or more
- *       caps the score in Tier 10 (≤ 149); a speculative buy of 25%+, any buy of 50%+, or a peak of 75%+
- *       of the capital deployed in one day caps it in Tier 9 (≤ 299). A cap applies as soon as the trade
- *       is made and lifts once the user has made 5 further disciplined trades (each under 10% of
- *       capital), or after 90 days</li>
- *   <li>hard caps: stagnant portfolios stay at or below Tier 8 (≤ 399); provisional scores, no
- *       recorded sells, a thin trade history, or no positive return on capital stay at or below
- *       Tier 7 (≤ 499)</li>
- *   <li>tier gates: Tier 5 and above needs a minimum return on capital and number of trades, with no
- *       waiting period. Tier 3 and Tier 1 also need discipline: a minimum Sharpe ratio, a capped largest
- *       position and one-day deployment, and profits that don't hang on a single trade. Failing a gate caps
- *       the score just below it</li>
- * </ul>
+ * <p>The score is the weighted math and nothing else: each pillar is scored out of 250 from its metrics, and
+ * the Trader Index Score is the sum of the four pillars. There are no caps or locks. Tiers are badges read
+ * off the score, and the evaluation lists where points were lost with what to do about each.
  */
 public final class TraderScoring {
 
     public static final double PILLAR_POINTS = 250.0;
     public static final int MAX_SCORE = 1000;
-    /** Share of a pillar's points that must have data for the pillar to count, so one minor metric can't stand in for it. */
-    public static final double MIN_PILLAR_COVERAGE = 0.40;
+    /**
+     * A pillar is scored as soon as any of its metrics has data (scaled over those metrics), so every measured
+     * strength or penalty counts in the sum. Only a pillar with no data at all is left out.
+     */
+    public static final double MIN_PILLAR_COVERAGE = 0.0;
 
-    // Evidence caps
-    static final int STAGNANT_CAP = 399;                 // Tier 8 and below
-    static final int UNPROVEN_CAP = 499;                 // Tier 7 and below
-    static final double STAGNANT_VOLATILITY = 0.10;      // annualized; crypto typically runs at 40%+
-    static final double STAGNANT_RETURN = 0.02;          // |return on S0| below 2% counts as no movement
-    static final int MIN_DATED_TRADES = 5;
-    static final int MIN_SELLS = 2;
-    /** A portfolio this new hasn't had time to move, so a flat return doesn't make it stagnant. */
-    static final int NEW_PORTFOLIO_DAYS = 30;
 
-    // Allocation caps, judged on buys in the last ALLOCATION_WINDOW_DAYS
-    static final int RECKLESS_CAP = 149;                 // Tier 10
-    static final int IMPULSIVE_CAP = 299;                // Tier 9 and below
-    static final int ALLOCATION_WINDOW_DAYS = 90;
-    static final double RECKLESS_SPECULATIVE_SHARE = 0.50;
-    static final double IMPULSIVE_SPECULATIVE_SHARE = 0.25;
-    static final double IMPULSIVE_TRADE_SHARE = 0.50;
+    /** A peak of this share of capital deployed in one day is flagged HIGH (from half, MEDIUM). */
     static final double IMPULSIVE_DAY_SHARE = 0.75;
-    /** A cooling-period cap lifts after this many later trades, each under DISCIPLINED_SHARE of capital. */
-    static final int COOLING_RELEASE_TRADES = 5;
-    static final double DISCIPLINED_SHARE = 0.10;
 
     // Behavioral detection thresholds
     static final double FOMO_RUN_UP = 0.15;          // bought after a 7-day rally of at least +15%
@@ -191,40 +162,34 @@ public final class TraderScoring {
 
     public record Coverage(int trades, int datedTrades, int closedLots, int observations) {}
 
-    /** A limit on the score with the reason, e.g. "no sells recorded" capping at 499. */
-    public record ScoreCap(String id, int maxScore, String title, String detail) {}
+    /**
+     * Where points were lost and how to win them back: gain is in Trader Index points (what the score would
+     * rise by if the metric reached full marks), action a concrete next step.
+     */
+    public record Tip(String key, String pillar, String metric, String current, int gain, String action) {}
+
+    /** Progress towards the next tier: null when already in Tier 1. */
+    public record Milestone(Tier next, int pointsNeeded, double progress) {}
 
     /**
-     * One requirement of a tier gate. name and target read as a checklist line ("Return on Capital:
-     * +0.4% (Target: ≥ +5.0%)"); progress is how far the actual value is towards the target, 0–1.
-     * label is the whole requirement in one sentence.
+     * score is the sum of the four pillars (scaled over the scored pillars when one has too little data,
+     * marked provisional). tier is null only when no pillar could be scored.
      */
-    public record Requirement(String label, boolean met, String actual, String name, String target, double progress) {}
-
-    /** Requirements that must all be met before scores of minScore and above are allowed. */
-    public record TierGate(int minScore, String name, boolean unlocked, List<Requirement> requirements) {}
-
-    /**
-     * score is the final, capped score; rawScore the weighted total before evidence caps.
-     * caps lists every cap that applies, lowest first. tier is null only when no pillar could be scored.
-     * diversification is null when there are no current holdings.
-     */
-    public record Evaluation(int score, int rawScore, boolean provisional, int pillarsScored, Tier tier,
-                             List<Pillar> pillars, List<ScoreCap> caps, List<TierGate> gates,
-                             List<Flag> flags, List<String> strengths, Coverage coverage,
-                             Diversification.Result diversification) {}
+    public record Evaluation(int score, boolean provisional, int pillarsScored, Tier tier, Milestone milestone,
+                             List<Pillar> pillars, List<Tip> tips, List<Flag> flags, List<String> strengths,
+                             Coverage coverage, Diversification.Result diversification) {}
 
     public static final List<Tier> TIERS = List.of(
             new Tier(1, "Sovereign Quantitative Director", 900, 1000),
-            new Tier(2, "Chief Risk Officer (CRO)", 800, 899),
-            new Tier(3, "Institutional Portfolio Manager", 750, 799),
-            new Tier(4, "Proprietary Desk Trader", 700, 749),
-            new Tier(5, "Disciplined Quantitative Analyst", 600, 699),
-            new Tier(6, "Systematic Swing Trader", 500, 599),
-            new Tier(7, "Tactical Retail Trader", 400, 499),
-            new Tier(8, "Speculative Momentum Chaser", 300, 399),
-            new Tier(9, "Unhedged Emotional Gambler", 150, 299),
-            new Tier(10, "Reckless Liquidation Hazard", 0, 149));
+            new Tier(2, "Chief Risk Officer (CRO)", 825, 899),
+            new Tier(3, "Institutional Portfolio Manager", 750, 824),
+            new Tier(4, "Proprietary Desk Trader", 675, 749),
+            new Tier(5, "Disciplined Quantitative Analyst", 600, 674),
+            new Tier(6, "Systematic Swing Trader", 525, 599),
+            new Tier(7, "Tactical Retail Trader", 450, 524),
+            new Tier(8, "Speculative Momentum Chaser", 375, 449),
+            new Tier(9, "Unhedged Emotional Gambler", 300, 374),
+            new Tier(10, "Reckless Liquidation Hazard", 0, 299));
 
     public static Tier tierFor(int score) {
         for (Tier tier : TIERS) {
@@ -250,23 +215,19 @@ public final class TraderScoring {
                 pillar("execution", "Execution Discipline", executionComponents(in, sizing, flags)));
 
         int scored = 0;
-        double points = 0.0;
+        long points = 0;
         for (Pillar p : pillars) {
             if (!p.available()) {
                 flags.add(missingPillarFlag(p));
                 continue;
             }
             scored++;
-            points += p.points();
+            points += Math.round(p.points()); // the pillar totals as shown, so they add up to the score exactly
         }
-        int rawScore = scored == 0 ? 0 : (int) Math.round(MAX_SCORE * points / (PILLAR_POINTS * scored));
-        rawScore = Math.max(0, Math.min(MAX_SCORE, rawScore));
-
-        Evidence evidence = evidence(in, book, sizing);
-        List<TierGate> gates = tierGates(evidence);
-        List<ScoreCap> caps = scoreCaps(evidence, scored, pillars.size(), gates);
-        int score = rawScore;
-        for (ScoreCap cap : caps) score = Math.min(score, cap.maxScore());
+        // The sum of the pillars; with a pillar that has too little data, the same average over the others
+        int score = scored == 0 ? 0 : (int) Math.round(points * (double) pillars.size() / scored);
+        score = Math.max(0, Math.min(MAX_SCORE, score));
+        Tier tier = scored == 0 ? null : tierFor(score);
 
         List<String> strengths = new ArrayList<>();
         for (Pillar p : pillars) {
@@ -278,40 +239,77 @@ public final class TraderScoring {
 
         int dated = (int) in.trades().stream().filter(TradeEvent::dateKnown).count();
         int observations = in.portfolioReturns() == null ? 0 : in.portfolioReturns().length;
-        return new Evaluation(score, rawScore, scored < pillars.size(), scored, scored == 0 ? null : tierFor(score),
-                pillars, caps, gates, flags, strengths,
+        return new Evaluation(score, scored < pillars.size(), scored, tier, milestone(score, tier), pillars,
+                tips(pillars, scored), flags, strengths,
                 new Coverage(in.trades().size(), dated, book.closed().size(), observations), diversification);
     }
 
     // ---------------------------------------------------------------------
-    // Evidence caps and tier gates
+    // Tips and milestones
     // ---------------------------------------------------------------------
 
-    /**
-     * The facts the caps and gates are judged on. Values are NaN when unknown; an unknown value never
-     * meets a requirement.
-     */
-    record Evidence(double volatility, double sharpe, double bankrollReturn, double profitFactor,
-                    int sells, int datedTrades, long activeDays, int holdings, Allocation allocation,
-                    double largestPositionShare, double peakDayShare, double topWinShare) {
+    /** Tips shown: the largest point gains first, only those worth at least a point. */
+    static final int MAX_TIPS = 6;
 
-        /** Evidence without the discipline facts (unknown, so the high gates stay locked). */
-        Evidence(double volatility, double sharpe, double bankrollReturn, double profitFactor, int sells,
-                 int datedTrades, long activeDays, int holdings, Allocation allocation) {
-            this(volatility, sharpe, bankrollReturn, profitFactor, sells, datedTrades, activeDays, holdings, allocation,
-                    Double.NaN, Double.NaN, Double.NaN);
+    /**
+     * Where the points went: for every scored metric below full marks, the Trader Index points it would add at
+     * full marks (through its pillar's scaling), with a concrete action. Largest first.
+     */
+    static List<Tip> tips(List<Pillar> pillars, int scored) {
+        if (scored == 0) return List.of();
+        List<Tip> tips = new ArrayList<>();
+        double pillarToScore = (double) MAX_SCORE / (PILLAR_POINTS * scored);
+        for (Pillar p : pillars) {
+            if (!p.available()) continue;
+            double availableWeight = p.components().stream().filter(Component::available).mapToDouble(Component::weight).sum();
+            if (!(availableWeight > 0)) continue;
+            for (Component c : p.components()) {
+                if (!c.available()) continue;
+                double lost = (c.weight() - c.points()) * (PILLAR_POINTS / availableWeight) * pillarToScore;
+                int gain = (int) Math.floor(lost);
+                if (gain < 1) continue;
+                tips.add(new Tip(c.key(), p.key(), c.name(), c.displayValue(), gain, action(c)));
+            }
         }
+        tips.sort(Comparator.comparingInt(Tip::gain).reversed());
+        return List.copyOf(tips.subList(0, Math.min(MAX_TIPS, tips.size())));
     }
 
-    /**
-     * The largest recent buys as shares of capital, for the allocation caps: the largest single buy, the
-     * largest buy of a speculative asset, and the most capital deployed on one day. Each keeps the trade
-     * (or day) it came from for the explanation.
-     */
-    record Allocation(TradeSize largestBuy, TradeSize largestSpeculativeBuy, LocalDate busiestDay,
-                      double busiestDayShare, int busiestDayBuys,
-                      int disciplinedSinceLargest, int disciplinedSinceSpeculative, int disciplinedSinceBusiestDay) {
-        static final Allocation NONE = new Allocation(null, null, null, 0.0, 0, 0, 0, 0);
+    /** The next tier up and how far the score is from it. */
+    static Milestone milestone(int score, Tier tier) {
+        if (tier == null || tier.rank() == 1) return null;
+        Tier next = TIERS.get(tier.rank() - 2);
+        double progress = (double) (score - tier.minScore()) / (next.minScore() - tier.minScore());
+        return new Milestone(next, next.minScore() - score, Math.max(0.0, Math.min(1.0, progress)));
+    }
+
+    /** What to do to earn a metric's missing points, phrased from its current value. */
+    static String action(Component c) {
+        double v = c.value() == null ? Double.NaN : c.value();
+        return switch (c.key()) {
+            case "sharpe" -> "Lift your Sharpe ratio from " + fmt2(v) + " toward 2.0: trim positions that swing a lot without adding return.";
+            case "sortino" -> "Lift your Sortino ratio from " + fmt2(v) + " toward 3.0: cut back the positions behind your worst down days.";
+            case "volatility" -> "Bring annual volatility from " + pct0(v) + " toward 25%: hold fewer high-volatility coins or keep a stable reserve.";
+            case "benchmark-beta" -> "Bring your 7-day beta from " + fmt2(v) + " to within ±1: blend in steadier assets.";
+            case "concentration" -> "Spread your money more evenly: an HHI of " + fmt2(v) + " → 0.20 (like five equal positions) earns full marks.";
+            case "correlation" -> "Add holdings that move differently from the rest: average correlation " + fmt2(v) + " → 0 or below.";
+            case "independent-bets" -> "Combine coins that don't move together: " + fmt1(v) + " independent bets → 4.";
+            case "position-sizing" -> "Reduce your largest position (" + pct0(v) + " of capital) to 15% or less.";
+            case "disposition" -> "Don't hold losers longer than winners (now " + fmt1(v) + "×): set an exit before each buy.";
+            case "fomo" -> "Avoid buying right after a 15%+ weekly rally, or keep those buys small.";
+            case "panic" -> "Avoid selling during sharp one-day drops; set exit levels in advance.";
+            case "speculative-accumulation" -> "Keep buys of micro-cap and very volatile coins small and within a fixed budget.";
+            case "deployment-pacing" -> "Deploy at most 25% of capital on any single day (busiest so far: " + pct0(v) + ").";
+            case "bankroll-return" -> "Grow return on capital from " + signedPct1(v) + " toward +50%: let winners run, cut losers early.";
+            case "profit-factor" -> "Raise profit factor from " + (Double.isNaN(v) ? "now" : fmt2(v)) + " toward 2.0: close losing trades sooner.";
+            case "profit-concentration" -> "Reduce Profit Concentration below 25%: no single trade should make " + pct0(v) + " of your profit.";
+            case "smoothness" -> "Grow more steadily (R² " + fmt2(v) + " → 0.9): keep position sizes consistent.";
+            case "velocity" -> v < 2
+                    ? "Trade more regularly: aim for 2–8 meaningful trades a month (the size-weighted pace is " + fmt1(v) + ")."
+                    : "Slow down: aim for 2–8 meaningful trades a month instead of bursts of large ones (now " + fmt1(v) + ").";
+            case "liquidity" -> "Split large orders so each stays under 0.1% of the coin's daily volume.";
+            default -> "Improve " + c.name().toLowerCase(Locale.ROOT) + ".";
+        };
     }
 
     /** The most capital put to work on one day, and how many buys that day took. */
@@ -354,213 +352,6 @@ public final class TraderScoring {
         return out;
     }
 
-    /** Later trades (by recording order) that each moved less than DISCIPLINED_SHARE of capital. */
-    static int disciplinedTradesAfter(Inputs in, Sizing sizing, long tradeId) {
-        int count = 0;
-        for (TradeEvent t : in.trades()) {
-            if (t.imported() || !t.dateKnown() || t.id() <= tradeId) continue;
-            if (sizing.of(t).share() < DISCIPLINED_SHARE) count++;
-        }
-        return count;
-    }
-
-    static Evidence evidence(Inputs in, LotBook book, Sizing sizing) {
-        double[] rp = in.portfolioReturns();
-        double vol = Double.NaN, sharpe = Double.NaN;
-        if (rp != null && rp.length >= MIN_RISK_OBSERVATIONS) {
-            vol = RiskMath.sampleStdDev(rp) * Math.sqrt(in.periodsPerYear());
-            if (vol > 0) sharpe = (RiskMath.mean(rp) * in.periodsPerYear() - in.riskFreeRate()) / vol;
-        }
-        List<TradeEvent> manual = in.trades().stream().filter(t -> !t.imported() && t.dateKnown()).toList();
-        long activeDays = manual.isEmpty() ? 0 : ChronoUnit.DAYS.between(
-                manual.stream().map(TradeEvent::date).min(Comparator.naturalOrder()).orElseThrow(), in.today()) + 1;
-        int sells = (int) manual.stream().filter(t -> t.side() == Side.SELL).count();
-        // Discipline facts for the high tiers: biggest position, busiest day, and how much of the profit one trade made
-        double peakDay = dailyDeployment(in, sizing, null).values().stream().mapToDouble(DayDeployment::peakShare).max().orElse(Double.NaN);
-        double gross = 0.0, best = 0.0;
-        for (ClosedLot lot : book.closed()) {
-            if (lot.pnl() > 0) {
-                gross += lot.pnl();
-                best = Math.max(best, lot.pnl());
-            }
-        }
-        return new Evidence(vol, sharpe, bankrollReturn(in, book).orElse(Double.NaN),
-                profitFactor(in, book).orElse(Double.NaN), sells, manual.size(), activeDays, in.holdings().size(),
-                allocation(in, sizing), largestPosition(in, sizing).map(PositionShare::share).orElse(Double.NaN),
-                peakDay, gross > 0 ? best / gross : Double.NaN);
-    }
-
-    static Allocation allocation(Inputs in, Sizing sizing) {
-        if (!(sizing.capitalBase() > 0)) return Allocation.NONE;
-        LocalDate since = in.today().minusDays(ALLOCATION_WINDOW_DAYS);
-        TradeSize largest = null, largestSpeculative = null;
-        for (TradeEvent t : in.trades()) {
-            if (t.side() != Side.BUY || !t.dateKnown() || t.imported() || t.date().isBefore(since)) continue;
-            TradeSize size = sizing.of(t);
-            if (largest == null || size.share() > largest.share()) largest = size;
-            if (size.asset().speculative() && (largestSpeculative == null || size.share() > largestSpeculative.share())) {
-                largestSpeculative = size;
-            }
-        }
-        DayDeployment busiest = null;
-        for (DayDeployment d : dailyDeployment(in, sizing, since).values()) {
-            if (busiest == null || d.peakShare() > busiest.peakShare()) busiest = d;
-        }
-        return new Allocation(largest, largestSpeculative,
-                busiest == null ? null : busiest.date(), busiest == null ? 0.0 : busiest.peakShare(), busiest == null ? 0 : busiest.buys(),
-                largest == null ? 0 : disciplinedTradesAfter(in, sizing, largest.trade().id()),
-                largestSpeculative == null ? 0 : disciplinedTradesAfter(in, sizing, largestSpeculative.trade().id()),
-                busiest == null ? 0 : disciplinedTradesAfter(in, sizing, busiest.peakTradeId()));
-    }
-
-    /**
-     * Gate thresholds: {min score, return on S0, recorded trades, Sharpe, largest position, peak day deployment,
-     * best trade's share of profits}. Tier 5 needs results and activity only, reachable as soon as they are
-     * earned. Tier 3 and Tier 1 also need discipline: risk-adjusted returns, controlled position sizes, measured
-     * deployment, and profits that don't hang on one lucky trade (NaN: not required).
-     */
-    private static final double[][] GATES = {
-            {600, 0.05, 10, Double.NaN, Double.NaN, Double.NaN, Double.NaN},
-            {750, 0.15, 20, 1.0, 0.30, 0.50, 0.50},
-            {900, 0.30, 40, 1.5, 0.20, 0.25, 0.35},
-    };
-
-    static List<TierGate> tierGates(Evidence e) {
-        // Judge each value at the precision it is shown with, so "+5.0%" never fails "at least 5%"
-        double ret = round(e.bankrollReturn(), 3), sharpe = round(e.sharpe(), 2);
-        List<TierGate> gates = new ArrayList<>();
-        for (double[] g : GATES) {
-            int min = (int) g[0];
-            int trades = (int) g[2];
-            List<Requirement> reqs = new ArrayList<>(List.of(
-                    new Requirement("Return on capital (S₀) of at least " + pct0(g[1]), ret >= g[1],
-                            Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn()),
-                            "Return on Capital", "≥ " + signedPct1(g[1]), progress(ret, g[1])),
-                    new Requirement("At least " + trades + " recorded trades", e.datedTrades() >= trades,
-                            e.datedTrades() + " trade" + (e.datedTrades() == 1 ? "" : "s"),
-                            "Trade Count", "≥ " + trades + " trades", progress(e.datedTrades(), trades))));
-            if (!Double.isNaN(g[3])) {
-                reqs.add(new Requirement("Sharpe ratio of at least " + fmt1(g[3]), sharpe >= g[3],
-                        Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe()),
-                        "Risk-Adjusted Return (Sharpe)", "≥ " + fmt2(g[3]), progress(sharpe, g[3])));
-                reqs.add(atMost("Largest position at most " + pct0(g[4]) + " of capital", "Position Sizing",
-                        e.largestPositionShare(), g[4], "largest position ", "no open positions"));
-                reqs.add(atMost("At most " + pct0(g[5]) + " of capital deployed in one day", "Deployment Pacing",
-                        e.peakDayShare(), g[5], "busiest day ", "no dated buys"));
-                reqs.add(atMost("No single trade above " + pct0(g[6]) + " of total profit", "Profit Concentration",
-                        e.topWinShare(), g[6], "best trade made ", "no profitable closed trades"));
-            }
-            gates.add(new TierGate(min, tierFor(min).rank() == 1 ? "Tier 1" : "Tier " + tierFor(min).rank() + " and above",
-                    reqs.stream().allMatch(Requirement::met), List.copyOf(reqs)));
-        }
-        return gates;
-    }
-
-    /** A "no more than" requirement, met at or below the limit; progress falls as the actual value exceeds it. */
-    private static Requirement atMost(String label, String name, double actual, double limit, String prefix, String unknown) {
-        double shown = round(actual, 3);
-        boolean met = !Double.isNaN(actual) && shown <= limit;
-        String text = Double.isNaN(actual) ? unknown : prefix + pct0(actual) + (name.equals("Profit Concentration") ? " of profits" : " of capital");
-        double progress = Double.isNaN(actual) ? 0.0 : met ? 1.0 : Math.max(0.0, Math.min(1.0, limit / actual));
-        return new Requirement(label, met, text, name, "≤ " + pct0(limit), progress);
-    }
-
-    /** Share of the way from zero to the target, 0–1; unknown or negative values count as no progress. */
-    static double progress(double actual, double target) {
-        if (Double.isNaN(actual) || !(target > 0)) return 0.0;
-        return Math.max(0.0, Math.min(1.0, actual / target));
-    }
-
-    /** "Tier 5 Advancement Locked" for the gate guarding scores of minScore and above. */
-    static String lockTitle(int minScore) {
-        return "Tier " + tierFor(minScore).rank() + " Advancement Locked";
-    }
-
-    static List<ScoreCap> scoreCaps(Evidence e, int pillarsScored, int pillarCount, List<TierGate> gates) {
-        List<ScoreCap> caps = new ArrayList<>(allocationCaps(e.allocation()));
-        // A flat return only shows stagnation once the portfolio has had time to move
-        boolean young = e.datedTrades() > 0 && e.activeDays() <= NEW_PORTFOLIO_DAYS;
-        boolean flat = (!Double.isNaN(e.volatility()) && e.volatility() < STAGNANT_VOLATILITY)
-                || (!young && !Double.isNaN(e.bankrollReturn()) && Math.abs(e.bankrollReturn()) < STAGNANT_RETURN && e.sells() == 0);
-        if (flat) {
-            caps.add(new ScoreCap("stagnant", STAGNANT_CAP, "Stagnant portfolio",
-                    "The portfolio has barely moved (" + (Double.isNaN(e.volatility()) ? "" : pct1(e.volatility()) + " annual volatility, ")
-                            + (Double.isNaN(e.bankrollReturn()) ? "no return data" : signedPct1(e.bankrollReturn()) + " on capital")
-                            + "). Holding still proves nothing about skill, so the score stays at Tier 8 or below."));
-        }
-        if (pillarsScored < pillarCount) {
-            caps.add(new ScoreCap("provisional", UNPROVEN_CAP, "Provisional score",
-                    "Only " + pillarsScored + " of " + pillarCount + " pillars could be scored; the rest is not assumed."));
-        }
-        if (e.sells() < MIN_SELLS) {
-            caps.add(new ScoreCap("no-sells", UNPROVEN_CAP, e.sells() == 0 ? "No sells recorded" : "Only one sell recorded",
-                    "Gains are only proven when trades are closed. Record at least " + MIN_SELLS + " sells to lift this cap."));
-        }
-        if (e.datedTrades() < MIN_DATED_TRADES) {
-            caps.add(new ScoreCap("thin-history", UNPROVEN_CAP, "Limited trade history",
-                    e.datedTrades() + " dated trade" + (e.datedTrades() == 1 ? "" : "s") + " recorded; at least "
-                            + MIN_DATED_TRADES + " are needed to judge execution."));
-        }
-        if (!(e.bankrollReturn() > 0)) {
-            caps.add(new ScoreCap("no-growth", UNPROVEN_CAP, "No positive return on capital",
-                    Double.isNaN(e.bankrollReturn()) ? "Return on capital can't be measured yet."
-                            : "The portfolio is " + signedPct1(e.bankrollReturn()) + " on the capital put in."));
-        }
-        for (TierGate gate : gates) {
-            if (gate.unlocked()) continue;
-            String missing = String.join("; ", gate.requirements().stream().filter(r -> !r.met())
-                    .map(r -> r.name() + " " + r.actual() + " (target " + r.target() + ")").toList());
-            caps.add(new ScoreCap("gate-" + gate.minScore(), gate.minScore() - 1, lockTitle(gate.minScore()),
-                    "Still needed: " + missing + "."));
-            break; // higher gates are implied by the first locked one
-        }
-        caps.sort(Comparator.comparingInt(ScoreCap::maxScore));
-        return caps;
-    }
-
-    /** Caps for oversized or impulsive recent buys: Tier 10 for reckless speculative bets, Tier 9 for over-allocation. */
-    static List<ScoreCap> allocationCaps(Allocation a) {
-        List<ScoreCap> caps = new ArrayList<>();
-        TradeSize spec = a.largestSpeculativeBuy();
-        boolean specCooling = spec != null && a.disciplinedSinceSpeculative() < COOLING_RELEASE_TRADES;
-        if (specCooling && spec.share() >= RECKLESS_SPECULATIVE_SHARE) {
-            caps.add(new ScoreCap("reckless-allocation", RECKLESS_CAP, "Oversized Speculative Position",
-                    "Putting " + pct0(RECKLESS_SPECULATIVE_SHARE) + " or more of capital into one speculative coin triggers a "
-                            + "risk cooling period to protect the account. " + release(a.disciplinedSinceSpeculative()) + " On "
-                            + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name() + ", a "
-                            + spec.asset().label() + "."));
-        } else if (specCooling && spec.share() >= IMPULSIVE_SPECULATIVE_SHARE) {
-            caps.add(new ScoreCap("speculative-over-allocation", IMPULSIVE_CAP, "Speculative Concentration Warning",
-                    "Putting over " + pct0(IMPULSIVE_SPECULATIVE_SHARE) + " of capital into one speculative coin triggers a "
-                            + "risk cooling period to encourage disciplined sizing. " + release(a.disciplinedSinceSpeculative())
-                            + " On " + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name()
-                            + ", a " + spec.asset().label() + "."));
-        }
-        TradeSize largest = a.largestBuy();
-        if (largest != null && largest.share() >= IMPULSIVE_TRADE_SHARE && a.disciplinedSinceLargest() < COOLING_RELEASE_TRADES) {
-            caps.add(new ScoreCap("over-allocation", IMPULSIVE_CAP, "Position Concentration Warning",
-                    "A single buy of " + pct0(IMPULSIVE_TRADE_SHARE) + " or more of capital triggers a risk cooling period "
-                            + "to encourage disciplined sizing. " + release(a.disciplinedSinceLargest()) + " On "
-                            + largest.trade().date() + ", " + pct1(largest.share()) + " went into " + largest.trade().name() + "."));
-        }
-        if (a.busiestDay() != null && a.busiestDayShare() >= IMPULSIVE_DAY_SHARE
-                && a.disciplinedSinceBusiestDay() < COOLING_RELEASE_TRADES) {
-            caps.add(new ScoreCap("impulsive-deployment", IMPULSIVE_CAP, "Rapid Capital Deployment Warning",
-                    "Deploying over " + pct0(IMPULSIVE_DAY_SHARE) + " of capital in a single day triggers a risk cooling "
-                            + "period to encourage disciplined scaling. " + release(a.disciplinedSinceBusiestDay()) + " On "
-                            + a.busiestDay() + ", " + pct1(a.busiestDayShare()) + " went into " + a.busiestDayBuys() + " buy"
-                            + (a.busiestDayBuys() == 1 ? "" : "s") + "."));
-        }
-        return caps;
-    }
-
-    /** How a cooling period ends: by trading with discipline, or with time. */
-    private static String release(int disciplinedSoFar) {
-        return "It lifts after " + COOLING_RELEASE_TRADES + " further trades each under " + pct0(DISCIPLINED_SHARE)
-                + " of capital (" + Math.min(disciplinedSoFar, COOLING_RELEASE_TRADES) + " of " + COOLING_RELEASE_TRADES
-                + " so far), or after " + ALLOCATION_WINDOW_DAYS + " days.";
-    }
-
     private static Pillar pillar(String key, String name, List<Component> components) {
         double weight = 0.0, earned = 0.0;
         for (Component c : components) {
@@ -569,7 +360,7 @@ public final class TraderScoring {
             earned += c.points();
         }
         double coverage = weight / PILLAR_POINTS;
-        boolean available = coverage >= MIN_PILLAR_COVERAGE - 1e-9;
+        boolean available = coverage > MIN_PILLAR_COVERAGE;
         double points = available ? PILLAR_POINTS * earned / weight : 0.0;
         return new Pillar(key, name, available, points, PILLAR_POINTS, coverage, components);
     }
@@ -1183,7 +974,8 @@ public final class TraderScoring {
      */
     static void speculativeAccumulationComponent(Sizing sizing, List<Flag> flags, List<Component> out) {
         List<TradeSize> buys = sizing.trades().values().stream()
-                .filter(s -> s.trade().side() == Side.BUY && s.asset().assessed()).toList();
+                // Holdings imported from before the ledger say nothing about buying behaviour
+                .filter(s -> s.trade().side() == Side.BUY && !s.trade().imported() && s.asset().assessed()).toList();
         if (buys.isEmpty() || !(sizing.capitalBase() > 0)) {
             out.add(unavailable("speculative-accumulation", "Speculative accumulation", 40,
                     "Needs recorded buys of coins with market data or price history."));
@@ -1221,7 +1013,7 @@ public final class TraderScoring {
             double realized = book.closed().stream().mapToDouble(ClosedLot::pnl).sum();
             double unrealized = unrealized(in, book);
             double r = bankrollReturn(in, book).orElseThrow();
-            out.add(component("bankroll-return", "Return on bankroll (S₀)", 90, r, signedPct1(r), lin(r, -0.30, 0.50),
+            out.add(component("bankroll-return", "Return on bankroll (S₀)", 75, r, signedPct1(r), lin(r, -0.30, 0.50),
                     "(realized " + money(realized) + " + unrealized " + money(unrealized) + ") / S₀ " + money(bankroll)));
             if (r < -0.10) {
                 flags.add(new Flag("bankroll-loss", r < -0.30 ? Severity.HIGH : Severity.MEDIUM, "consistency", "Bankroll Drawdown",
@@ -1229,7 +1021,27 @@ public final class TraderScoring {
                         "Cut position sizes until performance recovers, and stop adding to positions that keep losing."));
             }
         } else {
-            out.add(unavailable("bankroll-return", "Return on bankroll (S₀)", 90, "No buys recorded."));
+            out.add(unavailable("bankroll-return", "Return on bankroll (S₀)", 75, "No buys recorded."));
+        }
+
+        // Profit concentration: the best closed trade's share of all realized profit; one lucky trade shouldn't carry the record
+        double gross = 0.0, best = 0.0;
+        int winners = 0;
+        for (ClosedLot lot : book.closed()) {
+            if (lot.pnl() > 0) {
+                gross += lot.pnl();
+                best = Math.max(best, lot.pnl());
+                winners++;
+            }
+        }
+        if (book.closed().size() >= MIN_EVALUABLE_TRADES && gross > 0) {
+            double share = best / gross;
+            out.add(component("profit-concentration", "Profit concentration", 40, share,
+                    "best trade " + pct0(share) + " of profit (" + winners + " winning lot" + (winners == 1 ? "" : "s") + ")",
+                    inv(share, 0.25, 0.75), "Largest single closed trade's share of gross realized profit; 25% or less scores full marks, 75% none"));
+        } else {
+            out.add(unavailable("profit-concentration", "Profit concentration", 40,
+                    "Needs at least " + MIN_EVALUABLE_TRADES + " closed trades with a realized profit."));
         }
 
         // Profit factor = gross realized profit / gross realized loss
@@ -1242,7 +1054,7 @@ public final class TraderScoring {
             }
             if (loss > 0) {
                 double pf = profit / loss;
-                out.add(component("profit-factor", "Profit factor", 80, pf, fmt2(pf), lin(pf, 0.5, 2.0),
+                out.add(component("profit-factor", "Profit factor", 70, pf, fmt2(pf), lin(pf, 0.5, 2.0),
                         "Gross realized profit " + money(profit) + " / gross realized loss " + money(loss)));
                 if (pf < 1.0) {
                     flags.add(new Flag("profit-factor", Severity.MEDIUM, "consistency", "Losing Trade Expectancy",
@@ -1251,14 +1063,14 @@ public final class TraderScoring {
                 }
             } else if (profit > 0) {
                 // No losses: the ratio is unbounded, at or beyond the top of the band
-                out.add(component("profit-factor", "Profit factor", 80, null, "∞ (no losing sells)", lin(Double.POSITIVE_INFINITY, 0.5, 2.0),
+                out.add(component("profit-factor", "Profit factor", 70, null, "∞ (no losing sells)", lin(Double.POSITIVE_INFINITY, 0.5, 2.0),
                         "Gross realized profit " + money(profit) + ", no realized losses"));
             } else {
-                out.add(unavailable("profit-factor", "Profit factor", 80,
+                out.add(unavailable("profit-factor", "Profit factor", 70,
                         "Every closed trade broke even, so profit factor (profit ÷ loss) is undefined."));
             }
         } else {
-            out.add(unavailable("profit-factor", "Profit factor", 80, "Needs at least " + MIN_EVALUABLE_TRADES + " sells."));
+            out.add(unavailable("profit-factor", "Profit factor", 70, "Needs at least " + MIN_EVALUABLE_TRADES + " sells."));
         }
 
         // Equity curve smoothness: R² of a straight-line fit to the cumulative log return
@@ -1267,7 +1079,7 @@ public final class TraderScoring {
         if (fit.isPresent()) {
             double slope = fit.get()[0], r2 = fit.get()[1];
             boolean rising = slope > 0;
-            out.add(component("smoothness", "Equity curve smoothness (R²)", 80, r2,
+            out.add(component("smoothness", "Equity curve smoothness (R²)", 65, r2,
                     fmt2(r2) + (rising ? " · rising" : " · falling"), rising ? lin(r2, 0.2, 0.9) : 0.0,
                     "Linear fit of cumulative log return over " + rp.length + " days; a falling curve scores 0"));
             if (!rising || r2 < 0.3) {
@@ -1278,7 +1090,7 @@ public final class TraderScoring {
                         "Steadier results come from consistent position sizing and diversification rather than a few large bets."));
             }
         } else {
-            out.add(unavailable("smoothness", "Equity curve smoothness (R²)", 80,
+            out.add(unavailable("smoothness", "Equity curve smoothness (R²)", 65,
                     in.historyUnavailableReason() != null ? in.historyUnavailableReason() : "Price history for your holdings is unavailable."));
         }
         return out;
@@ -1418,7 +1230,7 @@ public final class TraderScoring {
                 "This pillar is left out of the total, which is provisional until it can be scored. " + reasons,
                 switch (p.key()) {
                     case "behavior" -> "Record your buys and sells with their dates (Buy / Sell on a holding) to unlock disposition, FOMO and panic analysis.";
-                    case "execution" -> "Record trades and set a risk target to unlock execution scoring.";
+                    case "execution" -> "Record trades to unlock execution scoring.";
                     default -> "Add holdings with enough price history to score this pillar.";
                 });
     }

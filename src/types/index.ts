@@ -237,30 +237,22 @@ export interface RankTier {
   maxScore: number;
 }
 
-/** A limit on the score, e.g. "No sells recorded" capping at 499. */
-export interface ScoreCap {
-  id: string;
-  maxScore: number;
-  title: string;
-  detail: string;
+/** Where points were lost: the score points a metric would add at full marks, and what to do. */
+export interface ScoreTip {
+  key: string;
+  pillar: PillarKey;
+  metric: string;
+  current: string;
+  gain: number;
+  action: string;
 }
 
-/** One requirement of a tier gate, e.g. Return on Capital: +0.4% (Target: ≥ +5.0%). */
-export interface GateRequirement {
-  label: string;
-  met: boolean;
-  actual: string;
-  name: string;
-  target: string;
-  /** How far the actual value is towards the target, 0–1. */
+/** Progress to the next tier; null in Tier 1. */
+export interface ScoreMilestone {
+  next: RankTier;
+  pointsNeeded: number;
+  /** 0–1 through the current tier. */
   progress: number;
-}
-
-export interface TierGate {
-  minScore: number;
-  name: string;
-  unlocked: boolean;
-  requirements: GateRequirement[];
 }
 
 /** Concentration and correlation of the current holdings (see Diversification.java). */
@@ -292,13 +284,10 @@ export interface PortfolioDiversification {
 }
 
 export interface InstitutionalScore {
-  /** Final score after evidence caps. */
+  /** The sum of the four pillars (averaged over the scored pillars while one has no data). */
   score: number;
-  /** Weighted pillar total before caps. */
-  rawScore: number;
-  /** Every cap that applies, lowest first; the first one is binding when it is below rawScore. */
-  caps: ScoreCap[];
-  gates: TierGate[];
+  milestone: ScoreMilestone | null;
+  tips: ScoreTip[];
   maxScore: number;
   /** True when some pillars couldn't be scored and the total is scaled over the rest. */
   provisional: boolean;

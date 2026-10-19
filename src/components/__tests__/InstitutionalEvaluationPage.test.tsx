@@ -23,11 +23,11 @@ describe('InstitutionalEvaluationPage', () => {
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
 
     const gauge = await screen.findByRole('meter', { name: 'Trader Index Score' });
-    expect(gauge).toHaveAttribute('aria-valuenow', '499');
+    expect(gauge).toHaveAttribute('aria-valuenow', '566');
     expect(gauge).toHaveAttribute('aria-valuemax', '1000');
     const badge = screen.getByTestId('tier-badge');
-    expect(badge).toHaveTextContent('Tier 7');
-    expect(badge).toHaveTextContent('Tactical Retail Trader');
+    expect(badge).toHaveTextContent('Tier 6');
+    expect(badge).toHaveTextContent('Systematic Swing Trader');
     expect(screen.getByText('Provisional · based on 3 of 4 pillars')).toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe('InstitutionalEvaluationPage', () => {
   });
 
   it('says so when no issues are flagged', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4, caps: [] }));
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [], provisional: false, pillarsScored: 4 }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     expect(await screen.findByText(/No behavioral or risk issues detected/)).toBeInTheDocument();
     expect(screen.queryByText(/Provisional/)).not.toBeInTheDocument();
@@ -100,57 +100,33 @@ describe('InstitutionalEvaluationPage', () => {
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     await screen.findByRole('meter');
     const current = document.querySelector('[aria-current="true"]');
-    expect(current).toHaveTextContent('7. Tactical Retail Trader');
+    expect(current).toHaveTextContent('6. Systematic Swing Trader');
+    expect(current).toHaveTextContent('525–599');
   });
 
-  it('explains a capped score and what each locked tier still requires', async () => {
+  it('shows score optimization tips and milestone progress instead of caps or locks', async () => {
     api.getInstitutionalScore.mockResolvedValue(scoreFixture());
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    const panel = await screen.findByRole('region', { name: 'Score optimization tips' });
 
-    const caps = await screen.findByRole('region', { name: /Score capped at 499 \(pillar total 566\)/ });
-    expect(caps).toHaveTextContent('No sells recorded');
-    expect(caps).toHaveTextContent('Provisional score');
+    expect(within(panel).getByTestId('milestone')).toHaveTextContent('34 pts to Tier 5 · Disciplined Quantitative Analyst');
+    expect(within(panel).getByRole('progressbar', { name: 'Progress to next tier' })).toHaveAttribute('aria-valuenow', '55');
+    const sizing = within(panel).getByTestId('tip-position-sizing');
+    expect(sizing).toHaveTextContent('+19 pts');
+    expect(sizing).toHaveTextContent('Reduce your largest position (38% of capital) to 15% or less.');
+    expect(sizing).toHaveTextContent('Risk · Position sizing: largest 38.0% of capital in Bitcoin');
+    expect(within(panel).getByTestId('tip-profit-concentration')).toHaveTextContent('+15 pts');
 
-    const gate = screen.getByTestId('gate-600');
-    expect(gate).toHaveTextContent('Tier 5 and above');
-    expect(within(gate).getAllByLabelText('met')).toHaveLength(1);
-    expect(within(gate).getAllByLabelText('not met')).toHaveLength(1);
-    expect(within(gate).getByTestId('req-Trade Count')).toHaveTextContent('Trade Count: 4 trades (Target: ≥ 10 trades)');
-    expect(gate).not.toHaveTextContent(/day track record|Profit Factor|Sharpe/);
+    // No caps, locks or tier requirement checklists anywhere
+    expect(screen.queryByText(/capped|Locked|Tier requirements|Advancement/i)).not.toBeInTheDocument();
   });
 
-  it('presents limits as a compliance check: cooling-period caps and locked tiers as checklists', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture({
-      score: 299, rawScore: 541,
-      caps: [
-        { id: 'impulsive-deployment', maxScore: 299, title: 'Rapid Capital Deployment Warning',
-          detail: 'Deploying over 75% of capital in a single day triggers a risk cooling period to encourage disciplined scaling. It lifts after 5 further trades each under 10% of capital (2 of 5 so far), or after 90 days. On 2026-10-19, 99.0% went into 3 buys.' },
-        { id: 'gate-600', maxScore: 599, title: 'Tier 5 Advancement Locked', detail: 'Still needed: …' },
-      ],
-    }));
+  it('says when the top tier is reached and nothing is left to gain', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ score: 950, milestone: null, tips: [] }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-    await screen.findByRole('region', { name: /Score capped at 299 \(pillar total 541\)/ });
-
-    const cooling = screen.getByTestId('cap-impulsive-deployment');
-    expect(cooling).toHaveTextContent('Rapid Capital Deployment Warning');
-    expect(cooling).toHaveTextContent('Score Temporarily Capped at 299');
-    expect(cooling).toHaveTextContent('Deploying over 75% of capital in a single day triggers a risk cooling period to encourage disciplined scaling.');
-    expect(cooling).toHaveTextContent('It lifts after 5 further trades each under 10% of capital (2 of 5 so far), or after 90 days.');
-    expect(cooling).toHaveTextContent('On 2026-10-19, 99.0% went into 3 buys.');
-
-    const lock = screen.getByTestId('cap-gate-600');
-    expect(lock).toHaveTextContent('Tier 5 Advancement Locked');
-    const checklist = within(lock).getByRole('list', { name: 'Tier 5 Advancement Locked checklist' });
-    expect(within(checklist).getByTestId('req-Return on Capital')).toHaveTextContent('Return on Capital: +17.0% (Target: ≥ +5.0%)');
-    expect(within(checklist).getByRole('progressbar', { name: 'Trade Count progress' })).toHaveAttribute('aria-valuenow', '40');
-    expect(lock).not.toHaveTextContent('Still needed');
-  });
-
-  it('shows no cap banner when nothing limits the score', async () => {
-    api.getInstitutionalScore.mockResolvedValue(scoreFixture({ caps: [], score: 566, rawScore: 566 }));
-    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-    await screen.findByRole('meter');
-    expect(screen.queryByText(/Score capped/)).not.toBeInTheDocument();
+    const panel = await screen.findByRole('region', { name: 'Score optimization tips' });
+    expect(panel).toHaveTextContent('Top tier reached.');
+    expect(panel).toHaveTextContent('Every scored metric is at or near full marks.');
   });
 
   it('warns when the evaluation had to use old prices or saved history', async () => {

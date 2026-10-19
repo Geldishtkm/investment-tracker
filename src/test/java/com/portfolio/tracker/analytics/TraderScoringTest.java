@@ -25,6 +25,12 @@ class TraderScoringTest {
                 Map.of(), volumes, riskTarget, 0.04, 365, TODAY);
     }
 
+    /** The four pillar totals as displayed (rounded), added up. */
+    private static int sumOfPillars(Evaluation e) {
+        long sum = e.pillars().stream().filter(Pillar::available).mapToLong(p -> Math.round(p.points())).sum();
+        return (int) Math.round(sum * 4.0 / e.pillarsScored());
+    }
+
     private static Inputs holdingsOnly(List<Holding> holdings) {
         return inputs(holdings, null, null, List.of(), Map.of(), Map.of(), null);
     }
@@ -83,9 +89,9 @@ class TraderScoringTest {
         @Test
         @DisplayName("Every boundary maps to the specified tier")
         void boundaries() {
-            int[][] cases = {{1000, 1}, {900, 1}, {899, 2}, {800, 2}, {799, 3}, {750, 3}, {749, 4}, {700, 4},
-                    {699, 5}, {600, 5}, {599, 6}, {500, 6}, {499, 7}, {400, 7}, {399, 8}, {300, 8},
-                    {299, 9}, {150, 9}, {149, 10}, {0, 10}};
+            int[][] cases = {{1000, 1}, {900, 1}, {899, 2}, {825, 2}, {824, 3}, {750, 3}, {749, 4}, {675, 4},
+                    {674, 5}, {600, 5}, {599, 6}, {525, 6}, {524, 7}, {450, 7}, {449, 8}, {375, 8},
+                    {374, 9}, {300, 9}, {299, 10}, {0, 10}};
             for (int[] c : cases) assertEquals(c[1], TraderScoring.tierFor(c[0]).rank(), "score " + c[0]);
             assertEquals("Sovereign Quantitative Director", TraderScoring.tierFor(950).name());
             assertEquals("Reckless Liquidation Hazard", TraderScoring.tierFor(42).name());
@@ -740,7 +746,7 @@ class TraderScoringTest {
     }
 
     @Nested
-    @DisplayName("Allocation caps (the old flat-399 fallback)")
+    @DisplayName("Allocation penalties (in the pillar math, no caps)")
     class Allocation {
         private static final double LARGE_CAP = 500e9, MICRO = 40e6;
 
@@ -754,7 +760,7 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Three large same-day buys on a fresh $10,000 bankroll land in Tier 9, not at a flat 399")
+        @DisplayName("Three large same-day buys cost the full pacing points and are flagged; the score is the plain sum")
         void impulsiveThreeAssetBuy() {
             List<TradeEvent> trades = List.of(buy(1, "btc", 0.04, 82_500, TODAY), buy(2, "eth", 1.3, 2_500, TODAY),
                     buy(3, "sol", 22, 150, TODAY));
@@ -763,69 +769,26 @@ class TraderScoringTest {
             Evaluation e = TraderScoring.evaluate(account(10_000, holdings, trades,
                     Map.of("btc", LARGE_CAP, "eth", LARGE_CAP, "sol", LARGE_CAP)));
 
-            assertTrue(e.score() <= 299, "score " + e.score());
-            assertEquals(9, e.tier().rank());
-            ScoreCap binding = e.caps().get(0);
-            assertEquals("impulsive-deployment", binding.id());
-            assertEquals("Rapid Capital Deployment Warning", binding.title());
-            assertEquals(299, binding.maxScore());
-            assertTrue(binding.detail().startsWith("Deploying over 75% of capital in a single day triggers a risk cooling "
-                    + "period to encourage disciplined scaling. It lifts after 5 further trades each under 10% of capital "
-                    + "(0 of 5 so far), or after 90 days."), binding.detail());
-            assertTrue(binding.detail().endsWith("On " + TODAY + ", 98.5% went into 3 buys."), binding.detail());
-            assertFalse(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")), "a new portfolio isn't stagnant");
             assertEquals(0.0, component(e, "deployment-pacing").score(), EPS);
             Flag f = flag(e, "impulsive-deployment").orElseThrow();
             assertEquals(Severity.HIGH, f.severity());
             assertTrue(f.detail().contains("98.5% of your capital into 3 buys (btc, eth, sol) in a single day"), f.detail());
-            assertEquals("Over-Allocated Position", flag(e, "position-sizing").orElseThrow().title());
+            assertEquals(sumOfPillars(e), e.score(), "no cap: the score is the pillar sum");
+            assertEquals(TraderScoring.tierFor(e.score()), e.tier());
         }
 
         @Test
-        @DisplayName("Half the bankroll in one speculative coin is Tier 10")
-        void recklessSpeculativeBet() {
-            List<TradeEvent> trades = List.of(buy(1, "pepe", 6_000, 1, TODAY.minusDays(5)));
-            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("pepe", "pepe", 6_000)), trades,
-                    Map.of("pepe", MICRO)));
-            assertTrue(e.score() <= 149, "score " + e.score());
-            assertEquals(10, e.tier().rank());
-            assertEquals("reckless-allocation", e.caps().get(0).id());
-            assertTrue(e.caps().get(0).detail().contains("60.0% went into pepe, a micro-cap asset"), e.caps().get(0).detail());
-        }
-
-        @Test
-        @DisplayName("Raw scores reflect the over-allocation too, not only the caps")
-        void rawScorePenalized() {
+        @DisplayName("Over-allocation lowers the score through the pillars")
+        void allInScoresLower() {
             List<Holding> holdings = List.of(new Holding("btc", "btc", 9_900));
             Evaluation allIn = TraderScoring.evaluate(account(10_000, holdings,
                     List.of(buy(1, "btc", 0.12, 82_500, TODAY)), Map.of("btc", LARGE_CAP)));
             List<TradeEvent> paced = new ArrayList<>();
             for (int i = 0; i < 10; i++) paced.add(buy(i, "btc", 0.012, 82_500, TODAY.minusDays(9L * i)));
             Evaluation scaledIn = TraderScoring.evaluate(account(10_000, holdings, paced, Map.of("btc", LARGE_CAP)));
-            assertTrue(allIn.rawScore() < scaledIn.rawScore() - 50, allIn.rawScore() + " vs " + scaledIn.rawScore());
-            assertEquals(0.0, component(allIn, "position-sizing").score(), EPS);       // 99% in one coin, either way
-            assertEquals(component(allIn, "position-sizing").score(), component(scaledIn, "position-sizing").score(), EPS);
+            assertTrue(allIn.score() < scaledIn.score() - 30, allIn.score() + " vs " + scaledIn.score());
+            assertEquals(0.0, component(allIn, "deployment-pacing").score(), EPS);
             assertEquals(1.0, component(scaledIn, "deployment-pacing").score(), EPS);
-        }
-
-        @Test
-        @DisplayName("A cooling cap lifts after 5 disciplined trades, not after 4; the pacing penalty stays")
-        void coolingLiftsWithDiscipline() {
-            List<TradeEvent> trades = new ArrayList<>(List.of(buy(1, "btc", 0.04, 82_500, TODAY), buy(2, "eth", 1.3, 2_500, TODAY),
-                    buy(3, "sol", 22, 150, TODAY)));
-            List<Holding> holdings = List.of(new Holding("btc", "btc", 3_300), new Holding("eth", "eth", 3_250), new Holding("sol", "sol", 3_300));
-            Map<String, Double> caps = Map.of("btc", LARGE_CAP, "eth", LARGE_CAP, "sol", LARGE_CAP);
-            // Four small sells (5% of capital each), later the same day
-            for (int i = 0; i < 4; i++) trades.add(sell(10 + i, "btc", 0.006, 82_500, TODAY));
-            Evaluation four = TraderScoring.evaluate(account(10_000, holdings, trades, caps));
-            ScoreCap cap = four.caps().stream().filter(c -> c.id().equals("impulsive-deployment")).findFirst().orElseThrow();
-            assertTrue(cap.detail().contains("(4 of 5 so far)"), cap.detail());
-
-            trades.add(buy(20, "eth", 0.2, 2_500, TODAY));   // a fifth small trade
-            Evaluation five = TraderScoring.evaluate(account(10_000, holdings, trades, caps));
-            assertTrue(five.caps().stream().noneMatch(c -> c.id().equals("impulsive-deployment")), five.caps().toString());
-            assertTrue(five.score() > 299 || five.caps().stream().anyMatch(c -> c.maxScore() <= 299 && !c.id().equals("impulsive-deployment")));
-            assertTrue(component(five, "deployment-pacing").score() < 0.1, "the behavioral penalty stays in the pillar");
         }
 
         @Test
@@ -837,18 +800,8 @@ class TraderScoringTest {
                 trades.add(sell(2L * i + 1, "btc", 0.0121, 82_500, TODAY));
             }
             Evaluation e = TraderScoring.evaluate(account(10_000, List.of(), trades, Map.of("btc", LARGE_CAP)));
-            assertTrue(e.caps().stream().noneMatch(c -> c.id().equals("impulsive-deployment")), e.caps().toString());
+            assertTrue(flag(e, "impulsive-deployment").isEmpty());
             assertEquals(0.0998, component(e, "deployment-pacing").value(), 1e-3);
-        }
-
-        @Test
-        @DisplayName("Allocation caps lapse 90 days after the buy; the pillar penalties remain")
-        void capsExpire() {
-            List<TradeEvent> trades = List.of(buy(1, "btc", 0.12, 82_500, TODAY.minusDays(120)));
-            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("btc", "btc", 9_900)), trades,
-                    Map.of("btc", LARGE_CAP)));
-            assertTrue(e.caps().stream().noneMatch(c -> c.maxScore() <= 299), e.caps().toString());
-            assertEquals(0.0, component(e, "position-sizing").score(), EPS);
         }
 
         @Test
@@ -866,14 +819,6 @@ class TraderScoringTest {
             assertEquals(80.0 / 10_000, TraderScoring.bankrollReturn(priced, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
         }
 
-        @Test
-        @DisplayName("An old portfolio with a flat return is still capped as stagnant")
-        void oldFlatStillStagnant() {
-            List<TradeEvent> trades = List.of(buy(1, "btc", 0.01, 80_000, TODAY.minusDays(200)));
-            Evaluation e = TraderScoring.evaluate(account(10_000, List.of(new Holding("btc", "btc", 800)), trades,
-                    Map.of("btc", LARGE_CAP)));
-            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")));
-        }
     }
 
     @Nested
@@ -945,187 +890,124 @@ class TraderScoringTest {
     }
 
     @Nested
-    @DisplayName("Evidence caps and tier gates")
-    class Caps {
+    @DisplayName("Score and tiers (pure math, no caps)")
+    class ScoreAndTiers {
         @Test
-        @DisplayName("One stablecoin held untouched: stagnant, Tier 8 or below")
-        void stagnantStablecoin() {
-            double[] flat = returns(364, 0.0, 0.0002);       // about 0.4% annual volatility
-            Evaluation e = TraderScoring.evaluate(inputs(List.of(new Holding("tether", "Tether", 10_000)), flat, returns(364, 0, 0.03),
-                    List.of(imported(1, "tether", 10_000, 1.0)), Map.of(), Map.of("tether", 1e11), null));
-
-            assertTrue(e.score() <= 399, "score " + e.score());
-            assertTrue(e.tier().rank() >= 8);
-            assertEquals("stagnant", e.caps().get(0).id());
-        }
-
-        @Test
-        @DisplayName("Two assets with little price action stay in the retail tiers even with a decent raw score")
-        void twoStagnantAssets() {
-            double[] calm = returns(364, 0.0003, 0.004);      // ≈ 7.6% volatility, 11% a year
-            List<Holding> two = List.of(new Holding("a", "Asset A", 5000), new Holding("b", "Asset B", 5000));
-            Evaluation e = TraderScoring.evaluate(inputs(two, calm, calm,
-                    List.of(imported(1, "a", 50, 100), imported(2, "b", 50, 100)), Map.of(), Map.of("a", 1e11, "b", 1e11), 0.08));
-
-            assertTrue(e.rawScore() > 399, "the raw metrics look respectable: " + e.rawScore());
-            assertTrue(e.score() <= 399);
-            assertTrue(e.tier().rank() >= 8);
-        }
-
-        @Test
-        @DisplayName("A volatile portfolio that has gone nowhere on its capital is also stagnant")
-        void noMovementOnCapital() {
-            double[] r = returns(364, 0.0, 0.03);
-            Inputs in = new Inputs(equalHoldings(4), r, r, null, List.of(imported(1, "coin0", 10, 100)), Map.of(),
-                    Map.of("coin0", 101.0), Map.of(), null, 0.04, 365, TODAY);   // +1% on capital
-            Evaluation e = TraderScoring.evaluate(in);
-            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")));
-            assertTrue(e.score() <= 399);
-        }
-
-        @Test
-        @DisplayName("Great numbers but no sells: capped at Tier 7, whatever the raw score")
-        void noSells() {
+        @DisplayName("Scenarios that used to be capped now get exactly their pillar sum")
+        void noCaps() {
+            // No sells at all, but strong numbers elsewhere
             List<TradeEvent> buysOnly = new ArrayList<>();
             for (int i = 0; i < 12; i++) buysOnly.add(buy(i, "btc", 1, 100, TODAY.minusDays(300 - i * 20L)));
-            Inputs in = new Inputs(equalHoldings(5), returns(364, 0.004, 0.01), returns(364, 0.004, 0.01), null, buysOnly,
-                    Map.of("btc", prices(Map.of())), Map.of("btc", 160.0), Map.of("btc", 1e12), 0.19, 0.04, 365, TODAY);
-            Evaluation e = TraderScoring.evaluate(in);
+            Evaluation noSells = TraderScoring.evaluate(new Inputs(equalHoldings(5), returns(364, 0.004, 0.01),
+                    returns(364, 0.004, 0.01), null, buysOnly, Map.of("btc", prices(Map.of())), Map.of("btc", 160.0),
+                    Map.of("btc", 1e12), null, 0.04, 365, TODAY));
+            assertEquals(sumOfPillars(noSells), noSells.score());
+            assertTrue(noSells.score() > 600, "no 499 ceiling any more: " + noSells.score());
 
-            assertTrue(e.rawScore() > 600, "raw " + e.rawScore());
-            assertTrue(e.score() <= 499);
-            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("no-sells") && c.title().equals("No sells recorded")));
+            // Losing money on capital: a lower score through the consistency pillar, not a cap
+            Evaluation losing = TraderScoring.evaluate(proven(roundTrips(12, 15, 250, 90, 0), returns(364, 0.004, 0.01)));
+            assertEquals(sumOfPillars(losing), losing.score());
         }
 
         @Test
-        @DisplayName("Losing money on capital caps the score at Tier 7")
-        void negativeReturn() {
-            List<TradeEvent> losing = roundTrips(12, 15, 250, 90, 0);    // every trade sells at 90 after buying at 100
-            Evaluation e = TraderScoring.evaluate(proven(losing, returns(364, 0.004, 0.01)));
-            assertTrue(e.score() <= 499);
-            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("no-growth")));
+        @DisplayName("Tiers are badges read off the score: 900 / 825 / 750 / 675 / 600 / 525 / 450 / 375 / 300 / 0")
+        void tierRanges() {
+            int[][] bounds = {{1000, 1}, {900, 1}, {899, 2}, {825, 2}, {824, 3}, {750, 3}, {749, 4}, {675, 4}, {674, 5},
+                    {600, 5}, {599, 6}, {525, 6}, {524, 7}, {450, 7}, {449, 8}, {375, 8}, {374, 9}, {300, 9}, {299, 10}, {0, 10}};
+            for (int[] b : bounds) assertEquals(b[1], TraderScoring.tierFor(b[0]).rank(), "score " + b[0]);
         }
 
         @Test
-        @DisplayName("Profit factor and Sharpe no longer gate tiers: they count in the pillars instead")
-        void gatesUseReturnAndCountOnly() {
-            // Profit factor 1.1 and a weak record still pass Tier 5: return on capital is positive and 24 trades are recorded
-            List<TradeEvent> trades = new ArrayList<>();
-            for (int i = 0; i < 12; i++) {
-                LocalDate d = TODAY.minusDays(300 - i * 20L);
-                trades.add(buy(2L * i, "btc", 1, 100, d));
-                trades.add(sell(2L * i + 1, "btc", 1, i % 2 == 0 ? 105.5 : 95, d.plusDays(i % 2 == 0 ? 18 : 5)));
-            }
-            trades.add(buy(100, "eth", 10, 100, TODAY.minusDays(200)));                 // open, now +40%
-            Inputs in = new Inputs(equalHoldings(5), returns(364, 0.004, 0.01), returns(364, 0.004, 0.01), null, trades,
-                    Map.of("btc", prices(Map.of()), "eth", prices(Map.of())), Map.of("eth", 140.0), Map.of("btc", 1e12, "eth", 1e12),
-                    0.19, 0.04, 365, TODAY);
-            Evaluation e = TraderScoring.evaluate(in);
-
-            assertEquals(1.1, TraderScoring.profitFactor(in, TraderScoring.matchLots(trades)).orElseThrow(), 1e-9);
-            assertTrue(e.gates().get(0).unlocked());
-            assertTrue(e.score() > 599, "score " + e.score());
-            assertEquals(List.of("Return on Capital", "Trade Count"),
-                    e.gates().get(0).requirements().stream().map(Requirement::name).toList());
-        }
-
-        @Test
-        @DisplayName("Tier 3 and above need discipline: Sharpe, position size, deployment pacing and spread-out profits")
-        void highTiersNeedDiscipline() {
-            var lucky = new TraderScoring.Evidence(0.6, 0.4, 0.40, 3.0, 12, 30, 2, 2, TraderScoring.Allocation.NONE,
-                    0.55, 0.90, 0.85);      // +40% from one big, all-in, lucky trade
-            TierGate tier3 = TraderScoring.tierGates(lucky).get(1);
-            assertFalse(tier3.unlocked());
-            Map<String, Requirement> byName = new HashMap<>();
-            tier3.requirements().forEach(r -> byName.put(r.name(), r));
-            assertTrue(byName.get("Return on Capital").met());
-            assertTrue(byName.get("Trade Count").met());
-            assertFalse(byName.get("Risk-Adjusted Return (Sharpe)").met());
-            assertFalse(byName.get("Position Sizing").met());
-            assertEquals("largest position 55% of capital", byName.get("Position Sizing").actual());
-            assertEquals("≤ 30%", byName.get("Position Sizing").target());
-            assertEquals(0.30 / 0.55, byName.get("Position Sizing").progress(), 1e-9);
-            assertFalse(byName.get("Deployment Pacing").met());
-            assertFalse(byName.get("Profit Concentration").met());
-            assertEquals("best trade made 85% of profits", byName.get("Profit Concentration").actual());
-
-            var disciplined = new TraderScoring.Evidence(0.4, 1.2, 0.18, 1.8, 12, 25, 120, 6, TraderScoring.Allocation.NONE,
-                    0.18, 0.30, 0.20);
-            assertTrue(TraderScoring.tierGates(disciplined).get(1).unlocked());
-            assertFalse(TraderScoring.tierGates(disciplined).get(2).unlocked()); // Tier 1 needs more
-        }
-
-        @Test
-        @DisplayName("Tiers unlock the day they're earned: no waiting period")
-        void noTimeLock() {
-            // 10 trades all made today, +12% on capital
-            List<TradeEvent> trades = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
-                trades.add(buy(2L * i, "btc", 0.5, 100, TODAY));
-                trades.add(sell(2L * i + 1, "btc", 0.5, 124, TODAY));
-            }
-            var e = new TraderScoring.Evidence(0.5, -0.6, 0.12, 1.0, 5, 10, 1, 3, TraderScoring.Allocation.NONE);
-            TierGate tier5 = TraderScoring.tierGates(e).get(0);
-            assertTrue(tier5.unlocked(), tier5.requirements().toString());
-            assertFalse(TraderScoring.tierGates(e).get(1).unlocked()); // Tier 3 needs +15% and 20 trades
-            assertTrue(TraderScoring.scoreCaps(e, 4, 4, TraderScoring.tierGates(e)).stream()
-                    .noneMatch(c -> c.id().equals("gate-600")));
-        }
-
-        @Test
-        @DisplayName("Meeting the Tier 5 gate but not Tier 3 stops at 749")
-        void intermediate() {
+        @DisplayName("Tips list where points were lost, in score points, largest first, with an action")
+        void tips() {
             Evaluation e = TraderScoring.evaluate(proven(roundTrips(6, 20, 130, 160, 5), returns(364, 0.004, 0.01)));
-            assertTrue(e.gates().get(0).unlocked());
-            assertFalse(e.gates().get(1).unlocked());          // 12 trades over ~131 days: needs 20 over 180
-            assertEquals(749, e.score());
-            assertEquals(4, e.tier().rank());
+            assertFalse(e.tips().isEmpty());
+            for (int i = 1; i < e.tips().size(); i++) assertTrue(e.tips().get(i - 1).gain() >= e.tips().get(i).gain());
+            int totalGain = e.tips().stream().mapToInt(Tip::gain).sum();
+            assertTrue(totalGain <= 1000 - e.score() + e.tips().size(), "gains never exceed what's missing");
+            for (Tip t : e.tips()) {
+                assertTrue(t.gain() >= 1);
+                assertFalse(t.action().isBlank());
+                Component c = component(e, t.key());
+                assertTrue(c.score() < 1.0, t.key());
+            }
+        }
+
+        @Test
+        @DisplayName("A tip's gain is the metric's missing points, scaled through its pillar to the 1000-point score")
+        void tipGainArithmetic() {
+            List<Holding> holdings = List.of(new Holding("btc", "btc", 3_780), new Holding("eth", "eth", 1_000));
+            Inputs in = new Inputs(holdings, returns(364, 0.004, 0.01), returns(364, 0.004, 0.01), null,
+                    List.of(buy(1, "btc", 0.05, 75_600, TODAY.minusDays(40)), buy(2, "eth", 0.4, 2_500, TODAY.minusDays(30))),
+                    Map.of(), Map.of(), Map.of(), null, 0.04, 365, TODAY, null, Map.of(), 10_000.0);
+            Evaluation e = TraderScoring.evaluate(in);
+            Tip sizing = e.tips().stream().filter(t -> t.key().equals("position-sizing")).findFirst().orElseThrow();
+            Component c = component(e, "position-sizing");
+            Pillar risk = pillar(e, "risk");
+            double available = risk.components().stream().filter(Component::available).mapToDouble(Component::weight).sum();
+            double expected = (c.weight() - c.points()) * (250 / available) * (1000.0 / (250 * e.pillarsScored()));
+            assertEquals((int) Math.floor(expected), sizing.gain());
+            assertTrue(sizing.action().startsWith("Reduce your largest position (38% of capital) to 15% or less"), sizing.action());
+        }
+
+        @Test
+        @DisplayName("Tip actions follow the metric's value: too little trading and too much get different advice")
+        void tipActionsFollowValue() {
+            Component slow = new Component("velocity", "Trading velocity", true, 0.6, "", 143, 0.5, 71.5, "");
+            Component fast = new Component("velocity", "Trading velocity", true, 30.0, "", 143, 0.3, 42.9, "");
+            assertTrue(TraderScoring.action(slow).startsWith("Trade more regularly"), TraderScoring.action(slow));
+            assertTrue(TraderScoring.action(fast).startsWith("Slow down"), TraderScoring.action(fast));
+        }
+
+        @Test
+        @DisplayName("Milestone: points to the next tier and progress through the current one")
+        void milestone() {
+            Milestone m = TraderScoring.milestone(634, TraderScoring.tierFor(634));
+            assertEquals(4, m.next().rank());
+            assertEquals(41, m.pointsNeeded());
+            assertEquals(34.0 / 75, m.progress(), 1e-9);
+            assertNull(TraderScoring.milestone(950, TraderScoring.tierFor(950)));
+        }
+
+        @Test
+        @DisplayName("Profit concentration: one trade carrying the profits costs Consistency points")
+        void profitConcentration() {
+            List<TradeEvent> spread = roundTrips(8, 10, 120, 120, 0);                  // 8 equal winners
+            Component even = component(TraderScoring.evaluate(inputs(List.of(), null, null, spread, Map.of(), Map.of(), null)),
+                    "profit-concentration");
+            assertEquals(0.125, even.value(), 1e-9);
+            assertEquals(1.0, even.score(), EPS);
+
+            List<TradeEvent> lucky = new ArrayList<>(roundTrips(3, 10, 120, 101, 0)); // three +1 winners...
+            lucky.add(buy(50, "btc", 1, 100, TODAY.minusDays(20)));
+            lucky.add(sell(51, "btc", 1, 197, TODAY.minusDays(10)));                  // ...and one +97
+            Component one = component(TraderScoring.evaluate(inputs(List.of(), null, null, lucky, Map.of(), Map.of(), null)),
+                    "profit-concentration");
+            assertEquals(0.97, one.value(), 1e-9);
+            assertEquals(0.0, one.score(), EPS);
+            assertEquals(40.0, one.weight(), EPS);
+        }
+
+        @Test
+        @DisplayName("One lucky, all-in trade can't max out the score")
+        void luckyTradeIsNotElite() {
+            List<TradeEvent> trades = List.of(buy(1, "pepe", 9_000, 1, TODAY.minusDays(3)), sell(2, "pepe", 9_000, 2, TODAY.minusDays(1)),
+                    buy(3, "pepe", 100, 2, TODAY.minusDays(1)), sell(4, "pepe", 100, 2.02, TODAY));
+            Inputs in = new Inputs(List.of(new Holding("pepe", "pepe", 18_000)), returns(364, 0.004, 0.06), returns(364, 0.002, 0.02),
+                    null, trades, Map.of(), Map.of(), Map.of("pepe", 1e9), null, 0.04, 365, TODAY, null, Map.of("pepe", 40e6), 10_000.0);
+            Evaluation e = TraderScoring.evaluate(in);
+            assertTrue(e.score() < 750, "score " + e.score());
+            assertEquals(0.0, component(e, "position-sizing").score(), EPS);
+            assertEquals(0.0, component(e, "profit-concentration").score(), EPS);
         }
 
         @Test
         @DisplayName("A proven, active, profitable trader can still reach Tier 1")
         void elite() {
             Evaluation e = TraderScoring.evaluate(proven(roundTrips(20, 20, 400, 160, 5), returns(364, 0.004, 0.01)));
-            assertTrue(e.caps().isEmpty(), "caps " + e.caps());
-            assertTrue(e.gates().stream().allMatch(TierGate::unlocked));
             assertTrue(e.score() >= 900, "score " + e.score());
             assertEquals(1, e.tier().rank());
-            assertEquals(e.rawScore(), e.score());
-        }
-
-        @Test
-        @DisplayName("A locked tier reads as a checklist: name, actual, target and progress")
-        void gateChecklist() {
-            var e = new TraderScoring.Evidence(0.6, -0.58, 0.004, Double.NaN, 1, 16, 1, 4, TraderScoring.Allocation.NONE);
-            TierGate tier5 = TraderScoring.tierGates(e).get(0);
-            Requirement ret = tier5.requirements().get(0);
-            assertEquals("Return on Capital", ret.name());
-            assertEquals("+0.4%", ret.actual());
-            assertEquals("≥ +5.0%", ret.target());
-            assertEquals(0.08, ret.progress(), 1e-9);
-            assertFalse(ret.met());
-
-            Requirement count = tier5.requirements().get(1);
-            assertEquals("Trade Count", count.name());
-            assertEquals("16 trades", count.actual());
-            assertEquals("≥ 10 trades", count.target());
-            assertTrue(count.met());                       // 16 trades over a single day are enough
-            assertEquals(1.0, count.progress(), EPS);
-            assertEquals(2, tier5.requirements().size());
-
-            ScoreCap lock = TraderScoring.scoreCaps(e, 4, 4, TraderScoring.tierGates(e)).stream()
-                    .filter(c -> c.id().equals("gate-600")).findFirst().orElseThrow();
-            assertEquals("Tier 5 Advancement Locked", lock.title());
-            assertTrue(lock.detail().contains("Return on Capital +0.4% (target ≥ +5.0%)"), lock.detail());
-        }
-
-        @Test
-        @DisplayName("Requirements are judged at their displayed precision: +4.996% shows as +5.0% and meets 5%")
-        void displayedPrecision() {
-            var e = new TraderScoring.Evidence(0.4, 1.0, 0.04996, 1.5, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
-            assertTrue(TraderScoring.tierGates(e).get(0).unlocked());
-            var below = new TraderScoring.Evidence(0.4, 1.0, 0.0494, 1.5, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
-            assertFalse(TraderScoring.tierGates(below).get(0).unlocked());
+            assertEquals(sumOfPillars(e), e.score());
         }
 
         @Test
@@ -1158,18 +1040,6 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Unknown evidence never satisfies a requirement")
-        void unknownFailsGates() {
-            Evaluation e = TraderScoring.evaluate(holdingsOnly(equalHoldings(5)));
-            for (TierGate g : e.gates()) {
-                assertFalse(g.unlocked());
-                // Nothing traded: every requirement fails except the size of the positions held
-                g.requirements().stream().filter(r -> !r.name().equals("Position Sizing"))
-                        .forEach(r -> assertFalse(r.met(), r.label()));
-            }
-        }
-
-        @Test
         @DisplayName("A long break counts: the same trades measured months later show a lower trading pace")
         void timeGapLowersVelocity() {
             List<TradeEvent> trades = roundTrips(8, 10, 100, 120, 0);
@@ -1193,15 +1063,14 @@ class TraderScoringTest {
                     Map.of(), Map.of(), null));
             assertEquals(1.0, component(active, "velocity").score(), 1e-9);
         }
-    }
 
-    // ---- total ----
+    }
 
     @Nested
     @DisplayName("Total score")
     class Total {
         @Test
-        @DisplayName("Missing pillars are left out and the total is rescaled and marked provisional")
+        @DisplayName("A pillar without enough data is left out; the total is scaled over the others, provisional, never capped")
         void rescales() {
             double[] up = new double[200];
             Arrays.fill(up, 0.003);
@@ -1215,24 +1084,22 @@ class TraderScoringTest {
             assertFalse(pillar(e, "execution").available());
             assertTrue(e.provisional());
             assertEquals(2, e.pillarsScored());
-            double expected = 1000 * (pillar(e, "risk").points() + pillar(e, "consistency").points()) / 500.0;
-            assertEquals(Math.round(expected), e.rawScore());
-            assertTrue(e.score() <= 499, "a provisional score stays at Tier 7 or below");
-            assertTrue(e.caps().stream().anyMatch(c -> c.id().equals("provisional")));
+            long shown = Math.round(pillar(e, "risk").points()) + Math.round(pillar(e, "consistency").points());
+            assertEquals(Math.round(shown * 4 / 2.0), e.score());   // the same average over the two scored pillars
             assertEquals(TraderScoring.tierFor(e.score()), e.tier());
             assertTrue(flag(e, "missing-behavior").isPresent());
         }
 
         @Test
-        @DisplayName("One minor metric can't stand in for a whole pillar")
-        void minimumCoverage() {
-            // Only concentration (40 of 250 risk points) has data: well-diversified, but too little to score on
+        @DisplayName("A pillar counts as soon as it has data; pillars with none are left out and the score is provisional")
+        void partialData() {
+            // Holdings only: concentration and position sizing measure the risk pillar; nothing else has data
             Evaluation e = TraderScoring.evaluate(holdingsOnly(equalHoldings(5)));
-            assertEquals(1.0, component(e, "concentration").score(), EPS);
-            assertFalse(pillar(e, "risk").available());
-            assertEquals(0, e.pillarsScored());
-            assertNull(e.tier());
-            assertEquals(0, e.score());
+            assertTrue(pillar(e, "risk").available());
+            assertFalse(pillar(e, "behavior").available());
+            assertEquals(1, e.pillarsScored());
+            assertTrue(e.provisional());
+            assertEquals(sumOfPillars(e), e.score());
         }
 
         @Test
@@ -1248,7 +1115,7 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("Every pillar scored: the raw total is the plain sum of pillar points, not provisional")
+        @DisplayName("Every pillar scored: the score is the plain sum of the pillar points, not provisional")
         void complete() {
             LocalDate s = TODAY.minusDays(200);
             double[] r = returns(200, 0.002, 0.02);
@@ -1263,11 +1130,7 @@ class TraderScoringTest {
 
             assertEquals(4, e.pillarsScored());
             assertFalse(e.provisional());
-            double sum = e.pillars().stream().mapToDouble(Pillar::points).sum();
-            assertEquals(Math.round(sum), e.rawScore());
-            // 5 trades are far short of the 10 that Tier 5 needs
-            assertEquals(Math.min(e.rawScore(), 599), e.score());
-            assertEquals("gate-600", e.caps().get(0).id());
+            assertEquals(sumOfPillars(e), e.score());       // exactly the four pillar totals as shown, added up
         }
 
         @Test

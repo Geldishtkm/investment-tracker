@@ -1,11 +1,11 @@
 import { InstitutionalScore, PortfolioDiversification, ScorePillar } from '../../types';
 
 const TIERS = [
-  [1, 'Sovereign Quantitative Director', 900, 1000], [2, 'Chief Risk Officer (CRO)', 800, 899],
-  [3, 'Institutional Portfolio Manager', 750, 799], [4, 'Proprietary Desk Trader', 700, 749],
-  [5, 'Disciplined Quantitative Analyst', 600, 699], [6, 'Systematic Swing Trader', 500, 599],
-  [7, 'Tactical Retail Trader', 400, 499], [8, 'Speculative Momentum Chaser', 300, 399],
-  [9, 'Unhedged Emotional Gambler', 150, 299], [10, 'Reckless Liquidation Hazard', 0, 149],
+  [1, 'Sovereign Quantitative Director', 900, 1000], [2, 'Chief Risk Officer (CRO)', 825, 899],
+  [3, 'Institutional Portfolio Manager', 750, 824], [4, 'Proprietary Desk Trader', 675, 749],
+  [5, 'Disciplined Quantitative Analyst', 600, 674], [6, 'Systematic Swing Trader', 525, 599],
+  [7, 'Tactical Retail Trader', 450, 524], [8, 'Speculative Momentum Chaser', 375, 449],
+  [9, 'Unhedged Emotional Gambler', 300, 374], [10, 'Reckless Liquidation Hazard', 0, 299],
 ].map(([rank, name, minScore, maxScore]) => ({ rank: rank as number, name: name as string, minScore: minScore as number, maxScore: maxScore as number }));
 
 const pillar = (key: ScorePillar['key'], name: string, points: number, available = true): ScorePillar => ({
@@ -19,20 +19,15 @@ const pillar = (key: ScorePillar['key'], name: string, points: number, available
 
 export function scoreFixture(overrides: Partial<InstitutionalScore> = {}): InstitutionalScore {
   return {
-    score: 499, rawScore: 566, maxScore: 1000, provisional: true, pillarsScored: 3,
-    caps: [
-      { id: 'no-sells', maxScore: 499, title: 'No sells recorded', detail: 'Gains are only proven when trades are closed.' },
-      { id: 'provisional', maxScore: 499, title: 'Provisional score', detail: 'Only 3 of 4 pillars could be scored.' },
+    score: 566, maxScore: 1000, provisional: true, pillarsScored: 3,
+    milestone: { next: TIERS[4], pointsNeeded: 34, progress: 41 / 75 },
+    tips: [
+      { key: 'position-sizing', pillar: 'risk', metric: 'Position sizing', current: 'largest 38.0% of capital in Bitcoin', gain: 19,
+        action: 'Reduce your largest position (38% of capital) to 15% or less.' },
+      { key: 'profit-concentration', pillar: 'consistency', metric: 'Profit concentration', current: 'best trade 80% of profit (3 winning lots)', gain: 15,
+        action: 'Reduce Profit Concentration below 25%: no single trade should make 80% of your profit.' },
     ],
-    gates: [
-      { minScore: 600, name: 'Tier 5 and above', unlocked: false, requirements: [
-        { label: 'Return on capital (S₀) of at least 5%', met: true, actual: '+17.0%', name: 'Return on Capital', target: '≥ +5.0%', progress: 1 },
-        { label: 'At least 10 recorded trades', met: false, actual: '4 trades', name: 'Trade Count', target: '≥ 10 trades', progress: 0.4 },
-      ] },
-      { minScore: 750, name: 'Tier 3 and above', unlocked: false, requirements: [] },
-      { minScore: 900, name: 'Tier 1', unlocked: false, requirements: [] },
-    ],
-    tier: TIERS[6], tiers: TIERS,
+    tier: TIERS[6 - 1], tiers: TIERS,
     pillars: [
       pillar('risk', 'Risk Control & Tail Risk', 97),
       pillar('behavior', 'Behavioral Psychology', 0, false),
