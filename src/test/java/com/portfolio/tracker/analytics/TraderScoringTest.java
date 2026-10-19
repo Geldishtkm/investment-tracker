@@ -278,7 +278,7 @@ class TraderScoringTest {
             }
             List<Holding> holdings = List.of(new Holding("btc", "Bitcoin", 300), new Holding("eth", "Ethereum", 300),
                     new Holding("sol", "Solana", 300), new Holding("usdc", "USDC", 100));
-            Evaluation e = TraderScoring.evaluate(new Inputs(holdings, portfolio, assets[0].length == 4 ? portfolio : null, null,
+            Evaluation e = TraderScoring.evaluate(new Inputs(holdings, portfolio, portfolio, null,
                     List.of(), Map.of(), Map.of(), Map.of(), null, 0.04, 365, TODAY, assets));
             assertTrue(e.diversification().averageCorrelation() < 0.7, "ρ̄ " + e.diversification().averageCorrelation());
             Flag f = flag(e, "correlated-holdings").orElseThrow();
