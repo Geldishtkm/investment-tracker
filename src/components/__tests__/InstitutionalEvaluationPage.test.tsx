@@ -43,16 +43,16 @@ describe('InstitutionalEvaluationPage', () => {
     expect(screen.getByLabelText('Pillar scores radar chart')).toBeInTheDocument();
   });
 
-  it('renders flagged mistakes as diagnostic cards with coaching, and data gaps separately', async () => {
+  it('renders flagged mistakes as diagnostic table rows with coaching, and data gaps separately', async () => {
     api.getInstitutionalScore.mockResolvedValue(scoreFixture());
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
 
-    const card = await screen.findByRole('article', { name: 'Disposition Effect Flagged' });
+    const card = await screen.findByRole('row', { name: 'Disposition Effect Flagged' });
     expect(card).toHaveTextContent('Losers held 3.2x longer than winners');
     expect(card).toHaveTextContent('High');
     expect(card).toHaveTextContent('Coaching: Decide the exit before you enter.');
     // INFO flags are "how to unlock more of the score", not mistakes
-    expect(screen.queryByRole('article', { name: 'Behavioral Psychology Not Scored Yet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: 'Behavioral Psychology Not Scored Yet' })).not.toBeInTheDocument();
     expect(screen.getByText('Record your buys and sells with their dates.')).toBeInTheDocument();
     expect(screen.getByText(/Liquidity impact: largest trade/)).toBeInTheDocument();
   });
@@ -70,14 +70,14 @@ describe('InstitutionalEvaluationPage', () => {
     expect(screen.queryByTestId('diversification-card')).not.toBeInTheDocument();
   });
 
-  it('shows position-sizing coaching cards with the capital share at risk', async () => {
+  it('shows position-sizing findings with the capital share at risk', async () => {
     api.getInstitutionalScore.mockResolvedValue(scoreFixture({ flags: [{
       id: 'position-sizing', severity: 'HIGH', pillar: 'risk', title: 'High-Risk Concentration & Impulse',
       detail: 'High concentration risk: a single trade allocated 25.0% of your total portfolio ($25 of $100) to Pepe, a micro-cap asset ($40.0M market cap).',
       recommendation: 'Size speculative positions at 1–2% of capital and never more than 5%.',
     }] }));
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-    const card = await screen.findByRole('article', { name: 'High-Risk Concentration & Impulse' });
+    const card = await screen.findByRole('row', { name: 'High-Risk Concentration & Impulse' });
     expect(card).toHaveTextContent('High concentration risk: a single trade');
     expect(within(card).getByText('Position sizing')).toBeInTheDocument();
     expect(card).toHaveTextContent('allocated 25.0% of your total portfolio');

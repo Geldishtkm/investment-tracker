@@ -51,6 +51,17 @@ export interface PortfolioAnalytics {
   volatility?: number;
   beta?: number;
   diversificationScore?: number;
+  annualizedReturn?: number;
+  effectiveNumberOfAssets?: number;
+  herfindahlIndex?: number;
+  averageCorrelation?: number | null;
+  effectiveIndependentBets?: number | null;
+  diversificationRatio?: number | null;
+  riskFreeRate?: number;
+  benchmark?: string;
+  observations?: number;
+  historyStart?: string;
+  historyEnd?: string;
   assetBreakdown: AssetBreakdownItem[];
   riskMetricsAvailable: boolean;
   riskMetricsMessage?: string;
@@ -124,6 +135,7 @@ export interface AssetWithPrice extends Asset {
   priceChangePercent?: number;
 }
 
+/** A coin from CoinGecko's /coins/markets list (top 100 by market cap, refreshed every 10 minutes). */
 export interface Coin {
   id: string;
   symbol: string;
@@ -131,7 +143,14 @@ export interface Coin {
   image: string;
   current_price: number;
   market_cap: number;
+  market_cap_rank?: number | null;
+  total_volume?: number | null;
+  high_24h?: number | null;
+  low_24h?: number | null;
   price_change_percentage_24h: number;
+  price_change_percentage_7d_in_currency?: number | null;
+  /** Hourly prices over the last 7 days. */
+  sparkline_in_7d?: { price: number[] } | null;
 }
 
 export interface PriceHistoryPoint {

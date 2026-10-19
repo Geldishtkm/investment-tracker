@@ -125,27 +125,27 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
     `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
+    <div className="min-h-screen relative overflow-hidden bg-term-bg">
+      <div className="hidden"></div>
+      <div className="hidden"></div>
 
       <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-600/40">
-              {verified ? <CheckCircle size={32} className="text-white" /> : <MailCheck size={32} className="text-white" />}
+            <div className="w-20 h-20 rounded-lg flex items-center justify-center mx-auto mb-6 bg-term-raised border border-term-line2">
+              {verified ? <CheckCircle size={32} className="text-term-text" /> : <MailCheck size={32} className="text-term-text" />}
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-green-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent mb-2">
+            <h1 className="text-2xl font-bold mb-2 text-term-text">
               {verified ? 'Email Verified' : 'Check Your Email'}
             </h1>
-            <p className="text-gray-400 text-lg">
+            <p className="text-term-muted text-lg">
               {verified ? 'Taking you to login…' : (
-                <>We sent a 6-digit code to <span className="text-white font-medium break-all">{email}</span></>
+                <>We sent a 6-digit code to <span className="text-term-text font-medium break-all">{email}</span></>
               )}
             </p>
           </div>
 
-          <div className="glass-card p-8 border border-green-600/30">
+          <div className="glass-card p-6 border border-term-line2">
             <form
               onSubmit={(e) => { e.preventDefault(); submit(digits.join('')); }}
               className="space-y-6"
@@ -164,18 +164,18 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
                     onChange={handleChange(i)}
                     onKeyDown={handleKeyDown(i)}
                     disabled={isVerifying || verified}
-                    className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold bg-gradient-to-r from-gray-900/80 to-gray-800/80 border border-green-600/40 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300 disabled:opacity-60"
+                    className="w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold border border-term-line2 rounded-md text-term-text focus:outline-none focus:border-term-accent transition-all disabled:opacity-60 bg-term-raised"
                   />
                 ))}
               </div>
 
               {error && (
-                <div className="p-4 bg-gradient-to-r from-red-600/20 to-red-700/20 border border-red-600/40 rounded-2xl text-red-300 text-sm">
+                <div className="p-4 border border-term-down/50 rounded-lg text-term-down text-sm bg-term-raised border-term-line2">
                   {error}
                 </div>
               )}
               {notice && !error && (
-                <div className="p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-600/40 rounded-2xl text-green-300 text-sm">
+                <div className="p-4 border border-term-line2 rounded-lg text-term-accent text-sm bg-term-raised">
                   {notice}
                 </div>
               )}
@@ -183,19 +183,19 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
               <button
                 type="submit"
                 disabled={digits.some(d => d === '') || isVerifying || verified}
-                className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-2xl hover:from-green-500 hover:to-emerald-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-600/30"
+                className="w-full py-2.5 text-term-text font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
               >
                 {isVerifying ? 'Verifying…' : verified ? 'Verified' : 'Verify Email'}
               </button>
             </form>
 
-            <div className="mt-6 text-center text-sm text-gray-400">
+            <div className="mt-6 text-center text-sm text-term-muted">
               Didn't get the code? Check your spam folder, or{' '}
               <button
                 type="button"
                 onClick={handleResend}
                 disabled={cooldown > 0 || isResending || verified}
-                className="inline-flex items-center gap-1 text-green-400 hover:text-green-300 font-medium disabled:text-gray-500 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1 text-term-accent hover:text-term-accent font-medium disabled:text-gray-500 disabled:cursor-not-allowed"
               >
                 <RefreshCw size={14} className={isResending ? 'animate-spin' : ''} />
                 {cooldown > 0 ? `resend in ${formatCooldown(cooldown)}` : isResending ? 'sending…' : 'resend code'}
@@ -205,7 +205,7 @@ const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({
             <button
               type="button"
               onClick={onBack}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-gray-400 hover:text-white text-sm transition-colors"
+              className="mt-6 w-full inline-flex items-center justify-center gap-2 text-term-muted hover:text-term-text text-sm transition-colors"
             >
               <ArrowLeft size={16} /> Back to login
             </button>

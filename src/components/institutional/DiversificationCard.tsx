@@ -9,7 +9,7 @@ const MAX_MATRIX = 10;
 /** Background for a correlation cell: red when moving together, slate near zero, teal when offsetting. */
 export function correlationColor(rho: number): string {
   const a = Math.min(1, Math.abs(rho));
-  return rho >= 0 ? `rgba(239, 68, 68, ${0.12 + 0.68 * a})` : `rgba(20, 184, 166, ${0.12 + 0.68 * a})`;
+  return rho >= 0 ? `rgba(200, 70, 79, ${0.12 + 0.68 * a})` : `rgba(63, 165, 134, ${0.12 + 0.68 * a})`;
 }
 
 const fmt = (v: number, digits = 2) => v.toFixed(digits);
@@ -30,17 +30,17 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
   const leastCorrelated = d.pairs.length > 1 ? d.pairs[d.pairs.length - 1] : null;
 
   return (
-    <section className="bg-gradient-to-br from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6"
+    <section className="rounded-lg border border-term-line bg-term-panel p-4"
              aria-labelledby="diversification-heading" data-testid="diversification-card">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-        <h3 id="diversification-heading" className="text-lg font-semibold text-white flex items-center gap-2">
-          <Layers size={20} className="text-cyan-300" /> Risk &amp; Diversification
+        <h3 id="diversification-heading" className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-term-muted">
+          <Layers size={14} className="text-term-accent" /> Risk &amp; Diversification
         </h3>
-        <span className="text-lg font-bold text-cyan-300">
-          {Math.round(d.score)}<span className="text-sm text-gray-400"> / 100</span>
+        <span className="num text-lg text-term-text">
+          {Math.round(d.score)}<span className="text-sm text-term-dim"> / 100</span>
         </span>
       </div>
-      <p className="text-xs text-gray-500 mb-5">
+      <p className="text-xs text-term-dim mb-5">
         Earns {Math.round(earned)} of {possible} points in the Risk Control pillar
         {possible > 0 && parts.some(c => !c.available) ? ' (metrics without history are left out)' : ''}.
       </p>
@@ -55,21 +55,21 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
       </div>
 
       {d.correlationReason ? (
-        <p className="text-sm text-yellow-200/90 bg-yellow-950/20 border border-yellow-600/30 rounded-xl p-3 mb-5">
+        <p className="text-sm text-term-warn bg-term-warn-soft border border-term-warn/40 rounded-md p-3 mb-5">
           Correlation not measured: {d.correlationReason} Diversification is judged on concentration only.
         </p>
       ) : d.averageCorrelation != null && (
         <div className="mb-5">
           <div className="flex justify-between text-sm mb-1">
-            <span className="text-gray-300">Average pairwise correlation (ρ̄)</span>
-            <span className="font-mono text-white">{fmt(d.averageCorrelation)}</span>
+            <span className="text-term-muted">Average pairwise correlation (ρ̄)</span>
+            <span className="num text-term-text">{fmt(d.averageCorrelation)}</span>
           </div>
-          <div className="relative h-2 rounded-full bg-gradient-to-r from-teal-500/70 via-gray-600 to-red-500/80"
+          <div className="relative h-2 rounded-full bg-gradient-to-r from-[#3FA586]/70 via-[#2E3647] to-[#C8464F]/80"
                role="img" aria-label={`Average correlation ${fmt(d.averageCorrelation)} on a scale from −1 to 1`}>
-            <div className="absolute -top-1 h-4 w-1 rounded bg-white"
+            <div className="absolute -top-1 h-4 w-1 rounded bg-term-text"
                  style={{ left: `calc(${((d.averageCorrelation + 1) / 2) * 100}% - 2px)` }} />
           </div>
-          <div className="flex justify-between text-[11px] text-gray-500 mt-1">
+          <div className="flex justify-between text-[11px] text-term-dim mt-1">
             <span>−1 offsetting</span><span>0 independent</span><span>+1 lockstep</span>
           </div>
         </div>
@@ -80,10 +80,10 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
         {parts.map(c => (
           <li key={c.key} className="flex items-start justify-between gap-3 text-sm" title={c.detail}>
             <div>
-              <div className={c.available ? 'text-gray-200' : 'text-gray-500'}>{c.name}</div>
-              <div className="text-xs text-gray-500">{c.available ? c.displayValue : c.detail}</div>
+              <div className={c.available ? 'text-term-text' : 'text-term-dim'}>{c.name}</div>
+              <div className="text-xs text-term-dim">{c.available ? c.displayValue : c.detail}</div>
             </div>
-            <div className={`shrink-0 font-mono ${c.available ? 'text-gray-300' : 'text-gray-600'}`}>
+            <div className={`shrink-0 num ${c.available ? 'text-term-muted' : 'text-term-dim'}`}>
               {c.available ? `${c.points.toFixed(0)}/${c.weight}` : '—'}
             </div>
           </li>
@@ -96,18 +96,18 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
             <thead>
               <tr>
                 <th />
-                {d.positions.map(p => <th key={p.id} scope="col" className="px-1 font-medium text-gray-400 max-w-[5rem] truncate">{p.name}</th>)}
+                {d.positions.map(p => <th key={p.id} scope="col" className="px-1 font-medium text-term-muted max-w-[5rem] truncate">{p.name}</th>)}
               </tr>
             </thead>
             <tbody>
               {d.positions.map((row, i) => (
                 <tr key={row.id}>
-                  <th scope="row" className="pr-2 text-left font-medium text-gray-400 whitespace-nowrap">
-                    {row.name} <span className="text-gray-600">{pct(row.weight)}</span>
+                  <th scope="row" className="pr-2 text-left font-medium text-term-muted whitespace-nowrap">
+                    {row.name} <span className="text-term-dim">{pct(row.weight)}</span>
                   </th>
                   {d.correlations![i].map((rho, j) => (
-                    <td key={j} className="w-12 h-8 text-center font-mono text-white rounded"
-                        style={{ background: i === j ? 'rgba(75, 85, 99, 0.4)' : correlationColor(rho) }}>
+                    <td key={j} className="w-12 h-8 text-center num text-term-text rounded"
+                        style={{ background: i === j ? 'rgba(46, 54, 71, 0.6)' : correlationColor(rho) }}>
                       {i === j ? '—' : fmt(rho)}
                     </td>
                   ))}
@@ -121,19 +121,19 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
       {d.pairs.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
           <div>
-            <div className="text-gray-400 mb-1">Moving in lockstep (ρ ≥ 0.80)</div>
-            {lockstep.length === 0 ? <div className="text-emerald-300">None</div> : (
+            <div className="text-term-muted mb-1">Moving in lockstep (ρ ≥ 0.80)</div>
+            {lockstep.length === 0 ? <div className="text-term-up">None</div> : (
               <ul className="space-y-0.5">
                 {lockstep.slice(0, 4).map(p => (
-                  <li key={`${p.a}-${p.b}`} className="text-red-300">{p.a} / {p.b}: {fmt(p.correlation)}</li>
+                  <li key={`${p.a}-${p.b}`} className="text-term-down">{p.a} / {p.b}: {fmt(p.correlation)}</li>
                 ))}
               </ul>
             )}
           </div>
           {leastCorrelated && (
             <div>
-              <div className="text-gray-400 mb-1">Best diversifying pair</div>
-              <div className={leastCorrelated.correlation < 0.5 ? 'text-emerald-300' : 'text-gray-300'}>
+              <div className="text-term-muted mb-1">Best diversifying pair</div>
+              <div className={leastCorrelated.correlation < 0.5 ? 'text-term-up' : 'text-term-muted'}>
                 {leastCorrelated.a} / {leastCorrelated.b}: {fmt(leastCorrelated.correlation)}
               </div>
             </div>
@@ -141,7 +141,7 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
         </div>
       )}
 
-      <p className="text-xs text-gray-500 mt-4">
+      <p className="text-xs text-term-dim mt-4">
         Independent bets = (Σ wσ / σ<sub>portfolio</sub>)², the diversification ratio squared: equal to the effective
         holdings when coins are uncorrelated, closer to 1 when they move together, and higher when they offset each other.
         {d.observations > 0 && !d.correlationReason ? ` Measured over ${d.observations} daily returns.` : ''}
@@ -151,10 +151,10 @@ const DiversificationCard: React.FC<Props> = ({ diversification: d, riskComponen
 };
 
 const Stat: React.FC<{ label: string; value: string; note: string }> = ({ label, value, note }) => (
-  <div className="rounded-xl bg-gray-800/60 border border-gray-700/50 p-3">
-    <div className="text-xs text-gray-400">{label}</div>
-    <div className="text-2xl font-bold text-white">{value}</div>
-    <div className="text-[11px] text-gray-500">{note}</div>
+  <div className="rounded-md border border-term-line bg-term-bg p-3">
+    <div className="text-xs text-term-muted">{label}</div>
+    <div className="num text-2xl text-term-text">{value}</div>
+    <div className="text-[11px] text-term-dim">{note}</div>
   </div>
 );
 

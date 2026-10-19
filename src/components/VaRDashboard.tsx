@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { RefreshCw } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 import { authService } from '../services/authService';
 import PortfolioEmptyState from './PortfolioEmptyState';
-import { AlertTriangle, TrendingUp, TrendingDown, BarChart3, Shield, Target, Activity, DollarSign, Package, RefreshCw } from 'lucide-react';
+import { SLICE_COLORS } from './PortfolioPage';
+import Term from './ui/Term';
+import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonMetrics, btn } from './ui/kit';
+import { num, pct, usd } from './ui/format';
 
-
-interface VaRCalculation {
-  id?: number;
-  userId: string;
-  calculationDate: string;
+/** GET /api/var/portfolio: the full calculation, including the daily return history it used. */
+export interface VaRCalculation {
   confidenceLevel: number;
   timeHorizon: number;
   portfolioValue: number;
@@ -16,35 +18,49 @@ interface VaRCalculation {
   parametricVaR: number;
   monteCarloVaR: number;
   conditionalVaR: number;
+  /** Daily standard deviation of portfolio returns. */
   volatility: number;
+  annualizedVolatility?: number;
   skewness: number;
   kurtosis: number;
+  /** Mean daily portfolio return. */
   expectedReturn: number;
   assetWeights: Record<string, number>;
+  /** Mean daily return per asset. */
   assetReturns: Record<string, number>;
   historicalReturns: number[];
+  numberOfSimulations?: number;
+  observations?: number;
+  historyStart?: string;
+  historyEnd?: string;
+  historicalVaRMethod?: string;
 }
 
-interface VaRSummary {
-  portfolioValue: number;
-  confidenceLevel: number;
-  timeHorizon: number;
-  riskLevel: string;
-  varResults: {
-    historicalVaR: number;
-    parametricVaR: number;
-    monteCarloVaR: number;
-    conditionalVaR: number;
-    historicalVaRPercentage: number;
-    parametricVaRPercentage: number;
-    monteCarloVaRPercentage: number;
-  };
-  riskMetrics: {
-    volatility: number;
-    skewness: number;
-    kurtosis: number;
-    expectedReturn: number;
-  };
+const CONFIDENCE = [0.9, 0.95, 0.99];
+const HORIZONS = [1, 7, 30];
+const SHOCKS = [-0.1, -0.3, -0.5];
+
+/** Same thresholds as the backend's risk level: historical VaR above 10% of value is high, above 5% medium. */
+export function riskLevel(varFraction: number): 'LOW' | 'MEDIUM' | 'HIGH' {
+  return varFraction > 0.10 ? 'HIGH' : varFraction > 0.05 ? 'MEDIUM' : 'LOW';
+}
+
+/** Linearly interpolated quantile of sorted data, the same method the backend uses for historical VaR. */
+export function quantile(sorted: number[], p: number): number {
+  const h = (sorted.length - 1) * p;
+  const lo = Math.floor(h), hi = Math.ceil(h);
+  return sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
+}
+
+/** Equal-width histogram of returns; each bin knows whether it lies in the tail beyond the cutoff. */
+export function histogram(returns: number[], bins: number, cutoff: number) {
+  if (returns.length === 0) return [];
+  const min = Math.min(...returns), max = Math.max(...returns);
+  const width = (max - min) / bins || 1e-9;
+  const counts = Array.from({ length: bins }, (_, i) => ({ from: min + i * width, to: min + (i + 1) * width, count: 0, tail: false }));
+  for (const r of returns) counts[Math.min(bins - 1, Math.floor((r - min) / width))].count++;
+  counts.forEach(b => { b.tail = b.to <= cutoff + 1e-12; });
+  return counts.map(b => ({ ...b, mid: (b.from + b.to) / 2 }));
 }
 
 interface VaRDashboardProps {
@@ -52,55 +68,31 @@ interface VaRDashboardProps {
   onAddAsset: () => void;
 }
 
+const segment = (active: boolean) =>
+  `num rounded px-2.5 py-1 text-xs ${active ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`;
+
 const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
-  const [varCalculation, setVarCalculation] = useState<VaRCalculation | null>(null);
-  const [varSummary, setVarSummary] = useState<VaRSummary | null>(null);
+  const [calc, setCalc] = useState<VaRCalculation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portfolioEmpty, setPortfolioEmpty] = useState(false);
   const [confidenceLevel, setConfidenceLevel] = useState(0.95);
   const [timeHorizon, setTimeHorizon] = useState(1);
-  const [activeTab, setActiveTab] = useState('overview');
 
   const calculateVaR = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
     try {
-      const response = await authService.authFetch(`${API_BASE_URL}/api/var/calculate?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
+      const response = await authService.authFetch(
+        `${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`);
+      const body = await response.json().catch(() => null);
       if (!response.ok) {
-        // The backend explains data problems in the "error" field
-        const body = await response.json().catch(() => null);
-        if (body?.code === 'NO_ASSETS') {
-          // An empty portfolio is a normal state, not an error
-          setPortfolioEmpty(true);
-          return;
-        }
+        // An empty portfolio is a normal state, not an error; data problems are explained in "error"
+        if (body?.code === 'NO_ASSETS') { setPortfolioEmpty(true); return; }
         throw new Error(body?.error || `Failed to calculate VaR (HTTP ${response.status})`);
       }
       setPortfolioEmpty(false);
-
-      const data = await response.json();
-      setVarSummary(data);
-      
-      // Also fetch detailed calculation
-      const detailedResponse = await authService.authFetch(`${API_BASE_URL}/api/var/portfolio?confidenceLevel=${confidenceLevel}&timeHorizon=${timeHorizon}`, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (detailedResponse.ok) {
-        const detailedData = await detailedResponse.json();
-        setVarCalculation(detailedData);
-      }
-      
+      setCalc(body as VaRCalculation);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to calculate VaR');
     } finally {
@@ -108,452 +100,199 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
     }
   }, [confidenceLevel, timeHorizon]);
 
-  // Recalculate whenever the confidence level or horizon changes
-  useEffect(() => {
-    calculateVaR();
-  }, [calculateVaR]);
+  useEffect(() => { void calculateVaR(); }, [calculateVaR]);
 
-  const getRiskLevelColor = (riskLevel: string) => {
-    switch (riskLevel?.toUpperCase()) {
-      case 'HIGH': return 'text-red-400 bg-red-600/20 border-red-600/30';
-      case 'MEDIUM': return 'text-yellow-400 bg-yellow-600/20 border-yellow-600/30';
-      case 'LOW': return 'text-green-400 bg-green-600/20 border-green-600/30';
-      default: return 'text-gray-400 bg-gray-600/20 border-gray-600/30';
-    }
-  };
+  const daily = useMemo(() => {
+    const r = calc?.historicalReturns ?? [];
+    if (r.length === 0) return null;
+    const sorted = [...r].sort((a, b) => a - b);
+    const cutoff = quantile(sorted, 1 - confidenceLevel);
+    const tail = sorted.filter(x => x <= cutoff);
+    return {
+      cutoff,
+      shortfall: tail.reduce((s, x) => s + x, 0) / tail.length,
+      worst: sorted[0],
+      best: sorted[sorted.length - 1],
+      bins: histogram(r, 48, cutoff),
+    };
+  }, [calc, confidenceLevel]);
 
-  const getConfidenceLevelLabel = (level: number) => {
-    return `${(level * 100).toFixed(0)}%`;
-  };
+  const exposures = useMemo(() => {
+    if (!calc) return [];
+    return Object.entries(calc.assetWeights ?? {})
+      .map(([name, weight]) => ({ name, weight, value: weight * calc.portfolioValue, meanDaily: calc.assetReturns?.[name] ?? null }))
+      .sort((a, b) => b.weight - a.weight);
+  }, [calc]);
 
-  const getTimeHorizonLabel = (horizon: number) => {
-    if (horizon === 1) return '1 Day';
-    if (horizon === 7) return '1 Week';
-    if (horizon === 30) return '1 Month';
-    if (horizon === 90) return '3 Months';
-    if (horizon === 365) return '1 Year';
-    return `${horizon} Days`;
-  };
+  if (portfolioEmpty) return <PortfolioEmptyState onAddAsset={onAddAsset} />;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-blue-300 text-lg">Calculating Value at Risk...</p>
-          <p className="text-blue-200/70 text-sm">Running Monte Carlo simulations and risk analysis</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (portfolioEmpty) {
-    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black flex items-center justify-center">
-        <div className="text-center p-8 bg-gradient-to-r from-red-600/20 to-red-700/20 backdrop-blur-sm border border-red-600/40 rounded-2xl">
-          <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-red-200 mb-2">Error Calculating VaR</h2>
-          <p className="text-red-300 mb-4">{error}</p>
-          <button
-            onClick={calculateVaR}
-            className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 rounded-xl text-white font-medium hover:from-red-700 hover:to-red-800 transition-all duration-300"
-          >
-            Retry Calculation
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const v = calc?.portfolioValue || 0;
+  const level = calc ? riskLevel(calc.historicalVaR / (v || 1)) : null;
+  const methods = calc ? [
+    { key: 'Historical VaR', value: calc.historicalVaR },
+    { key: 'Parametric VaR', value: calc.parametricVaR },
+    { key: 'Monte Carlo VaR', value: calc.monteCarloVaR },
+    { key: 'CVaR', value: calc.conditionalVaR },
+  ] : [];
+  const maxMethod = Math.max(1, ...methods.map(m => m.value));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
-      
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-red-600 to-red-700 rounded-2xl flex items-center justify-center shadow-lg shadow-red-600/40">
-              <TrendingDown size={32} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-red-400 to-red-500 bg-clip-text text-transparent">
-                Value at Risk (VaR) Dashboard
-              </h1>
-              <p className="text-red-300/70 text-lg">Professional Portfolio Risk Analysis</p>
-            </div>
-          </div>
-          
-          <p className="text-blue-200/80 max-w-3xl mx-auto">
-            Advanced risk management using Historical Simulation, Parametric VaR, and Monte Carlo methods. 
-            Monitor your portfolio's potential losses with institutional-grade risk metrics.
-          </p>
-          
-          {/* Data Source Indicator */}
-          <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-500/30 rounded-xl max-w-2xl mx-auto">
-            <div className="flex items-center gap-3 justify-center">
-              <div className="w-8 h-8 bg-green-500/20 rounded-full flex items-center justify-center">
-                <BarChart3 size={16} className="text-green-400" />
-              </div>
-              <div className="text-center">
-                <p className="text-green-300 font-medium">Real Market Data Active</p>
-                <p className="text-green-200/70 text-sm">VaR calculations use actual historical prices from CoinGecko API</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Confidence Level</label>
-              <select
-                value={confidenceLevel}
-                onChange={(e) => setConfidenceLevel(parseFloat(e.target.value))}
-                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-black focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
-              >
-                <option value={0.80}>80%</option>
-                <option value={0.85}>85%</option>
-                <option value={0.90}>90%</option>
-                <option value={0.95}>95%</option>
-                <option value={0.975}>97.5%</option>
-                <option value={0.99}>99%</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Time Horizon</label>
-              <select
-                value={timeHorizon}
-                onChange={(e) => setTimeHorizon(parseInt(e.target.value))}
-                className="w-full px-4 py-3 bg-gradient-to-r from-gray-800/80 to-gray-700/80 border border-gray-600/50 rounded-xl text-black focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:border-red-500/50"
-              >
-                <option value={1}>1 Day</option>
-                <option value={7}>1 Week</option>
-                <option value={30}>1 Month</option>
-                <option value={90}>3 Months</option>
-                <option value={365}>1 Year</option>
-              </select>
-            </div>
-            
-            <div className="flex items-end">
-              <button
-                onClick={calculateVaR}
-                className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 rounded-xl text-white font-medium transition-all duration-300 flex items-center justify-center gap-2"
-              >
-                <RefreshCw size={20} />
-                Recalculate VaR
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex space-x-1 mb-8 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-2">
-          {[
-            { id: 'overview', label: 'Overview', icon: BarChart3 },
-            { id: 'methodologies', label: 'VaR Methods', icon: Package },
-            { id: 'risk-metrics', label: 'Risk Metrics', icon: Activity },
-            { id: 'portfolio', label: 'Portfolio', icon: DollarSign }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-300 ${
-                activeTab === tab.id
-                  ? 'bg-gradient-to-r from-red-600/20 to-red-700/20 text-red-300 border border-red-600/40'
-                  : 'text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
-              }`}
-            >
-              <tab.icon size={18} />
-              {tab.label}
+    <div className="space-y-4">
+      {/* Parameters */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-term-line bg-term-panel px-4 py-2.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-term-dim">Confidence</span>
+        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Confidence level">
+          {CONFIDENCE.map(c => (
+            <button key={c} type="button" aria-pressed={confidenceLevel === c} onClick={() => setConfidenceLevel(c)} className={segment(confidenceLevel === c)}>
+              {pct(c, 0)}
             </button>
           ))}
         </div>
-
-        {/* Tab Content */}
-        {activeTab === 'overview' && varSummary && (
-          <div className="space-y-6">
-            {/* Risk Level Card */}
-            <div className="bg-gradient-to-r from-red-600/20 to-red-700/20 backdrop-blur-sm border border-red-600/40 rounded-2xl p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-red-600 to-red-700 rounded-xl flex items-center justify-center">
-                  <Shield size={24} className="text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-white">Portfolio Risk Assessment</h3>
-                  <p className="text-red-300/70">Current risk level based on VaR calculations</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="text-center">
-                  <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border ${getRiskLevelColor(varSummary.riskLevel)}`}>
-                    <Target size={16} />
-                    <span className="font-medium">{varSummary.riskLevel}</span>
-                  </div>
-                  <p className="text-sm text-gray-400 mt-2">Risk Level</p>
-                </div>
-                
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">
-                    ${varSummary.portfolioValue.toLocaleString()}
-                  </div>
-                  <p className="text-sm text-gray-400">Portfolio Value</p>
-                </div>
-                
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-400">
-                    {getConfidenceLevelLabel(varSummary.confidenceLevel)}
-                  </div>
-                  <p className="text-sm text-gray-400">Confidence Level</p>
-                </div>
-              </div>
-            </div>
-
-            {/* VaR Results Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  title: 'Historical VaR',
-                  value: varSummary.varResults.historicalVaR,
-                  percentage: varSummary.varResults.historicalVaRPercentage,
-                  icon: BarChart3,
-                  color: 'from-blue-600/20 to-blue-700/20',
-                  borderColor: 'border-blue-600/40'
-                },
-                {
-                  title: 'Parametric VaR',
-                  value: varSummary.varResults.parametricVaR,
-                  percentage: varSummary.varResults.parametricVaRPercentage,
-                  icon: Package,
-                  color: 'from-green-600/20 to-green-700/20',
-                  borderColor: 'border-green-600/40'
-                },
-                {
-                  title: 'Monte Carlo VaR',
-                  value: varSummary.varResults.monteCarloVaR,
-                  percentage: varSummary.varResults.monteCarloVaRPercentage,
-                  icon: RefreshCw,
-                  color: 'from-purple-600/20 to-purple-700/20',
-                  borderColor: 'border-purple-600/40'
-                },
-                {
-                  title: 'Conditional VaR',
-                  value: varSummary.varResults.conditionalVaR,
-                  percentage: (varSummary.varResults.conditionalVaR / varSummary.portfolioValue) * 100,
-                  icon: AlertTriangle,
-                  color: 'from-orange-600/20 to-orange-700/20',
-                  borderColor: 'border-orange-600/40'
-                }
-              ].map((metric, index) => (
-                <div key={index} className={`bg-gradient-to-r ${metric.color} backdrop-blur-sm border ${metric.borderColor} rounded-2xl p-6`}>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${metric.color.replace('/20', '/40')} rounded-xl flex items-center justify-center`}>
-                      <metric.icon size={20} className="text-white" />
-                    </div>
-                    <div className="text-sm text-gray-300 font-medium">{metric.title}</div>
-                  </div>
-                  
-                  <div className="text-2xl font-bold text-white mb-2">
-                    ${metric.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  
-                  <div className="text-sm text-gray-400">
-                    {metric.percentage.toFixed(2)}% of Portfolio
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'methodologies' && varCalculation && (
-          <div className="space-y-6">
-            <div className="bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6">
-              <h3 className="text-xl font-semibold text-white mb-4">VaR Methodology Comparison</h3>
-              <p className="text-gray-300 mb-6">
-                Compare different Value at Risk calculation methods to understand your portfolio's risk profile.
-              </p>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-blue-300">Historical Simulation</h4>
-                  <p className="text-gray-400 text-sm">
-                    Uses actual historical returns to estimate potential losses. Most accurate for stable markets.
-                  </p>
-                  <div className="text-2xl font-bold text-blue-400">
-                    ${varCalculation.historicalVaR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-green-300">Parametric VaR</h4>
-                  <p className="text-gray-400 text-sm">
-                    Assumes normal distribution of returns. Fast calculation but may underestimate tail risk.
-                  </p>
-                  <div className="text-2xl font-bold text-green-400">
-                    ${varCalculation.parametricVaR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-purple-300">Monte Carlo Simulation</h4>
-                  <p className="text-gray-400 text-sm">
-                    Generates thousands of possible scenarios. Most comprehensive but computationally intensive.
-                  </p>
-                  <div className="text-2xl font-bold text-purple-400">
-                    ${varCalculation.monteCarloVaR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <h4 className="text-lg font-medium text-orange-300">Conditional VaR</h4>
-                  <p className="text-gray-400 text-sm">
-                    Expected loss beyond VaR threshold. Provides insight into extreme loss scenarios.
-                  </p>
-                  <div className="text-2xl font-bold text-orange-400">
-                    ${varCalculation.conditionalVaR.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'risk-metrics' && varCalculation && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {[
-                {
-                  title: 'Volatility',
-                  value: varCalculation.volatility,
-                  description: 'Standard deviation of returns',
-                  icon: Activity,
-                  color: 'from-blue-600/20 to-blue-700/20',
-                  borderColor: 'border-blue-600/40',
-                  format: (val: number) => `${(val * 100).toFixed(2)}%`
-                },
-                {
-                  title: 'Skewness',
-                  value: varCalculation.skewness,
-                  description: 'Distribution asymmetry',
-                  icon: BarChart3,
-                  color: 'from-green-600/20 to-green-700/20',
-                  borderColor: 'border-green-600/40',
-                  format: (val: number) => val.toFixed(3)
-                },
-                {
-                  title: 'Kurtosis',
-                  value: varCalculation.kurtosis,
-                  description: 'Distribution peakedness',
-                  icon: RefreshCw,
-                  color: 'from-purple-600/20 to-purple-700/20',
-                  borderColor: 'border-purple-600/40',
-                  format: (val: number) => val.toFixed(2)
-                },
-                {
-                  title: 'Expected Return',
-                  value: varCalculation.expectedReturn,
-                  description: 'Annualized return expectation',
-                  icon: TrendingUp,
-                  color: 'from-orange-600/20 to-orange-700/20',
-                  borderColor: 'border-orange-600/40',
-                  format: (val: number) => `${(val * 100).toFixed(2)}%`
-                }
-              ].map((metric, index) => (
-                <div key={index} className={`bg-gradient-to-r ${metric.color} backdrop-blur-sm border ${metric.borderColor} rounded-2xl p-6`}>
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${metric.color.replace('/20', '/40')} rounded-xl flex items-center justify-center`}>
-                      <metric.icon size={20} className="text-white" />
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-300 font-medium">{metric.title}</div>
-                      <div className="text-xs text-gray-400">{metric.description}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="text-2xl font-bold text-white mb-2">
-                    {metric.format(metric.value)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'portfolio' && varCalculation && (
-          <div className="space-y-6">
-            <div className="bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6">
-              <h3 className="text-xl font-semibold text-white mb-4">Portfolio Composition & Weights</h3>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-lg font-medium text-blue-300 mb-4">Asset Allocation</h4>
-                  <div className="space-y-3">
-                    {Object.entries(varCalculation.assetWeights).map(([asset, weight]) => (
-                      <div key={asset} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
-                        <span className="text-white font-medium">{asset}</span>
-                        <span className="text-blue-400 font-mono">{(weight * 100).toFixed(2)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="text-lg font-medium text-green-300 mb-4">Calculation Details</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
-                      <span className="text-gray-300">Confidence Level</span>
-                      <span className="text-green-400 font-mono">{getConfidenceLevelLabel(varCalculation.confidenceLevel)}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
-                      <span className="text-gray-300">Time Horizon</span>
-                      <span className="text-green-400 font-mono">{getTimeHorizonLabel(varCalculation.timeHorizon)}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800/50 rounded-xl">
-                      <span className="text-gray-300">Calculation Date</span>
-                      <span className="text-green-400 font-mono">
-                        {new Date(varCalculation.calculationDate).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Info Section */}
-        <div className="mt-12 bg-gradient-to-r from-blue-600/10 to-indigo-600/10 backdrop-blur-sm border border-blue-600/20 rounded-2xl p-6">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
-              <RefreshCw size={20} className="text-white" />
-            </div>
-            <div>
-              <h4 className="text-lg font-semibold text-blue-300 mb-2">About Value at Risk (VaR)</h4>
-              <p className="text-blue-200/80 text-sm leading-relaxed">
-                Value at Risk (VaR) is a statistical measure that quantifies the potential loss in value of a portfolio 
-                over a defined period for a given confidence interval. This dashboard provides three different VaR methodologies:
-              </p>
-              <ul className="text-blue-200/70 text-sm mt-3 space-y-1">
-                <li>• <strong>Historical VaR:</strong> Based on actual historical price movements</li>
-                <li>• <strong>Parametric VaR:</strong> Assumes normal distribution of returns</li>
-                <li>• <strong>Monte Carlo VaR:</strong> Uses random simulations to model portfolio behavior</li>
-              </ul>
-              <p className="text-blue-200/60 text-xs mt-3">
-                <strong>Note:</strong> VaR is a risk measure, not a guarantee. Past performance does not predict future results.
-              </p>
-            </div>
-          </div>
+        <span className="ml-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-term-dim">Horizon</span>
+        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Time horizon">
+          {HORIZONS.map(h => (
+            <button key={h} type="button" aria-pressed={timeHorizon === h} onClick={() => setTimeHorizon(h)} className={segment(timeHorizon === h)}>
+              {h}D
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-3">
+          {level && <Badge tone={level === 'HIGH' ? 'down' : level === 'MEDIUM' ? 'warn' : 'up'}>{level} risk</Badge>}
+          <button type="button" className={btn.secondary} onClick={() => void calculateVaR()} disabled={loading} aria-label="Recalculate">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Recalculate
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-term-down/40 bg-term-down-soft px-4 py-3 text-sm text-term-down" role="alert">{error}</div>
+      )}
+
+      {!calc && loading ? (
+        <><SkeletonMetrics count={5} /><Skeleton className="h-72 w-full" /></>
+      ) : calc && (
+        <div className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-5" data-testid="var-headline">
+            <div className="bg-term-panel p-4"><Metric label="Portfolio value" term="Equity" value={usd(v)} sub={`${pct(confidenceLevel, 0)} · ${timeHorizon}-day`} /></div>
+            {methods.map(m => (
+              <div key={m.key} className="bg-term-panel p-4">
+                <Metric label={m.key === 'CVaR' ? 'CVaR (ES)' : m.key} term={m.key} value={usd(-m.value)} tone="down"
+                        sub={`${pct(v ? m.value / v : 0, 2)} of value`} />
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Panel title="Daily return distribution" className="xl:col-span-2"
+                   subtitle={`${calc.observations ?? calc.historicalReturns.length} daily returns${calc.historyStart ? ` · ${calc.historyStart} → ${calc.historyEnd}` : ''}`}>
+              {daily ? (
+                <>
+                  <div className="h-64" role="img" aria-label={`Histogram of daily returns; the ${pct(1 - confidenceLevel, 0)} tail lies below ${pct(daily.cutoff, 2)}`}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={daily.bins} margin={{ top: 22, right: 8, bottom: 0, left: 0 }} barCategoryGap={1}>
+                        <CartesianGrid stroke="#222938" vertical={false} />
+                        <XAxis dataKey="mid" type="number" domain={['dataMin', 'dataMax']} tickFormatter={x => pct(x, 0)}
+                               stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+                        <YAxis allowDecimals={false} width={32} stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+                        <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                                 contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                                 labelFormatter={(_, p) => p?.[0] ? `${pct(p[0].payload.from, 2)} to ${pct(p[0].payload.to, 2)}` : ''}
+                                 formatter={(n: number) => [n, 'days']} />
+                        <Bar dataKey="count" isAnimationActive={false}>
+                          {daily.bins.map((b, i) => <Cell key={i} fill={b.tail ? '#C8464F' : b.mid < 0 ? '#5D667A' : '#3FA586'} fillOpacity={b.tail ? 0.9 : 0.6} />)}
+                        </Bar>
+                        <ReferenceLine x={daily.cutoff} stroke="#C8464F" strokeDasharray="4 3"
+                                       label={{ value: `VaR ${pct(confidenceLevel, 0)}`, fill: '#C8464F', fontSize: 11, position: 'top' }} />
+                        <ReferenceLine x={daily.shortfall} stroke="#C99A3E" strokeDasharray="2 3"
+                                       label={{ value: 'CVaR', fill: '#C99A3E', fontSize: 11, position: 'insideTopLeft' }} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-4 text-xs md:grid-cols-4">
+                    <Metric size="sm" label="1-day VaR" term="Historical VaR" value={pct(daily.cutoff, 2)} tone="down" />
+                    <Metric size="sm" label="1-day CVaR" term="CVaR" value={pct(daily.shortfall, 2)} tone="down" />
+                    <Metric size="sm" label="Worst day" term="Historical VaR" value={pct(daily.worst, 2)} tone="down" />
+                    <Metric size="sm" label="Best day" term="Expected return" value={pct(daily.best, 2, true)} tone="up" />
+                  </div>
+                </>
+              ) : <p className="text-sm text-term-muted">No return history available.</p>}
+            </Panel>
+
+            <div className="space-y-4">
+              <Panel title="Method comparison" subtitle={`${timeHorizon}-day loss at ${pct(confidenceLevel, 0)}`}>
+                <ul className="space-y-3">
+                  {methods.map(m => (
+                    <li key={m.key}>
+                      <div className="flex justify-between text-xs">
+                        <Term term={m.key} className="text-term-muted">{m.key}</Term>
+                        <span className="num text-term-text">{usd(m.value)}</span>
+                      </div>
+                      <ShareBar value={m.value / maxMethod} tone={m.key === 'CVaR' ? 'down' : 'muted'} className="mt-1 h-1.5" />
+                    </li>
+                  ))}
+                </ul>
+                {calc.historicalVaRMethod && <p className="mt-3 text-[11px] text-term-dim">Historical: {calc.historicalVaRMethod}.</p>}
+              </Panel>
+              <Panel title="Return profile">
+                <div className="grid grid-cols-2 gap-4">
+                  <Metric size="sm" label="Volatility" value={pct(calc.annualizedVolatility ?? calc.volatility * Math.sqrt(365), 1)} sub={`${pct(calc.volatility, 2)} daily`} />
+                  <Metric size="sm" label="Expected return" value={pct(calc.expectedReturn, 3, true)} sub="mean daily" tone={calc.expectedReturn >= 0 ? 'up' : 'down'} />
+                  <Metric size="sm" label="Skewness" value={num(calc.skewness, 2)} tone={calc.skewness < -0.5 ? 'down' : undefined}
+                          sub={calc.skewness < 0 ? 'left tail heavier' : 'right tail heavier'} />
+                  <Metric size="sm" label="Kurtosis" value={num(calc.kurtosis, 2)} tone={calc.kurtosis > 3 ? 'down' : undefined}
+                          sub={calc.kurtosis > 3 ? 'fat tails' : 'near-normal tails'} />
+                </div>
+              </Panel>
+            </div>
+          </div>
+
+          <Panel flush title="Exposure breakdown" subtitle="Current weights, and the loss each position would cause under a price shock">
+            <div className="overflow-auto">
+              <table className="w-full min-w-[820px] text-sm" aria-label="Exposure breakdown">
+                <thead className="text-[11px] uppercase tracking-wider text-term-dim">
+                  <tr className="border-b border-term-line">
+                    <th scope="col" className="px-3 py-2 text-left font-medium">Asset</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Weight</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium">Exposure</th>
+                    <th scope="col" className="px-3 py-2 text-right font-medium"><Term term="Expected return">Mean daily return</Term></th>
+                    {SHOCKS.map(s => <th key={s} scope="col" className="px-3 py-2 text-right font-medium">{pct(s, 0)} shock</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-term-line">
+                  {exposures.map((e, i) => (
+                    <tr key={e.name} className="hover:bg-term-hover">
+                      <td className="px-3 py-2.5">
+                        <span className="flex items-center gap-2 font-medium text-term-text">
+                          <span className="h-2 w-2 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{e.name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5"><div className="ml-auto w-24"><div className="num text-right text-xs">{pct(e.weight, 1)}</div><ShareBar value={e.weight} className="mt-1" /></div></td>
+                      <td className="num px-3 py-2.5 text-right text-term-text">{usd(e.value)}</td>
+                      <td className={`num px-3 py-2.5 text-right ${e.meanDaily == null ? 'text-term-dim' : e.meanDaily >= 0 ? 'text-term-up' : 'text-term-down'}`}>
+                        {pct(e.meanDaily, 3, true)}
+                      </td>
+                      {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right text-term-down">{usd(e.value * s)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-term-line2">
+                  <tr>
+                    <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-term-dim" colSpan={2}>Portfolio</td>
+                    <td className="num px-3 py-2.5 text-right font-semibold text-term-text">{usd(v)}</td>
+                    <td />
+                    {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right font-semibold text-term-down">{usd(v * s)}</td>)}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Panel>
+
+          <p className="text-xs text-term-dim">
+            Monte Carlo uses {calc.numberOfSimulations ? num(calc.numberOfSimulations, 0) : 'simulated'} paths. VaR is the loss not exceeded with the
+            chosen confidence; CVaR is the average loss when it is.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

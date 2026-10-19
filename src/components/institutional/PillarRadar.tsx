@@ -11,13 +11,13 @@ const PillarRadar: React.FC<{ pillars: ScorePillar[] }> = ({ pillars }) => {
     fullMark: p.maxPoints,
   }));
   return (
-    <div className="h-72 w-full" aria-label="Pillar scores radar chart">
+    <div className="h-64 w-full" aria-label="Pillar scores radar chart">
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={data} outerRadius="75%">
-          <PolarGrid stroke="#374151" />
-          <PolarAngleAxis dataKey="pillar" tick={{ fill: '#d1d5db', fontSize: 12 }} />
+        <RadarChart data={data} outerRadius="72%">
+          <PolarGrid stroke="#2E3647" />
+          <PolarAngleAxis dataKey="pillar" tick={{ fill: '#8C95A8', fontSize: 11 }} />
           <PolarRadiusAxis domain={[0, 250]} tick={false} axisLine={false} />
-          <Radar dataKey="points" stroke="#22d3ee" fill="#22d3ee" fillOpacity={0.35} />
+          <Radar dataKey="points" stroke="#5B8DEF" strokeWidth={1.5} fill="#5B8DEF" fillOpacity={0.18} isAnimationActive={false} />
         </RadarChart>
       </ResponsiveContainer>
     </div>

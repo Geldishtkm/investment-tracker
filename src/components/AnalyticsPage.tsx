@@ -1,135 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import PortfolioEmptyState from './PortfolioEmptyState';
-import { AssetBreakdownItem } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import { RefreshCw } from 'lucide-react';
 import { assetService } from '../services/api';
-import {
-  TrendingUp,
-  BarChart3,
-  PieChart,
-  Activity,
-  DollarSign
-} from 'lucide-react';
-
-interface PortfolioMetrics {
-  totalValue: number;
-  totalInvestment: number;
-  roi: number;
-  roiPercentage: number;
-  sharpeRatio: number;
-  volatility: number;
-  assetCount: number;
-  topPerformer: string;
-  worstPerformer: string;
-}
-
-interface AssetPerformance {
-  id: number;
-  name: string;
-  currentValue: number;
-  initialInvestment: number;
-  roi: number;
-  roiPercentage: number;
-  weight: number;
-}
-
-interface RiskMetrics {
-  sharpeRatio: number;
-  volatility: number;
-  beta: number;
-  diversificationScore: number;
-}
+import { PortfolioAnalytics } from '../types';
+import PortfolioEmptyState from './PortfolioEmptyState';
+import { SLICE_COLORS } from './PortfolioPage';
+import Term from './ui/Term';
+import { Delta, Metric, Panel, ShareBar, SkeletonMetrics, SkeletonRows, btn } from './ui/kit';
+import { num, pct, qty, toneOf, usd } from './ui/format';
 
 interface AnalyticsPageProps {
   /** Opens the add-asset flow; shown when the portfolio is empty. */
   onAddAsset: () => void;
 }
 
+/** Risk-adjusted performance, diversification and per-asset attribution, all computed by the backend. */
 const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
-  const [metrics, setMetrics] = useState<PortfolioMetrics | null>(null);
-  const [performance, setPerformance] = useState<AssetPerformance[]>([]);
-  const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
-  const [riskMessage, setRiskMessage] = useState<string | null>(null);
-  const [portfolioEmpty, setPortfolioEmpty] = useState(false);
+  const [data, setData] = useState<PortfolioAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadAnalytics();
-  }, []);
-
-  const loadAnalytics = async () => {
+  const load = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const analyticsData = await assetService.getAllAnalytics();
-      
-      const {
-        totalValue = 0,
-        totalInitialInvestment = 0,
-        totalAssets = 0,
-        sharpeRatio = 0,
-        volatility = 0,
-        beta = 0,
-        diversificationScore = 0,
-        assetBreakdown = [],
-        riskMetricsAvailable = false,
-        riskMetricsMessage = null,
-        riskMetricsCode = null
-      } = analyticsData;
-
-      // An empty portfolio is a normal state: show onboarding instead of zeroed metrics
-      if (totalAssets === 0 || riskMetricsCode === 'NO_ASSETS') {
-        setPortfolioEmpty(true);
-        return;
-      }
-      setPortfolioEmpty(false);
-      
-      const portfolioMetrics: PortfolioMetrics = {
-        totalValue,
-        totalInvestment: totalInitialInvestment,
-        roi: totalValue - totalInitialInvestment,
-        roiPercentage: totalInitialInvestment > 0 ? ((totalValue - totalInitialInvestment) / totalInitialInvestment) * 100 : 0,
-        sharpeRatio,
-        volatility,
-        assetCount: totalAssets,
-        topPerformer: assetBreakdown[0]?.name || 'N/A',
-        worstPerformer: assetBreakdown[assetBreakdown.length - 1]?.name || 'N/A'
-      };
-      
-      setMetrics(portfolioMetrics);
-      
-      const assetPerformance: AssetPerformance[] = assetBreakdown.map((asset: AssetBreakdownItem) => {
-        const currentValue = asset.currentValue || 0;
-        const initialInvestment = asset.initialInvestment || 0;
-        const assetRoi = currentValue - initialInvestment;
-        const assetRoiPercentage = initialInvestment > 0 ? (assetRoi / initialInvestment) * 100 : 0;
-        const weight = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
-        
-        return {
-          id: asset.id,
-          name: asset.name,
-          currentValue,
-          initialInvestment,
-          roi: assetRoi,
-          roiPercentage: assetRoiPercentage,
-          weight
-        };
-      });
-      
-      setPerformance(assetPerformance);
-      
-      const risk: RiskMetrics = {
-        sharpeRatio,
-        volatility,
-        beta,
-        diversificationScore
-      };
-      
-      // Only show risk metrics the backend could actually compute from price history
-      setRiskMetrics(riskMetricsAvailable ? risk : null);
-      setRiskMessage(riskMetricsAvailable ? null : riskMetricsMessage);
-      
+      setData(await assetService.getAllAnalytics());
     } catch (err) {
       setError('Failed to load analytics data from backend');
       console.error('Analytics error:', err);
@@ -138,333 +33,164 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
+  useEffect(() => { void load(); }, []);
 
-  const formatPercentage = (value: number) => {
-    return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
-  };
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const total = data.totalValue || 0;
+    const totalCost = data.totalInitialInvestment || 0;
+    return [...(data.assetBreakdown ?? [])]
+      .map(a => {
+        const value = a.currentValue || 0;
+        const cost = a.initialInvestment || 0;
+        return { ...a, value, cost, pnl: value - cost, roi: cost > 0 ? value / cost - 1 : null,
+                 weight: total > 0 ? value / total : 0, contribution: totalCost > 0 ? (value - cost) / totalCost : null };
+      })
+      .sort((a, b) => b.value - a.value);
+  }, [data]);
 
-  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'];
-
-  if (loading) {
+  if (loading && !data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
-        
-        <div className="relative z-10 max-w-7xl mx-auto p-6">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-              <BarChart3 size={24} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                Portfolio Analytics
-              </h1>
-              <p className="text-blue-300/70 text-sm">Loading portfolio metrics...</p>
-            </div>
-          </div>
-          
-          {/* Loading Spinner */}
-          <div className="flex justify-center items-center py-20">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-blue-600/30 rounded-full animate-spin"></div>
-              <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-spin"></div>
-            </div>
-          </div>
-        </div>
+      <div className="space-y-4">
+        <SkeletonMetrics count={8} />
+        <Panel title="Attribution" flush><SkeletonRows rows={5} cols={7} /></Panel>
       </div>
     );
   }
-
-  if (portfolioEmpty) {
-    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
-  }
-
-  if (error) {
+  if (error && !data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-purple-600/20 to-pink-600/20 animate-pulse"></div>
-        
-        <div className="relative z-10 max-w-7xl mx-auto p-6">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 bg-gradient-to-br from-red-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-600/40">
-              <BarChart3 size={24} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-red-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Portfolio Analytics
-              </h1>
-              <p className="text-red-300/70 text-sm">Error loading data</p>
-            </div>
-          </div>
-          
-          {/* Error Display */}
-          <div className="text-center">
-            <div className="w-24 h-24 bg-gradient-to-r from-red-600/30 to-purple-600/30 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-600/40">
-              <BarChart3 size={48} className="text-red-400" />
-            </div>
-            <div className="text-red-400 text-xl mb-6 p-6 bg-gradient-to-r from-red-600/20 to-purple-600/20 backdrop-blur-sm border border-red-600/40 rounded-2xl">
-              {error}
-            </div>
-            <button 
-              onClick={loadAnalytics}
-              className="group relative px-8 py-4 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 hover:from-blue-600/30 hover:to-indigo-600/30 backdrop-blur-sm border border-blue-600/40 rounded-2xl text-blue-300 hover:text-blue-200 transition-all duration-300 hover:shadow-lg hover:shadow-blue-600/20 font-medium"
-            >
-              <div className="flex items-center gap-2">
-                <span>↻</span>
-                <span>Retry</span>
-              </div>
-            </button>
-          </div>
-        </div>
+      <div className="rounded-lg border border-term-down/40 bg-term-panel p-8 text-center" role="alert">
+        <p className="text-sm text-term-down">{error}</p>
+        <button type="button" className={`${btn.secondary} mt-3`} onClick={() => void load()}>Try again</button>
       </div>
     );
   }
+  if (!data || data.totalAssets === 0 || data.riskMetricsCode === 'NO_ASSETS') return <PortfolioEmptyState onAddAsset={onAddAsset} />;
+
+  const risk = data.riskMetricsAvailable;
+  const pnl = data.totalValue - data.totalInitialInvestment;
+  const roi = data.totalInitialInvestment > 0 ? pnl / data.totalInitialInvestment : null;
+  const divScore = data.diversificationScore ?? null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
-      
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-            <BarChart3 size={24} className="text-white" />
-          </div>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            Portfolio Analytics
-          </h1>
-        </div>
-        
-        {/* Portfolio Overview Cards */}
-        {metrics && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-green-600/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-600 to-emerald-700 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
-                  <DollarSign size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium">Portfolio Value</div>
-              </div>
-              <div className="text-3xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
-                {formatCurrency(metrics.totalValue)}
-              </div>
-              <div className="text-xs text-gray-500 mt-2">Current total value</div>
-            </div>
-            
-            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-blue-600/50 hover:shadow-xl hover:shadow-blue-600/20 transition-all duration-300 transform hover:-translate-y-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-                  <Activity size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium">Investment</div>
-              </div>
-              <div className="text-3xl font-bold text-blue-400 group-hover:text-blue-300 transition-colors duration-300">
-                {formatCurrency(metrics.totalInvestment)}
-              </div>
-              <div className="text-xs text-gray-500 mt-2">Initial investment</div>
-            </div>
-            
-            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-indigo-600/50 hover:shadow-xl hover:shadow-indigo-600/20 transition-all duration-300 transform hover:-translate-y-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/40">
-                  <TrendingUp size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium">ROI</div>
-              </div>
-              <div className={`text-3xl font-bold group-hover:scale-105 transition-transform duration-300 ${
-                metrics.roiPercentage >= 0 ? 'text-green-400 group-hover:text-green-300' : 'text-red-400 group-hover:text-red-300'
-              }`}>
-                {formatPercentage(metrics.roiPercentage)}
-              </div>
-              <div className="text-xs text-gray-500 mt-2">Return on investment</div>
-            </div>
-            
-            <div className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 hover:border-purple-600/50 hover:shadow-xl hover:shadow-purple-600/20 transition-all duration-300 transform hover:-translate-y-1">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-700 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-600/40">
-                  <Activity size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium">Sharpe Ratio</div>
-              </div>
-              <div className="text-3xl font-bold text-purple-400 group-hover:text-purple-300 transition-colors duration-300">
-                {riskMetrics ? metrics.sharpeRatio.toFixed(3) : '—'}
-              </div>
-              <div className="text-xs text-gray-500 mt-2">Risk-adjusted return</div>
-            </div>
-          </div>
-        )}
-
-        {/* Risk Metrics */}
-        {!riskMetrics && riskMessage && (
-          <div className="mb-8 p-6 bg-yellow-600/10 border border-yellow-600/30 rounded-2xl text-yellow-300">
-            {riskMessage}
-          </div>
-        )}
-        {riskMetrics && (
-          <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 mb-8 shadow-xl shadow-black/20">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/40">
-                <Activity size={24} className="text-white" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                Risk Metrics
-              </h2>
-              <span className="text-sm text-blue-400 bg-blue-600/30 px-3 py-1 rounded-full border border-blue-600/40">
-                Backend Calculated
-              </span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="group text-center p-6 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 backdrop-blur-sm rounded-2xl border border-blue-600/30 hover:border-blue-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-600/40">
-                  <TrendingUp size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium mb-2">Sharpe Ratio</div>
-                <div className="text-xl font-bold text-blue-400 group-hover:text-blue-300 transition-colors duration-300">
-                  {riskMetrics.sharpeRatio.toFixed(3)}
-                </div>
-                <div className="text-xs text-gray-500 mt-2">Risk-adjusted return</div>
-              </div>
-              <div className="group text-center p-6 bg-gradient-to-r from-indigo-600/20 to-purple-600/20 backdrop-blur-sm rounded-2xl border border-indigo-600/30 hover:border-indigo-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-600/40">
-                  <Activity size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium mb-2">Volatility</div>
-                <div className="text-xl font-bold text-indigo-400 group-hover:text-indigo-300 transition-colors duration-300">
-                  {formatPercentage(riskMetrics.volatility)}
-                </div>
-                <div className="text-xs text-gray-500 mt-2">Price fluctuation</div>
-              </div>
-              <div className="group text-center p-6 bg-gradient-to-r from-purple-600/20 to-pink-600/20 backdrop-blur-sm rounded-2xl border border-purple-600/30 hover:border-purple-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
-                  <Activity size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium mb-2">Beta</div>
-                <div className="text-xl font-bold text-purple-400 group-hover:text-purple-300 transition-colors duration-300">
-                  {riskMetrics.beta.toFixed(3)}
-                </div>
-                <div className="text-xs text-gray-500 mt-2">Market correlation</div>
-              </div>
-              <div className="group text-center p-6 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-2xl border border-green-600/30 hover:border-green-500/50 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-600/40">
-                  <Activity size={24} className="text-white" />
-                </div>
-                <div className="text-gray-400 text-sm font-medium mb-2">Diversification</div>
-                <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
-                  {riskMetrics.diversificationScore.toFixed(1)}/100
-                </div>
-                <div className="text-xs text-gray-500 mt-2">Concentration &amp; correlation</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Asset Performance Table */}
-        {performance.length > 0 && (
-          <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 mb-8 shadow-xl shadow-black/20">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-600/40">
-                <BarChart3 size={24} className="text-white" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                Asset Performance
-              </h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-indigo-600/40">
-                    <th className="text-left py-4 px-6 text-indigo-300 font-semibold">Asset</th>
-                    <th className="text-right py-4 px-6 text-indigo-300 font-semibold">Current Value</th>
-                    <th className="text-right py-4 px-6 text-indigo-300 font-semibold">Initial Investment</th>
-                    <th className="text-right py-4 px-6 text-indigo-300 font-semibold">ROI</th>
-                    <th className="text-right py-4 px-6 text-indigo-300 font-semibold">Weight</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {performance.map((asset) => (
-                    <tr key={asset.id} className="border-b border-indigo-600/20 hover:bg-indigo-600/10 transition-colors duration-300 group">
-                      <td className="py-4 px-6 font-medium text-white group-hover:text-indigo-200 transition-colors">
-                        {asset.name}
-                      </td>
-                      <td className="text-right py-4 px-6 text-green-400 font-semibold group-hover:text-green-300 transition-colors">
-                        {formatCurrency(asset.currentValue)}
-                      </td>
-                      <td className="text-right py-4 px-6 text-gray-300 group-hover:text-gray-200 transition-colors">
-                        {formatCurrency(asset.initialInvestment)}
-                      </td>
-                      <td className={`text-right py-4 px-6 font-bold ${
-                        asset.roiPercentage >= 0 ? 'text-green-400 group-hover:text-green-300' : 'text-red-400 group-hover:text-red-300'
-                      } transition-colors`}>
-                        {formatPercentage(asset.roiPercentage)}
-                      </td>
-                      <td className="text-right py-4 px-6 text-indigo-400 font-semibold group-hover:text-indigo-300 transition-colors">
-                        {asset.weight.toFixed(1)}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Portfolio Allocation Chart */}
-        {performance.length > 0 && (
-          <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 shadow-xl shadow-black/20">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center shadow-lg shadow-purple-600/40">
-                <PieChart size={24} className="text-white" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Portfolio Allocation
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {performance.map((asset, index) => (
-                <div key={asset.id} className="group relative p-6 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm rounded-2xl border border-purple-600/30 hover:border-purple-500/50 transition-all duration-300 transform hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-600/20">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="font-bold text-white group-hover:text-purple-300 transition-colors duration-300">
-                      {asset.name}
-                    </span>
-                    <span className="text-sm text-purple-400 font-semibold bg-purple-600/30 px-3 py-1 rounded-full border border-purple-600/40">
-                      {asset.weight.toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-700/50 rounded-full h-3 mb-3 overflow-hidden">
-                    <div 
-                      className="h-3 rounded-full transition-all duration-500 ease-out shadow-lg"
-                      style={{ 
-                        width: `${Math.min(asset.weight, 100)}%`,
-                        backgroundColor: COLORS[index % COLORS.length],
-                        boxShadow: `0 0 20px ${COLORS[index % COLORS.length]}60`
-                      }}
-                    ></div>
-                  </div>
-                  <div className="text-sm text-gray-400 group-hover:text-gray-300 transition-colors">
-                    {formatCurrency(asset.currentValue)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4 2xl:grid-cols-8" data-testid="analytics-scorecard">
+        <div className="bg-term-panel p-4"><Metric label="Holdings value" term="Allocation" value={usd(data.totalValue)} sub={`${data.totalAssets} positions`} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Cost basis" term="Avg cost" value={usd(data.totalInitialInvestment)} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Unrealized P&L" value={usd(pnl)} tone={toneOf(pnl, 0.005)} sub={pct(roi, 2, true)} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Annualized return" term="Expected return" value={risk ? pct(data.annualizedReturn, 1, true) : '—'}
+                                                    tone={risk ? toneOf(data.annualizedReturn) : undefined} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Sharpe" value={risk ? num(data.sharpeRatio, 2) : '—'}
+                                                    tone={risk ? toneOf(data.sharpeRatio) : undefined} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Volatility" value={risk ? pct(data.volatility, 1) : '—'} sub="annualized" /></div>
+        <div className="bg-term-panel p-4"><Metric label="Beta" value={risk ? num(data.beta, 2) : '—'} sub={data.benchmark ? `vs ${data.benchmark}` : undefined} /></div>
+        <div className="bg-term-panel p-4"><Metric label="Diversification" value={divScore != null && risk ? `${num(divScore, 0)}/100` : '—'}
+                                                    tone={divScore == null || !risk ? undefined : divScore >= 60 ? 'up' : divScore < 35 ? 'down' : 'flat'} /></div>
       </div>
+
+      {!risk && data.riskMetricsMessage && (
+        <div className="rounded-lg border border-term-warn/40 bg-term-warn-soft px-4 py-3 text-sm text-term-warn" role="status">
+          Risk metrics unavailable: {data.riskMetricsMessage}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Panel title="Allocation" className="xl:col-span-1">
+          <div className="flex items-center gap-4">
+            <div className="h-44 w-44 shrink-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={rows} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="100%" stroke="#12161F" strokeWidth={2} isAnimationActive={false}>
+                    {rows.map((r, i) => <Cell key={r.id} fill={SLICE_COLORS[i % SLICE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                           formatter={(v: number, n: string) => [usd(v), n]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <ul className="min-w-0 flex-1 space-y-1.5 text-sm">
+              {rows.map((r, i) => (
+                <li key={r.id} className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2 truncate text-term-muted">
+                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{r.name}
+                  </span>
+                  <span className="num text-term-text">{pct(r.weight, 1)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Panel>
+
+        <Panel title="Diversification" className="xl:col-span-2"
+               subtitle="Concentration and correlation of current holdings">
+          {risk ? (
+            <div className="space-y-4">
+              <div>
+                <div className="mb-1 flex justify-between text-xs text-term-muted">
+                  <Term term="Diversification">Diversification score</Term>
+                  <span className="num text-term-text">{num(divScore, 1)} / 100</span>
+                </div>
+                <ShareBar value={(divScore ?? 0) / 100} tone={(divScore ?? 0) >= 60 ? 'up' : (divScore ?? 0) < 35 ? 'down' : 'accent'} className="h-1.5" />
+              </div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+                <Metric label="HHI" value={num(data.herfindahlIndex, 3)} size="sm" sub="Σ w²" />
+                <Metric label="Effective holdings" term="N_eff" value={num(data.effectiveNumberOfAssets, 2)} size="sm" sub={`of ${data.totalAssets}`} />
+                <Metric label="Avg correlation" term="ρ̄" value={num(data.averageCorrelation, 2)} size="sm"
+                        tone={data.averageCorrelation == null ? undefined : data.averageCorrelation >= 0.7 ? 'down' : data.averageCorrelation <= 0.3 ? 'up' : 'flat'} />
+                <Metric label="Independent bets" value={num(data.effectiveIndependentBets, 2)} size="sm" sub="correlation-adjusted" />
+                <Metric label="Diversification ratio" term="Independent bets" value={num(data.diversificationRatio, 2)} size="sm" sub="Σwσ / σₚ" />
+              </div>
+            </div>
+          ) : <p className="text-sm text-term-muted">Needs price history for your holdings.</p>}
+        </Panel>
+      </div>
+
+      <Panel flush title="Attribution" subtitle="Each position’s share of value and of total unrealized P&L"
+             actions={<button type="button" className={btn.secondary} onClick={() => void load()} aria-label="Refresh analytics">
+               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+             </button>}>
+        <div className="max-h-[60vh] overflow-auto">
+          <table className="w-full min-w-[900px] text-sm" aria-label="Attribution">
+            <thead className="text-[11px] uppercase tracking-wider text-term-dim">
+              <tr className="border-b border-term-line">
+                {['Asset', 'Qty', 'Avg cost', 'Price', 'Value', 'Weight', 'P&L', 'ROI', 'Contribution'].map((h, i) => (
+                  <th key={h} scope="col" className={`sticky top-0 z-10 bg-term-panel px-3 py-2 font-medium ${i === 0 ? 'text-left' : 'text-right'}`}>
+                    {h === 'Avg cost' ? <Term term="Avg cost" /> : h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-term-line">
+              {rows.map((r, i) => (
+                <tr key={r.id} className="hover:bg-term-hover">
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-2 font-medium text-term-text">
+                      <span className="h-2 w-2 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{r.name}
+                    </span>
+                  </td>
+                  <td className="num px-3 py-2.5 text-right text-term-muted">{qty(r.quantity)}</td>
+                  <td className="num px-3 py-2.5 text-right text-term-muted">{usd(r.purchasePrice)}</td>
+                  <td className="num px-3 py-2.5 text-right text-term-text">{usd(r.currentPrice)}</td>
+                  <td className="num px-3 py-2.5 text-right text-term-text">{usd(r.value)}</td>
+                  <td className="px-3 py-2.5"><div className="ml-auto w-24"><div className="num text-right text-xs">{pct(r.weight, 1)}</div><ShareBar value={r.weight} className="mt-1" /></div></td>
+                  <td className="px-3 py-2.5 text-right"><Delta value={r.pnl} format={v => usd(v)} /></td>
+                  <td className="px-3 py-2.5 text-right"><Delta value={r.roi} format={v => pct(v, 2, true)} /></td>
+                  <td className="px-3 py-2.5 text-right"><Delta value={r.contribution} format={v => pct(v, 2, true)} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      {risk && (
+        <p className="text-xs text-term-dim">
+          Based on {data.observations ?? '—'} daily returns{data.historyStart ? ` (${data.historyStart} → ${data.historyEnd})` : ''},
+          risk-free rate {pct(data.riskFreeRate, 1)}, benchmark {data.benchmark ?? '—'}. Weights are today’s; history is market prices, not your trades.
+        </p>
+      )}
     </div>
   );
 };
 
-export default AnalyticsPage; 
+export default AnalyticsPage;

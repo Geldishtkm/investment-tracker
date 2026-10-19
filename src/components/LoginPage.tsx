@@ -111,43 +111,43 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden bg-term-bg">
       {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
+      <div className="hidden"></div>
+      <div className="hidden"></div>
       
       <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-600/40">
-              <Shield size={32} className="text-white" />
+            <div className="w-20 h-20 rounded-lg flex items-center justify-center mx-auto mb-6 bg-term-raised border border-term-line2">
+              <Shield size={32} className="text-term-text" />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent mb-2">
+            <h1 className="text-2xl font-bold mb-2 text-term-text">
               Welcome Back
             </h1>
-            <p className="text-gray-400 text-lg">
+            <p className="text-term-muted text-lg">
               Sign in to access your portfolio
             </p>
           </div>
 
           {/* Login Form */}
-          <div className="glass-card p-8 border border-blue-600/30">
+          <div className="glass-card p-6 border border-term-line2">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Username
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <User size={20} className="text-blue-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <User size={20} className="text-term-accent" />
                   </div>
                   <input
                     type="text"
                     value={credentials.username}
                     onChange={handleInputChange('username')}
-                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-blue-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="Enter your username"
                     required
                     disabled={isLoading}
@@ -157,18 +157,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
               {/* Password Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Password
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Lock size={20} className="text-blue-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Lock size={20} className="text-term-accent" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={credentials.password}
                     onChange={handleInputChange('password')}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-blue-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="Enter your password"
                     required
                     disabled={isLoading}
@@ -176,7 +176,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-term-muted hover:text-term-text transition-colors"
                     disabled={isLoading}
                   >
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -186,9 +186,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
               {/* Success Message after verifying an email */}
               {verifiedNotice && !error && (
-                <div className="p-4 bg-gradient-to-r from-green-600/20 to-emerald-500/20 backdrop-blur-sm border border-green-500/40 rounded-xl">
-                  <div className="flex items-center gap-2 text-green-400">
-                    <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <div className="p-4 border border-term-line2 rounded-md bg-term-raised">
+                  <div className="flex items-center gap-2 text-term-accent">
+                    <div className="w-2 h-2 bg-term-raised rounded-full"></div>
                     <span className="text-sm font-medium">{verifiedNotice}</span>
                   </div>
                 </div>
@@ -196,9 +196,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
               {/* Error Message */}
               {error && (
-                <div className="p-4 bg-gradient-to-r from-red-600/20 to-red-500/20 backdrop-blur-sm border border-red-500/40 rounded-xl">
-                  <div className="flex items-center gap-2 text-red-400">
-                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                <div className="p-4 border border-term-down/50 rounded-md bg-term-raised border-term-line2">
+                  <div className="flex items-center gap-2 text-term-down">
+                    <div className="w-2 h-2 bg-term-down-soft rounded-full"></div>
                     <span className="text-sm font-medium">{error}</span>
                   </div>
                 </div>
@@ -208,7 +208,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-blue-500/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 disabled:from-gray-600 disabled:to-gray-700 text-term-text font-semibold rounded-lg transition-all border border-term-line2 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
               >
                 {isLoading ? (
                   <>
@@ -225,12 +225,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
               {/* Switch to Register */}
               <div className="text-center">
-                <p className="text-gray-400 text-sm">
+                <p className="text-term-muted text-sm">
                   Don't have an account?{' '}
                   <button
                     type="button"
                     onClick={onSwitchToRegister}
-                    className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                    className="text-term-accent hover:text-term-accent font-medium transition-colors"
                     disabled={isLoading}
                   >
                     Create one here
@@ -242,29 +242,29 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
           {/* MFA Verification Section */}
           {requiresMfa && (
-            <div className="mt-8 glass-card p-6 border border-purple-600/30">
+            <div className="mt-8 glass-card p-6 border border-term-line2">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
-                  <Smartphone size={24} className="text-white" />
+                <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4 bg-term-raised border border-term-line2">
+                  <Smartphone size={24} className="text-term-text" />
                 </div>
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                <h3 className="text-2xl font-bold mb-2 text-term-text">
                   🔐 Multi-Factor Authentication
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-term-muted">
                   Enter the 6-digit code from your authenticator app
                 </p>
               </div>
 
               <form onSubmit={handleMfaVerification} className="space-y-4">
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-300">
+                  <label className="block text-sm font-medium text-term-muted">
                     MFA Code
                   </label>
                   <input
                     type="text"
                     value={mfaCode}
                     onChange={(e) => setMfaCode(e.target.value)}
-                    className="w-full px-4 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-purple-600/40 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 text-center text-lg font-mono tracking-widest"
+                    className="w-full px-4 py-3 border border-term-line2 rounded-md text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all text-center text-lg font-mono tracking-widest bg-term-raised"
                     placeholder="000000"
                     maxLength={6}
                     required
@@ -273,9 +273,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                 </div>
 
                 {error && (
-                  <div className="p-4 bg-gradient-to-r from-red-600/20 to-red-500/20 backdrop-blur-sm border border-red-500/40 rounded-xl">
-                    <div className="flex items-center gap-2 text-red-400">
-                      <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                  <div className="p-4 border border-term-down/50 rounded-md bg-term-raised border-term-line2">
+                    <div className="flex items-center gap-2 text-term-down">
+                      <div className="w-2 h-2 bg-term-down-soft rounded-full"></div>
                       <span className="text-sm font-medium">{error}</span>
                     </div>
                   </div>
@@ -284,7 +284,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-purple-500/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full py-3 disabled:from-gray-600 disabled:to-gray-700 text-term-text font-semibold rounded-md transition-all border border-term-line2 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
                 >
                   {isLoading ? (
                     <>
@@ -307,7 +307,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                       setMfaCode('');
                       setError('');
                     }}
-                    className="text-purple-400 hover:text-purple-300 text-sm transition-colors"
+                    className="text-term-accent hover:text-term-accent text-sm transition-colors"
                     disabled={isLoading}
                   >
                     ← Back to Login
@@ -319,15 +319,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
           {/* MFA Setup Section - Only shown after successful login */}
           {showMfaSetup && (
-            <div className="mt-8 glass-card p-6 border border-purple-600/30">
+            <div className="mt-8 glass-card p-6 border border-term-line2">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-600/40">
-                  <Shield size={24} className="text-white" />
+                <div className="w-16 h-16 rounded-lg flex items-center justify-center mx-auto mb-4 bg-term-raised border border-term-line2">
+                  <Shield size={24} className="text-term-text" />
                 </div>
-                <h3 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
+                <h3 className="text-2xl font-bold mb-2 text-term-text">
                   🔐 Setup Multi-Factor Authentication
                 </h3>
-                <p className="text-gray-400">
+                <p className="text-term-muted">
                   Enhance your account security with MFA (optional)
                 </p>
               </div>
@@ -344,14 +344,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
                       console.error('MFA setup failed:', error);
                     }
                   }}
-                  className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold rounded-xl transition-all duration-300"
+                  className="w-full py-3 text-term-text font-semibold rounded-md transition-all bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
                 >
                   Setup MFA
                 </button>
                 
                 <button
                   onClick={() => setShowMfaSetup(false)}
-                  className="w-full py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all duration-300"
+                  className="w-full py-3 bg-term-raised hover:bg-term-hover text-term-text font-semibold rounded-md transition-all"
                 >
                   Skip for Now
                 </button>
@@ -359,15 +359,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
               {/* MFA Setup Result */}
               {mfaSetup && (
-                <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
+                <div className="mt-6 p-4 border border-term-line2 rounded-md bg-term-raised">
                   <div className="text-center">
-                    <h4 className="text-white font-semibold mb-2">MFA Setup Complete! 🎉</h4>
-                    <p className="text-gray-300 text-sm mb-4">
+                    <h4 className="text-term-text font-semibold mb-2">MFA Setup Complete! 🎉</h4>
+                    <p className="text-term-muted text-sm mb-4">
                       Your account is now protected with multi-factor authentication.
                     </p>
                     <button
                       onClick={() => setShowMfaSetup(false)}
-                      className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
+                      className="px-6 py-2 bg-term-raised hover:bg-term-hover text-term-text font-semibold rounded-lg transition-colors"
                     >
                       Continue
                     </button>
@@ -379,26 +379,26 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onSwitchToRegiste
 
           {/* Features */}
           <div className="mt-8 grid grid-cols-1 gap-4">
-            <div className="glass-card p-4 border border-blue-600/20">
+            <div className="glass-card p-4 border border-term-line2">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-green-600 to-emerald-600 rounded-xl flex items-center justify-center">
-                  <Zap size={20} className="text-white" />
+                <div className="w-10 h-10 rounded-md flex items-center justify-center bg-term-raised border border-term-line2">
+                  <Zap size={20} className="text-term-text" />
                 </div>
                 <div>
-                  <h3 className="text-white font-semibold">Secure Access</h3>
-                  <p className="text-gray-400 text-sm">Your data is protected with JWT authentication</p>
+                  <h3 className="text-term-text font-semibold">Secure Access</h3>
+                  <p className="text-term-muted text-sm">Your data is protected with JWT authentication</p>
                 </div>
               </div>
             </div>
             
-            <div className="glass-card p-4 border border-blue-600/20">
+            <div className="glass-card p-4 border border-term-line2">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center">
-                  <Sparkles size={20} className="text-white" />
+                <div className="w-10 h-10 rounded-md flex items-center justify-center bg-term-raised border border-term-line2">
+                  <Sparkles size={20} className="text-term-text" />
                 </div>
                 <div>
-                  <h3 className="text-white font-semibold">Real-time Data</h3>
-                  <p className="text-gray-400 text-sm">Live cryptocurrency prices and portfolio tracking</p>
+                  <h3 className="text-term-text font-semibold">Real-time Data</h3>
+                  <p className="text-term-muted text-sm">Live cryptocurrency prices and portfolio tracking</p>
                 </div>
               </div>
             </div>

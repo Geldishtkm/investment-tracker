@@ -93,43 +93,43 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-blue-950 to-black relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden bg-term-bg">
       {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.3),transparent_50%)]"></div>
+      <div className="hidden"></div>
+      <div className="hidden"></div>
       
       <div className="relative z-10 flex items-center justify-center min-h-screen p-6">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-gradient-to-br from-green-600 to-emerald-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-green-600/40">
-              <UserPlus size={32} className="text-white" />
+            <div className="w-20 h-20 rounded-lg flex items-center justify-center mx-auto mb-6 bg-term-raised border border-term-line2">
+              <UserPlus size={32} className="text-term-text" />
             </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-green-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent mb-2">
+            <h1 className="text-2xl font-bold mb-2 text-term-text">
               Create Account
             </h1>
-            <p className="text-gray-400 text-lg">
+            <p className="text-term-muted text-lg">
               Join us and start tracking your portfolio
             </p>
           </div>
 
           {/* Register Form */}
-          <div className="glass-card p-8 border border-green-600/30">
+          <div className="glass-card p-6 border border-term-line2">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Username
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <User size={20} className="text-green-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <User size={20} className="text-term-accent" />
                   </div>
                   <input
                     type="text"
                     value={credentials.username}
                     onChange={handleInputChange('username')}
-                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="Choose a username"
                     required
                     disabled={isLoading}
@@ -139,43 +139,43 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
               {/* Email Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Email
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Mail size={20} className="text-green-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Mail size={20} className="text-term-accent" />
                   </div>
                   <input
                     type="email"
                     value={credentials.email}
                     onChange={handleInputChange('email')}
-                    className="w-full pl-12 pr-4 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-4 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="you@example.com"
                     autoComplete="email"
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-term-dim">
                   We'll send a 6-digit code to verify it
                 </p>
               </div>
 
               {/* Password Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Password
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Lock size={20} className="text-green-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Lock size={20} className="text-term-accent" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={credentials.password}
                     onChange={handleInputChange('password')}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="Create a password"
                     required
                     disabled={isLoading}
@@ -183,31 +183,31 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-term-muted hover:text-term-text transition-colors"
                     disabled={isLoading}
                   >
                     {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-term-dim">
                   Password must be at least 6 characters long
                 </p>
               </div>
 
               {/* Confirm Password Field */}
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">
+                <label className="block text-sm font-medium text-term-muted">
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-                    <Lock size={20} className="text-green-400" />
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Lock size={20} className="text-term-accent" />
                   </div>
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={handleConfirmPasswordChange}
-                    className="w-full pl-12 pr-12 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-green-600/40 rounded-2xl text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300"
+                    className="w-full pl-12 pr-12 py-2.5 border border-term-line2 rounded-lg text-term-text placeholder:text-term-dim focus:outline-none focus:border-term-accent transition-all bg-term-raised"
                     placeholder="Confirm your password"
                     required
                     disabled={isLoading}
@@ -215,7 +215,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-term-muted hover:text-term-text transition-colors"
                     disabled={isLoading}
                   >
                     {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
@@ -225,9 +225,9 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
               {/* Error Message */}
               {error && (
-                <div className="p-4 bg-gradient-to-r from-red-600/20 to-red-500/20 backdrop-blur-sm border border-red-500/40 rounded-xl">
-                  <div className="flex items-center gap-2 text-red-400">
-                    <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                <div className="p-4 border border-term-down/50 rounded-md bg-term-raised border-term-line2">
+                  <div className="flex items-center gap-2 text-term-down">
+                    <div className="w-2 h-2 bg-term-down-soft rounded-full"></div>
                     <span className="text-sm font-medium">{error}</span>
                   </div>
                 </div>
@@ -237,7 +237,7 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-green-500/40 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-2.5 disabled:from-gray-600 disabled:to-gray-700 text-term-text font-semibold rounded-lg transition-all border border-term-line2 disabled:transform-none disabled:cursor-not-allowed flex items-center justify-center gap-2 bg-term-accent text-term-bg hover:bg-[#7AA3F3]"
               >
                 {isLoading ? (
                   <>
@@ -254,12 +254,12 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
               {/* Switch to Login */}
               <div className="text-center">
-                <p className="text-gray-400 text-sm">
+                <p className="text-term-muted text-sm">
                   Already have an account?{' '}
                   <button
                     type="button"
                     onClick={onSwitchToLogin}
-                    className="text-green-400 hover:text-green-300 font-medium transition-colors"
+                    className="text-term-accent hover:text-term-accent font-medium transition-colors"
                     disabled={isLoading}
                   >
                     Sign in here
@@ -271,12 +271,12 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
           {/* Success Message */}
           {!isLoading && !error && registrationSuccess && (
-            <div className="mt-6 p-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-500/30 rounded-xl">
+            <div className="mt-6 p-4 border border-term-line2 rounded-md bg-term-raised">
               <div className="flex items-center gap-3">
-                <CheckCircle className="w-5 h-5 text-green-400" />
+                <CheckCircle className="w-5 h-5 text-term-accent" />
                 <div>
-                  <h4 className="text-white font-semibold">Registration Successful! 🎉</h4>
-                  <p className="text-gray-300 text-sm">
+                  <h4 className="text-term-text font-semibold">Registration Successful! 🎉</h4>
+                  <p className="text-term-muted text-sm">
                     Your account has been created. Please login to access your portfolio tracker and optionally setup MFA for enhanced security.
                   </p>
                 </div>
@@ -286,26 +286,26 @@ const RegisterPage: React.FC<RegisterPageProps> = ({ onRegisterSuccess, onSwitch
 
           {/* Features */}
           <div className="mt-8 grid grid-cols-1 gap-4">
-            <div className="glass-card p-4 border border-green-600/20">
+            <div className="glass-card p-4 border border-term-line2">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <CheckCircle size={20} className="text-white" />
+                <div className="w-10 h-10 rounded-md flex items-center justify-center bg-term-raised border border-term-line2">
+                  <CheckCircle size={20} className="text-term-text" />
                 </div>
                 <div>
-                  <h3 className="text-white font-semibold">Free to Use</h3>
-                  <p className="text-gray-400 text-sm">No hidden fees, completely free portfolio tracking</p>
+                  <h3 className="text-term-text font-semibold">Free to Use</h3>
+                  <p className="text-term-muted text-sm">No hidden fees, completely free portfolio tracking</p>
                 </div>
               </div>
             </div>
             
-            <div className="glass-card p-4 border border-green-600/20">
+            <div className="glass-card p-4 border border-term-line2">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center">
-                  <Sparkles size={20} className="text-white" />
+                <div className="w-10 h-10 rounded-md flex items-center justify-center bg-term-raised border border-term-line2">
+                  <Sparkles size={20} className="text-term-text" />
                 </div>
                 <div>
-                  <h3 className="text-white font-semibold">Advanced Analytics</h3>
-                  <p className="text-gray-400 text-sm">ROI, Sharpe ratio, volatility, and more</p>
+                  <h3 className="text-term-text font-semibold">Advanced Analytics</h3>
+                  <p className="text-term-muted text-sm">ROI, Sharpe ratio, volatility, and more</p>
                 </div>
               </div>
             </div>

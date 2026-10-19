@@ -1,308 +1,106 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { API_BASE_URL } from '../config';
-import { 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  Area,
-  AreaChart
-} from 'recharts';
-import { PriceHistoryPoint, Coin } from '../types';
-import { TrendingUp, TrendingDown, Calendar, DollarSign, RefreshCw } from 'lucide-react';
+import { Coin, PriceHistoryPoint } from '../types';
+import { Delta, Metric, Modal, Skeleton, btn } from './ui/kit';
+import { pct, usd } from './ui/format';
 
 interface PriceHistoryChartProps {
   selectedCoin: Coin | null;
   onClose: () => void;
 }
 
+const RANGES = [7, 30, 90, 365];
 
+/** Daily price history for one coin, served (and cached) by the backend from CoinGecko. */
 const PriceHistoryChart: React.FC<PriceHistoryChartProps> = ({ selectedCoin, onClose }) => {
   const [priceHistory, setPriceHistory] = useState<PriceHistoryPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<number>(30); // days
-
-  // Add loading timeout to prevent infinite loading
-  useEffect(() => {
-    if (loading) {
-      const timeout = setTimeout(() => {
-        setLoading(false);
-        setError('Loading timeout - please try again');
-      }, 10000); // 10 second timeout
-      
-      return () => clearTimeout(timeout);
-    }
-  }, [loading]);
+  const [timeRange, setTimeRange] = useState(30);
 
   const fetchPriceHistory = useCallback(async () => {
     if (!selectedCoin) return;
-
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       setLoading(true);
       setError(null);
-
-      // Real daily prices from CoinGecko, served (and cached) by the backend
-      const response = await fetch(`${API_BASE_URL}/api/price-history/${encodeURIComponent(selectedCoin.id)}?days=${timeRange}`);
+      const response = await fetch(`${API_BASE_URL}/api/price-history/${encodeURIComponent(selectedCoin.id)}?days=${timeRange}`,
+        { signal: controller.signal });
       const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(body?.error || `Failed to load price history (HTTP ${response.status})`);
-      }
-
+      if (!response.ok) throw new Error(body?.error || `Failed to load price history (HTTP ${response.status})`);
       const points: PriceHistoryPoint[] = (body?.priceHistory ?? []).map(
-        ([timestamp, price]: [number, number]) => ({ timestamp, price })
-      );
-      if (points.length === 0) {
-        throw new Error(`No price history available for ${selectedCoin.name}`);
-      }
+        ([timestamp, price]: [number, number]) => ({ timestamp, price }));
+      if (points.length === 0) throw new Error(`No price history available for ${selectedCoin.name}`);
       setPriceHistory(points);
     } catch (err) {
       setPriceHistory([]);
-      setError(err instanceof Error ? err.message : 'Failed to load price history');
-      console.error('Error loading price history:', err);
+      setError(err instanceof DOMException && err.name === 'AbortError' ? 'Loading timed out. Please try again.'
+        : err instanceof Error ? err.message : 'Failed to load price history');
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, [selectedCoin, timeRange]);
 
-  // Fetch price history when the coin or time range changes
-  useEffect(() => {
-    if (selectedCoin) {
-      fetchPriceHistory();
-    }
-  }, [selectedCoin, fetchPriceHistory]);
+  useEffect(() => { void fetchPriceHistory(); }, [fetchPriceHistory]);
 
-  const handleRefresh = () => {
-    fetchPriceHistory();
-  };
-
-  const getPriceChange = () => {
-    if (priceHistory.length < 2) return { change: 0, percentage: 0, isPositive: true };
-    
-    const firstPrice = priceHistory[0].price;
-    const lastPrice = priceHistory[priceHistory.length - 1].price;
-    const change = lastPrice - firstPrice;
-    const percentage = (change / firstPrice) * 100;
-    
-    return {
-      change,
-      percentage,
-      isPositive: change >= 0
-    };
-  };
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 6
-    }).format(price);
-  };
-
-  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string | number }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-gray-800 border border-gray-600 rounded-lg p-3 shadow-lg">
-          <p className="text-gray-300 text-sm">{label}</p>
-          <p className="text-white font-semibold">
-            {formatPrice(payload[0].value)}
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  if (!selectedCoin) {
-    return null;
-  }
-
-  const priceChange = getPriceChange();
+  if (!selectedCoin) return null;
+  const first = priceHistory[0]?.price, last = priceHistory[priceHistory.length - 1]?.price;
+  const change = first && last ? last / first - 1 : null;
+  const prices = priceHistory.map(p => p.price);
+  const up = (change ?? 0) >= 0;
+  const color = up ? '#3FA586' : '#C8464F';
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <div className="flex items-center gap-4">
-            {selectedCoin.image && (
-              <img 
-                src={selectedCoin.image} 
-                alt={selectedCoin.name}
-                className="w-10 h-10 rounded-full"
-              />
-            )}
-            <div>
-              <h2 className="text-2xl font-bold text-white">{selectedCoin.name}</h2>
-              <p className="text-gray-400">{selectedCoin.symbol.toUpperCase()}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            {/* Price Change Indicator */}
-            <div className="flex items-center gap-2">
-              {priceChange.isPositive ? (
-                <TrendingUp className="w-5 h-5 text-green-400" />
-              ) : (
-                <TrendingDown className="w-5 h-5 text-red-400" />
-              )}
-              <span className={`font-semibold ${priceChange.isPositive ? 'text-green-400' : 'text-red-400'}`}>
-                {priceChange.isPositive ? '+' : ''}{formatPrice(priceChange.change)} ({priceChange.isPositive ? '+' : ''}{priceChange.percentage.toFixed(2)}%)
-              </span>
-            </div>
-            
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-5 h-5 text-white ${loading ? 'animate-spin' : ''}`} />
-            </button>
-            
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg bg-red-600 hover:bg-red-700 transition-colors"
-            >
-              <span className="text-white font-semibold">×</span>
-            </button>
-          </div>
+    <Modal title={`${selectedCoin.name} · ${selectedCoin.symbol.toUpperCase()}`} labelledBy="chart-title" onClose={onClose} width="max-w-4xl">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+        <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+          <Metric label="Price" value={usd(selectedCoin.current_price)} />
+          <Metric label={`${timeRange}d change`} value={<Delta value={change} format={v => pct(v, 2, true)} />} />
+          <Metric label={`${timeRange}d high`} value={prices.length ? usd(Math.max(...prices)) : '—'} />
+          <Metric label={`${timeRange}d low`} value={prices.length ? usd(Math.min(...prices)) : '—'} />
         </div>
-
-        {/* Controls */}
-        <div className="flex items-center justify-between p-4 bg-gray-800/50 border-b border-gray-700">
-          <div className="flex items-center gap-4">
-            <Calendar className="w-5 h-5 text-gray-400" />
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(Number(e.target.value))}
-              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            >
-              <option value={7}>7 Days</option>
-              <option value={14}>14 Days</option>
-              <option value={30}>30 Days</option>
-              <option value={90}>90 Days</option>
-              <option value={365}>1 Year</option>
-            </select>
-          </div>
-          
-          <div className="flex items-center gap-2 text-gray-400">
-            <DollarSign className="w-4 h-4" />
-            <span className="text-sm">
-              Current: {selectedCoin.current_price ? formatPrice(selectedCoin.current_price) : 'N/A'}
-            </span>
-          </div>
-        </div>
-
-        {/* Chart Container */}
-        <div className="p-6">
-          {loading ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="flex items-center gap-3">
-                <RefreshCw className="w-6 h-6 animate-spin text-green-400" />
-                <span className="text-white">Loading price history...</span>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TrendingDown className="w-8 h-8 text-red-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-white mb-2">Error Loading Data</h3>
-                <p className="text-gray-400 mb-4">{error}</p>
-                <button
-                  onClick={fetchPriceHistory}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                >
-                  Try Again
-                </button>
-              </div>
-            </div>
-          ) : priceHistory.length === 0 ? (
-            <div className="flex items-center justify-center h-96">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-700/50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TrendingUp className="w-8 h-8 text-gray-400" />
-                </div>
-                <h3 className="text-xl font-semibold text-white mb-2">No Data Available</h3>
-                <p className="text-gray-400">No price history data found for this coin.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Main Chart */}
-              <div className="bg-gray-800/30 rounded-xl p-6 border border-gray-700/50">
-                <h3 className="text-lg font-semibold text-white mb-4">Price History</h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <AreaChart data={priceHistory}>
-                    <defs>
-                      <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis 
-                      dataKey="timestamp" 
-                      stroke="#9ca3af"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => new Date(value).toLocaleDateString()}
-                    />
-                    <YAxis 
-                      stroke="#9ca3af"
-                      fontSize={12}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(value) => `$${value.toFixed(2)}`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Area
-                      type="monotone"
-                      dataKey="price"
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      fill="url(#priceGradient)"
-                      dot={false}
-                      activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Data Table */}
-              <div className="bg-gray-800/30 rounded-xl p-6 border border-gray-700/50">
-                <h3 className="text-lg font-semibold text-white mb-4">Recent Data Points</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-700">
-                        <th className="text-left py-3 px-4 text-gray-400 font-medium">Date</th>
-                        <th className="text-right py-3 px-4 text-gray-400 font-medium">Price</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {priceHistory.slice(-10).reverse().map((point, index) => (
-                        <tr key={index} className="border-b border-gray-700/30 hover:bg-gray-700/20">
-                          <td className="py-3 px-4 text-gray-300">{new Date(point.timestamp).toLocaleDateString()}</td>
-                          <td className="py-3 px-4 text-right text-white font-medium">
-                            {formatPrice(point.price)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Range">
+          {RANGES.map(r => (
+            <button key={r} type="button" aria-pressed={timeRange === r} onClick={() => setTimeRange(r)}
+                    className={`num rounded px-2.5 py-1 text-xs ${timeRange === r ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`}>
+              {r === 365 ? '1Y' : `${r}D`}
+            </button>
+          ))}
         </div>
       </div>
-    </div>
+
+      {loading ? <Skeleton className="h-80 w-full" /> : error ? (
+        <div className="flex h-80 flex-col items-center justify-center gap-3 text-center" role="alert">
+          <p className="text-sm text-term-down">{error}</p>
+          <button type="button" className={btn.secondary} onClick={() => void fetchPriceHistory()}>Try again</button>
+        </div>
+      ) : (
+        <div className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={priceHistory} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="phFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#222938" vertical={false} />
+              <XAxis dataKey="timestamp" tickFormatter={t => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                     stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} minTickGap={40} />
+              <YAxis domain={['auto', 'auto']} tickFormatter={v => usd(v)} width={84} orientation="right"
+                     stroke="#5D667A" tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} tickLine={false} axisLine={false} />
+              <Tooltip contentStyle={{ background: '#171C27', border: '1px solid #2E3647', borderRadius: 6, fontSize: 12 }}
+                       labelFormatter={t => new Date(t as number).toLocaleDateString()} formatter={(v: number) => [usd(v), 'Price']} />
+              <Area type="monotone" dataKey="price" stroke={color} strokeWidth={1.5} fill="url(#phFill)" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Modal>
   );
 };
 
-export default PriceHistoryChart; 
+export default PriceHistoryChart;

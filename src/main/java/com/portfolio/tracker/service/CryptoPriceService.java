@@ -56,14 +56,16 @@ public class CryptoPriceService {
     }
 
     /**
-     * Scheduled task to refresh the top coins cache every 10 minutes. On failure (including a
+     * Scheduled task to refresh the top coins cache every 10 minutes. Each coin includes its 7-day
+     * hourly sparkline and 24h / 7d price changes for the market grid. On failure (including a
      * rate limit) the previous list is kept.
      */
     @Scheduled(fixedRate = CACHE_DURATION_MS)
     public synchronized void refreshCache() {
         try {
             String body = coinGecko.get(String.format(
-                    "/coins/markets?vs_currency=%s&order=market_cap_desc&per_page=%d&page=1&sparkline=false&locale=en",
+                    "/coins/markets?vs_currency=%s&order=market_cap_desc&per_page=%d&page=1&sparkline=true"
+                            + "&price_change_percentage=24h,7d&locale=en",
                     CURRENCY_USD, TOP_COINS_LIMIT));
             List<Map<String, Object>> coins = objectMapper.readValue(body, new TypeReference<>() {});
             if (coins == null || coins.isEmpty()) {

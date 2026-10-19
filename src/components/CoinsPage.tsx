@@ -1,590 +1,272 @@
-import React, { useState, useEffect } from 'react';
-import { todayLocal } from '../utils/dates';
-import {
-  Search,
-  TrendingUp,
-  Plus,
-  ArrowLeft,
-  Coins
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { LineChart, RefreshCw, Search } from 'lucide-react';
 import { Coin } from '../types';
-import { assetService, NewAsset } from '../services/api';
-import Toast from './Toast';
+import { NewAsset } from '../services/api';
+import { useMarketData } from '../hooks/useMarketData';
+import { todayLocal } from '../utils/dates';
 import PriceHistoryChart from './PriceHistoryChart';
+import Term from './ui/Term';
+import { Badge, Delta, Modal, Panel, ShareBar, SkeletonRows, Sparkline, btn, input } from './ui/kit';
+import { compactUsd, pct, pctPoints, qty as fmtQty, usd } from './ui/format';
+
+type SortKey = 'rank' | 'price' | 'change24h' | 'change7d' | 'marketCap' | 'volume' | 'turnover';
 
 interface CoinsPageProps {
-  onBack: () => void;
-  onAssetAdded: (asset: NewAsset) => void;
+  /** Cash available, for the order ticket. */
+  cash: number | null;
+  /** Buys a new position; rejects with the server's reason (insufficient cash, price check, ...). */
+  onBuy: (asset: NewAsset) => Promise<void>;
+  /** Names of current holdings, to mark coins already held. */
+  heldNames?: string[];
 }
 
-const CoinsPage: React.FC<CoinsPageProps> = ({ onBack, onAssetAdded }) => {
-  const [coins, setCoins] = useState<Coin[]>([]);
-  const [filteredCoins, setFilteredCoins] = useState<Coin[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const coinsPerPage = 50;
-  const [quantities, setQuantities] = useState<{ [key: string]: string }>({});
-  // Optional purchase details per coin, recorded in the trade ledger (default: today, at the market price)
-  const [purchaseDates, setPurchaseDates] = useState<{ [key: string]: string }>({});
-  const [purchasePrices, setPurchasePrices] = useState<{ [key: string]: string }>({});
-  const [toast, setToast] = useState<{
-    message: string;
-    type: 'success' | 'error';
-    isVisible: boolean;
-  }>({
-    message: '',
-    type: 'success',
-    isVisible: false
-  });
-  const [selectedCoinForChart, setSelectedCoinForChart] = useState<Coin | null>(null);
-  const [isFetching, setIsFetching] = useState(false);
-  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
-  const CACHE_DURATION = 30000; // 30 seconds cache
-
-  // Fetch top 300 coins from backend
-  const fetchCoins = async () => {
-    // Prevent multiple simultaneous requests
-    if (isFetching) {
-      return;
-    }
-    
-    // Check cache duration
-    const now = Date.now();
-    if (now - lastFetchTime < CACHE_DURATION && coins.length > 0) {
-      return;
-    }
-    
-    try {
-      setIsFetching(true);
-      setLoading(true);
-      setError('');
-      const coinsData = await assetService.getTopCoins();
-      setCoins(coinsData);
-      setFilteredCoins(coinsData);
-      setLastFetchTime(now);
-      if (!Array.isArray(coinsData)) {
-        console.error('Expected array but got:', typeof coinsData, coinsData);
-        setError('Invalid data format received from server');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch top coins');
-      console.error('Error fetching top coins:', err);
-    } finally {
-      setLoading(false);
-      setIsFetching(false);
-    }
-  };
-
-  // Load coins once on mount
-  useEffect(() => {
-    fetchCoins();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs once
-  }, []);
-
-  // Filter coins based on search term
-  useEffect(() => {
-    if (!Array.isArray(coins)) {
-      setFilteredCoins([]);
-      return;
-    }
-    
-    if (searchTerm.trim() === '') {
-      setFilteredCoins(coins);
-    } else {
-      const filtered = coins.filter(coin =>
-        coin.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        coin.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        coin.id.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredCoins(filtered);
-    }
-    setCurrentPage(1); // Reset to first page when searching
-  }, [searchTerm, coins]);
-
-  // Calculate pagination
-  const totalPages = Math.ceil((Array.isArray(filteredCoins) ? filteredCoins.length : 0) / coinsPerPage);
-  const startIndex = (currentPage - 1) * coinsPerPage;
-  const endIndex = startIndex + coinsPerPage;
-  const currentCoins = Array.isArray(filteredCoins) ? filteredCoins.slice(startIndex, endIndex) : [];
-
-  const closeToast = () => {
-    setToast(prev => ({ ...prev, isVisible: false }));
-  };
-
-  const handleClosePriceHistory = () => {
-    setSelectedCoinForChart(null);
-  };
-
-  const handleAddToPortfolio = async (coin: Coin) => {
-    const quantity = quantities[coin.id] || '';
-    
-    if (!quantity.trim()) {
-      setToast({
-        message: 'Please enter a quantity first',
-        type: 'error',
-        isVisible: true
-      });
-      return;
-    }
-
-    try {
-      const quantityNum = parseFloat(quantity);
-      const currentPrice = coin.current_price || 0;
-      const enteredPrice = parseFloat(purchasePrices[coin.id] || '');
-      const purchasePricePerUnit = enteredPrice > 0 ? enteredPrice : currentPrice;
-      const purchaseDate = purchaseDates[coin.id] || todayLocal();
-      if (purchaseDate > todayLocal()) {
-        setToast({ message: 'The purchase date can\'t be in the future', type: 'error', isVisible: true });
-        return;
-      }
-      const initialInvestment = quantityNum * purchasePricePerUnit;
-
-      // Ensure all required fields are present and valid
-      const assetData: NewAsset = {
-        name: coin.name,
-        quantity: quantityNum,
-        pricePerUnit: currentPrice,
-        purchasePricePerUnit: purchasePricePerUnit,
-        initialInvestment: initialInvestment,
-        purchaseDate
-      };
-
-      onAssetAdded(assetData);
-      
-      // Clear the form fields
-      setQuantities(prev => ({
-        ...prev,
-        [coin.id]: ''
-      }));
-      setPurchaseDates(prev => ({ ...prev, [coin.id]: '' }));
-      setPurchasePrices(prev => ({ ...prev, [coin.id]: '' }));
-
-      setToast({
-        message: `${coin.name} added successfully!`,
-        type: 'success',
-        isVisible: true
-      });
-    } catch (error) {
-      console.error('Error adding asset:', error);
-      setToast({
-        message: 'Error adding asset: ' + (error instanceof Error ? error.message : 'Unknown error'),
-        type: 'error',
-        isVisible: true
-      });
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
-        
-        <div className="relative z-10 max-w-7xl mx-auto p-6">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
-            <button
-              onClick={onBack}
-              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
-            >
-              <div className="flex items-center gap-2">
-                <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
-                <span>Back to Portfolio</span>
-              </div>
-            </button>
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
-                <Coins size={28} className="text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
-                  Top Cryptocurrencies
-                </h1>
-                <p className="text-green-300/70 text-sm font-medium">Loading market data...</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Enhanced Loading Spinner */}
-          <div className="flex flex-col justify-center items-center py-20">
-            <div className="relative mb-8">
-              <div className="w-20 h-20 border-4 border-green-600/30 rounded-full animate-spin"></div>
-              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-t-green-400 rounded-full animate-spin"></div>
-              <div className="absolute top-0 left-0 w-20 h-20 border-4 border-transparent border-r-emerald-400 rounded-full animate-spin" style={{animationDelay: '-0.5s'}}></div>
-            </div>
-            <div className="text-center">
-              <h3 className="text-xl font-semibold text-white mb-2">Loading Cryptocurrency Data</h3>
-              <p className="text-gray-400">Fetching the latest market information...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+const sortValue = (c: Coin, key: SortKey): number => {
+  switch (key) {
+    case 'rank': return -(c.market_cap_rank ?? 9999);
+    case 'price': return c.current_price ?? 0;
+    case 'change24h': return c.price_change_percentage_24h ?? -Infinity;
+    case 'change7d': return c.price_change_percentage_7d_in_currency ?? -Infinity;
+    case 'marketCap': return c.market_cap ?? 0;
+    case 'volume': return c.total_volume ?? 0;
+    case 'turnover': return c.market_cap ? (c.total_volume ?? 0) / c.market_cap : 0;
   }
+};
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 via-purple-600/20 to-blue-600/20 animate-pulse"></div>
-        
-        <div className="relative z-10 max-w-7xl mx-auto p-6">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-8">
-            <button
-              onClick={onBack}
-              className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
-            >
-              <div className="flex items-center gap-2">
-                <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
-                <span>Back to Portfolio</span>
-              </div>
-            </button>
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-gradient-to-br from-red-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-600/40">
-                <Coins size={28} className="text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-red-400 via-purple-400 to-blue-400 bg-clip-text text-transparent">
-                  Top Cryptocurrencies
-                </h1>
-                <p className="text-red-300/70 text-sm font-medium">Error loading data</p>
-              </div>
-            </div>
-          </div>
+/** Market grid: the top coins by market cap with trends, volume, and a quick-buy ticket. */
+const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) => {
+  const { coins, loading, error, asOf, refresh } = useMarketData();
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'rank', desc: true });
+  const [buying, setBuying] = useState<Coin | null>(null);
+  const [charting, setCharting] = useState<Coin | null>(null);
 
-          {/* Enhanced Error State */}
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center p-12 bg-gradient-to-br from-red-600/10 to-purple-600/10 backdrop-blur-sm border border-red-600/30 rounded-3xl shadow-2xl shadow-red-600/20">
-              <div className="w-24 h-24 bg-gradient-to-br from-red-600 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-600/40">
-                <Coins size={32} className="text-white" />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">
-                Error Loading Top Coins
-              </h3>
-              <p className="text-gray-300 mb-8 text-lg leading-relaxed">{error}</p>
-              <button
-                onClick={fetchCoins}
-                className="group px-8 py-4 bg-gradient-to-r from-red-600 to-purple-600 hover:from-red-700 hover:to-purple-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg shadow-md border border-red-500/30 hover:border-red-400/50"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="group-hover:rotate-180 transition-transform duration-300">↻</span>
-                  <span>Try Again</span>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const held = useMemo(() => new Set(heldNames.map(n => n.trim().toLowerCase())), [heldNames]);
+  const isHeld = (c: Coin) => held.has(c.name.toLowerCase()) || held.has(c.id) || held.has(c.symbol.toLowerCase());
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = q ? coins.filter(c => c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q) || c.id.includes(q)) : coins;
+    const dir = sort.desc ? -1 : 1;
+    return [...filtered].sort((a, b) => dir * (sortValue(a, sort.key) - sortValue(b, sort.key)));
+  }, [coins, search, sort]);
+
+  const maxVolume = Math.max(1, ...coins.map(c => c.total_volume ?? 0));
+  const totalCap = coins.reduce((s, c) => s + (c.market_cap ?? 0), 0);
+  const totalVolume = coins.reduce((s, c) => s + (c.total_volume ?? 0), 0);
+  const advancers = coins.filter(c => (c.price_change_percentage_24h ?? 0) > 0).length;
+  const btc = coins.find(c => c.id === 'bitcoin');
+
+  const th = (key: SortKey | null, label: React.ReactNode, align = 'text-right') => (
+    <th scope="col" className={`sticky top-0 z-10 bg-term-panel px-3 py-2 font-medium ${align}`}
+        aria-sort={key && sort.key === key ? (sort.desc ? 'descending' : 'ascending') : undefined}>
+      {key ? (
+        <button type="button" className="inline-flex items-center gap-1 uppercase hover:text-term-text"
+                onClick={() => setSort(s => ({ key, desc: s.key === key ? !s.desc : true }))}>
+          {label}{sort.key === key && <span aria-hidden="true">{sort.desc ? '↓' : '↑'}</span>}
+        </button>
+      ) : <span className="uppercase">{label}</span>}
+    </th>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-green-950 to-black relative overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 bg-gradient-to-r from-green-600/20 via-emerald-600/20 to-teal-600/20 animate-pulse"></div>
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(34,197,94,0.3),transparent_50%)]"></div>
-      
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <button
-            onClick={onBack}
-            className="group relative px-6 py-3 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white font-medium transition-all duration-300 hover:from-gray-800/80 hover:to-gray-700/80 hover:border-green-600/50 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
-          >
-            <div className="flex items-center gap-2">
-              <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform duration-300" />
-              <span>Back to Portfolio</span>
-            </div>
-          </button>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40">
-              <Coins size={28} className="text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
-                Top Cryptocurrencies
-              </h1>
-              <p className="text-green-300/70 text-sm font-medium">Explore the latest market data & trends</p>
-            </div>
+    <div className="space-y-4">
+      {/* Market tape */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-4" data-testid="market-tape">
+        {[
+          ['Top-100 market cap', compactUsd(totalCap), 'Market cap'],
+          ['24h volume', compactUsd(totalVolume), 'Volume 24h'],
+          ['BTC dominance', totalCap && btc ? pct(btc.market_cap / totalCap, 1) : '—', 'Market cap'],
+          ['Advancers / decliners', coins.length ? `${advancers} / ${coins.length - advancers}` : '—', ''],
+        ].map(([label, value, term]) => (
+          <div key={label} className="bg-term-panel px-4 py-3">
+            <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-term-dim"><Term term={term}>{label}</Term></div>
+            <div className="num mt-1 text-lg text-term-text">{loading && !coins.length ? '…' : value}</div>
           </div>
-        </div>
-
-        {/* Enhanced Search and Controls */}
-        <div className="mb-8">
-          <div className="relative max-w-lg mx-auto">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={22} />
-            <input
-              type="text"
-              placeholder="Search coins by name, symbol, or ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-6 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-700/50 rounded-2xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 shadow-lg shadow-gray-900/50 text-lg"
-            />
-            <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">
-              {filteredCoins.length} results
-            </div>
-          </div>
-        </div>
-
-        {/* Enhanced Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="group p-6 bg-gradient-to-r from-green-600/20 to-emerald-600/20 backdrop-blur-sm border border-green-600/40 rounded-2xl hover:border-green-500/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-green-600 to-emerald-600 rounded-xl flex items-center justify-center">
-                <Coins size={20} className="text-white" />
-              </div>
-              <div className="text-sm text-green-300 font-medium">Total Coins</div>
-            </div>
-            <div className="text-3xl font-bold text-white group-hover:text-green-300 transition-colors duration-300">
-              {coins.length.toLocaleString()}
-            </div>
-            <div className="text-xs text-green-400/70 mt-2">Available cryptocurrencies</div>
-          </div>
-          
-          <div className="group p-6 bg-gradient-to-r from-emerald-600/20 to-teal-600/20 backdrop-blur-sm border border-emerald-600/40 rounded-2xl hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-600/20 transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-teal-600 rounded-xl flex items-center justify-center">
-                <Search size={20} className="text-white" />
-              </div>
-              <div className="text-sm text-emerald-300 font-medium">Filtered</div>
-            </div>
-            <div className="text-3xl font-bold text-white group-hover:text-emerald-300 transition-colors duration-300">
-              {filteredCoins.length.toLocaleString()}
-            </div>
-            <div className="text-xs text-emerald-400/70 mt-2">Matching your search</div>
-          </div>
-          
-          <div className="group p-6 bg-gradient-to-r from-teal-600/20 to-green-600/20 backdrop-blur-sm border border-teal-600/40 rounded-2xl hover:border-teal-500/50 hover:shadow-xl hover:shadow-teal-600/20 transition-all duration-300 transform hover:-translate-y-1">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-teal-600 to-green-600 rounded-xl flex items-center justify-center">
-                <TrendingUp size={20} className="text-white" />
-              </div>
-              <div className="text-sm text-teal-300 font-medium">Page</div>
-            </div>
-            <div className="text-3xl font-bold text-white group-hover:text-teal-300 transition-colors duration-300">
-              {currentPage}
-            </div>
-            <div className="text-xs text-teal-400/70 mt-2">of {totalPages} total</div>
-          </div>
-        </div>
-
-        {/* Enhanced Error Display */}
-        {error && (
-          <div className="mb-8 p-6 bg-gradient-to-r from-red-600/20 to-red-700/20 backdrop-blur-sm border border-red-600/40 rounded-2xl text-red-300 shadow-xl shadow-red-600/20">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-700 rounded-xl flex items-center justify-center">
-                <span className="text-lg">!</span>
-              </div>
-              <div>
-                <h4 className="font-semibold text-red-200 mb-1">Error Loading Data</h4>
-                <p className="text-red-300/80 text-sm">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Coins Grid - Made Wider */}
-        <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-8 mb-8">
-          {currentCoins.map((coin) => (
-            <div
-              key={coin.id}
-              className="group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-green-600/50 hover:shadow-xl hover:shadow-green-600/20 transition-all duration-300 transform hover:-translate-y-1 hover:scale-[1.02]"
-            >
-              {/* Coin Header */}
-              <div className="flex items-start justify-between mb-6">
-                <div className="flex items-center gap-4 flex-1 min-w-0">
-                  <div className="w-16 h-16 bg-gradient-to-br from-green-600 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-green-600/40 overflow-hidden flex-shrink-0">
-                    {coin.image ? (
-                      <img 
-                        src={coin.image} 
-                        alt={coin.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // Fallback to symbol if image fails to load
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          target.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <span className={`text-2xl font-bold text-white ${coin.image ? 'hidden' : ''}`}>
-                      {coin.symbol.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-semibold text-white group-hover:text-green-300 transition-colors duration-300 truncate">
-                      {coin.name}
-                    </h3>
-                    <p className="text-sm text-gray-400 font-mono">{coin.symbol.toUpperCase()}</p>
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0 ml-4">
-                  <div className="text-xs text-gray-500 font-medium">Current Price</div>
-                  <div className="text-xl font-bold text-green-400 group-hover:text-green-300 transition-colors duration-300">
-                    ${coin.current_price?.toLocaleString() || 'N/A'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Price Info with Enhanced Design */}
-              <div className="mb-6 p-5 bg-gradient-to-r from-gray-800/30 to-gray-700/30 rounded-xl border border-gray-600/20">
-                <div className="text-3xl font-bold text-white mb-3 text-center">
-                  ${coin.current_price?.toLocaleString() || 'N/A'}
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  <span className={`text-sm font-medium px-3 py-2 rounded-full ${
-                    coin.price_change_percentage_24h >= 0 
-                      ? 'text-green-400 bg-green-600/20 border border-green-600/30' 
-                      : 'text-red-400 bg-red-600/20 border border-red-600/30'
-                  }`}>
-                    {coin.price_change_percentage_24h >= 0 ? '↗' : '↘'} 
-                    {Math.abs(coin.price_change_percentage_24h || 0).toFixed(2)}%
-                  </span>
-                  <span className="text-xs text-gray-500 font-medium">24h</span>
-                </div>
-              </div>
-
-              {/* Chart Button */}
-              <div className="mb-6">
-                <button
-                  onClick={() => setSelectedCoinForChart(coin)}
-                  className="w-full group/btn relative px-6 py-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 hover:from-green-600/30 hover:to-emerald-600/30 backdrop-blur-sm border border-green-600/40 rounded-xl text-green-300 hover:text-green-200 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 font-medium text-lg"
-                >
-                  <div className="flex items-center justify-center gap-3">
-                    <TrendingUp size={18} className="group-hover/btn:scale-110 transition-transform duration-200" />
-                    <span>View Price Chart</span>
-                  </div>
-                </button>
-              </div>
-
-              {/* Market Cap with Enhanced Design */}
-              <div className="mb-8 p-4 bg-gradient-to-r from-indigo-600/10 to-purple-600/10 rounded-xl border border-indigo-600/20">
-                <div className="text-sm text-gray-400 mb-2 font-medium">Market Cap</div>
-                <div className="text-xl font-semibold text-white">
-                  ${(coin.market_cap / 1e9).toFixed(2)}B
-                </div>
-              </div>
-
-              {/* Quantity Input Section - Removed White Stepper */}
-              <div className="mb-6">
-                <div className="text-sm text-gray-400 mb-3 font-medium">Quantity to Add</div>
-                <div className="relative">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={quantities[coin.id] || ''}
-                    onChange={(e) => setQuantities(prev => ({
-                      ...prev,
-                      [coin.id]: e.target.value
-                    }))}
-                    className="w-full px-5 py-4 bg-gradient-to-r from-gray-900/80 to-gray-800/80 backdrop-blur-sm border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500/50 transition-all duration-300 text-center font-mono text-lg"
-                    step="0.000001"
-                    min="0"
-                    style={{
-                      WebkitAppearance: 'none',
-                      MozAppearance: 'textfield'
-                    }}
-                  />
-                  <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 font-medium">
-                    {coin.symbol.toUpperCase()}
-                  </div>
-                </div>
-                {quantities[coin.id] && (
-                  <div className="mt-3 text-sm text-gray-500 text-center">
-                    ≈ ${((parseFloat(quantities[coin.id]) || 0) * (coin.current_price || 0)).toFixed(2)} USD
-                  </div>
-                )}
-              </div>
-
-              {/* When and at what price it was bought (feeds the trade ledger) */}
-              <div className="mb-6 grid grid-cols-2 gap-3">
-                <label className="text-xs text-gray-400 font-medium">
-                  Purchase date
-                  <input
-                    type="date"
-                    value={purchaseDates[coin.id] || todayLocal()}
-                    max={todayLocal()}
-                    onChange={(e) => setPurchaseDates(prev => ({ ...prev, [coin.id]: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 bg-gray-900/80 border border-gray-600/50 rounded-lg text-white text-sm"
-                  />
-                </label>
-                <label className="text-xs text-gray-400 font-medium">
-                  Purchase price (USD)
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    placeholder={String(coin.current_price ?? '')}
-                    value={purchasePrices[coin.id] || ''}
-                    onChange={(e) => setPurchasePrices(prev => ({ ...prev, [coin.id]: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 bg-gray-900/80 border border-gray-600/50 rounded-lg text-white text-sm"
-                  />
-                </label>
-              </div>
-
-              {/* Enhanced Add to Portfolio Button */}
-              <button
-                onClick={() => handleAddToPortfolio(coin)}
-                disabled={!quantities[coin.id] || parseFloat(quantities[coin.id]) <= 0}
-                className="w-full group/btn relative px-6 py-4 bg-gradient-to-r from-green-600/20 to-emerald-600/20 hover:from-green-600/30 hover:to-emerald-600/30 backdrop-blur-sm border border-green-600/40 rounded-xl text-green-300 hover:text-green-200 transition-all duration-300 hover:shadow-lg hover:shadow-green-600/20 font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-green-600/20 disabled:hover:to-emerald-600/20 text-lg"
-              >
-                <div className="flex items-center justify-center gap-3">
-                  <Plus size={18} className="group-hover/btn:scale-110 transition-transform duration-200" />
-                  <span>Add to Portfolio</span>
-                </div>
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* Enhanced Pagination - Removed Page Numbers */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-6 mb-8">
-            <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-green-500/50 hover:from-green-600/50 hover:to-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
-            >
-              <div className="flex items-center gap-2">
-                <span className="group-hover:-translate-x-1 transition-transform duration-300">←</span>
-                <span>Previous</span>
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="group px-8 py-4 rounded-2xl text-sm font-medium bg-gradient-to-r from-gray-700/50 to-gray-800/50 backdrop-blur-sm border border-gray-600/50 text-gray-300 hover:text-white hover:border-green-500/50 hover:from-green-600/50 hover:to-emerald-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:shadow-lg hover:shadow-green-900/50 hover:scale-105"
-            >
-              <div className="flex items-center gap-2">
-                <span>Next</span>
-                <span className="group-hover:translate-x-1 transition-transform duration-300">→</span>
-              </div>
-            </button>
-          </div>
-        )}
-
-        {/* Toast Notification */}
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          isVisible={toast.isVisible}
-          onClose={closeToast}
-        />
-
-        {/* Price History Chart Modal */}
-        {selectedCoinForChart && (
-          <PriceHistoryChart
-            selectedCoin={selectedCoinForChart}
-            onClose={handleClosePriceHistory}
-          />
-        )}
+        ))}
       </div>
+
+      <Panel flush title="Top 100 by market cap"
+             subtitle={asOf ? `Updated ${new Date(asOf).toLocaleTimeString()}` : undefined}
+             actions={<>
+               <div className="relative">
+                 <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-term-dim" />
+                 <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search coins"
+                        aria-label="Search coins" className={`${input} w-56 py-1.5 pl-8`} />
+               </div>
+               <button type="button" className={btn.secondary} onClick={() => void refresh(true)} aria-label="Refresh market data">
+                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+               </button>
+             </>}>
+        {error && !coins.length ? (
+          <div className="p-8 text-center" role="alert">
+            <p className="text-sm text-term-down">{error}</p>
+            <button type="button" className={`${btn.secondary} mt-3`} onClick={() => void refresh(true)}>Try again</button>
+          </div>
+        ) : loading && !coins.length ? <SkeletonRows rows={12} cols={8} /> : (
+          <div className="max-h-[72vh] overflow-auto">
+            <table className="w-full min-w-[1100px] text-sm" aria-label="Markets">
+              <thead className="text-[11px] tracking-wider text-term-dim">
+                <tr className="border-b border-term-line">
+                  {th('rank', '#', 'text-left')}
+                  {th(null, 'Coin', 'text-left')}
+                  {th('price', 'Price')}
+                  {th('change24h', '24h')}
+                  {th('change7d', '7d')}
+                  <th scope="col" className="sticky top-0 z-10 bg-term-panel px-3 py-2 text-center font-medium uppercase">7d trend</th>
+                  {th('marketCap', 'Market cap')}
+                  {th('volume', 'Volume 24h')}
+                  {th('turnover', 'Vol / Cap')}
+                  <th scope="col" className="sticky top-0 z-10 bg-term-panel px-3 py-2 text-right font-medium uppercase">Trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-term-line">
+                {rows.length === 0 && (
+                  <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-term-muted">No coins match “{search}”.</td></tr>
+                )}
+                {rows.map(c => {
+                  const turnover = c.market_cap ? (c.total_volume ?? 0) / c.market_cap : null;
+                  return (
+                    <tr key={c.id} className="hover:bg-term-hover" data-testid={`coin-${c.id}`}>
+                      <td className="num px-3 py-2 text-left text-term-dim">{c.market_cap_rank ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <img src={c.image} alt="" className="h-5 w-5 rounded-full" loading="lazy" />
+                          <span className="font-medium text-term-text">{c.name}</span>
+                          <span className="text-xs uppercase text-term-dim">{c.symbol}</span>
+                          {isHeld(c) && <Badge tone="accent">Held</Badge>}
+                        </div>
+                      </td>
+                      <td className="num px-3 py-2 text-right text-term-text">{usd(c.current_price)}</td>
+                      <td className="px-3 py-2 text-right"><Delta value={c.price_change_percentage_24h} format={v => pctPoints(v)} /></td>
+                      <td className="px-3 py-2 text-right"><Delta value={c.price_change_percentage_7d_in_currency} format={v => pctPoints(v)} /></td>
+                      <td className="px-3 py-1"><div className="flex justify-center">
+                        <Sparkline data={c.sparkline_in_7d?.price?.filter((_, i) => i % 4 === 0)} width={110} label={`${c.name} 7-day trend`} />
+                      </div></td>
+                      <td className="num px-3 py-2 text-right text-term-text">{compactUsd(c.market_cap)}</td>
+                      <td className="px-3 py-2">
+                        <div className="ml-auto w-32">
+                          <div className="num text-right text-term-text">{compactUsd(c.total_volume)}</div>
+                          <ShareBar value={(c.total_volume ?? 0) / maxVolume} tone="muted" className="mt-1" />
+                        </div>
+                      </td>
+                      <td className="num px-3 py-2 text-right text-term-muted">{turnover == null ? '—' : pct(turnover, 1)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-1.5">
+                          <button type="button" className="rounded p-1 text-term-dim hover:bg-term-raised hover:text-term-text"
+                                  aria-label={`${c.name} price chart`} onClick={() => setCharting(c)}>
+                            <LineChart size={15} />
+                          </button>
+                          <button type="button" className={btn.buy} aria-label={`Buy ${c.name}`} onClick={() => setBuying(c)}>Buy</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {buying && <QuickBuyModal coin={buying} cash={cash} onBuy={onBuy} onClose={() => setBuying(null)} />}
+      {charting && <PriceHistoryChart selectedCoin={charting} onClose={() => setCharting(null)} />}
     </div>
   );
 };
 
-export default CoinsPage; 
+/** Order ticket for a coin: size by quantity or by USD amount, at the market price, dated today by default. */
+export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (a: NewAsset) => Promise<void>; onClose: () => void }> = ({
+  coin, cash, onBuy, onClose,
+}) => {
+  const [mode, setMode] = useState<'usd' | 'qty'>('usd');
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(todayLocal());
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const price = coin.current_price;
+  const entered = parseFloat(amount) || 0;
+  const quantity = mode === 'usd' ? (price > 0 ? entered / price : 0) : entered;
+  const cost = quantity * price;
+  const today = todayLocal();
+
+  const presets = cash != null && cash > 0 ? [0.01, 0.05, 0.1, 0.25] : [];
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!(quantity > 0)) return setError('Enter an amount greater than 0.');
+    if (cash != null && cost > cash + 0.005) return setError(`Not enough cash: this costs ${usd(cost)} and you have ${usd(cash)}.`);
+    if (!date || date > today) return setError('Choose a trade date that is not in the future.');
+    setSaving(true);
+    setError(null);
+    try {
+      // Round to 8 decimals: enough precision for any coin, and avoids float noise in the ledger
+      const q = Math.round(quantity * 1e8) / 1e8;
+      await onBuy({ name: coin.name, quantity: q, pricePerUnit: price, purchasePricePerUnit: price, initialInvestment: q * price, purchaseDate: date });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The buy failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Buy ${coin.name}`} labelledBy="buy-title" onClose={onClose}>
+      <form onSubmit={submit} noValidate className="space-y-3">
+        <div className="flex items-center justify-between rounded-md border border-term-line bg-term-bg px-3 py-2 text-sm">
+          <span className="flex items-center gap-2"><img src={coin.image} alt="" className="h-4 w-4 rounded-full" />{coin.symbol.toUpperCase()} / USD</span>
+          <span className="num text-term-text">{usd(price)}</span>
+        </div>
+
+        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Order size in">
+          {(['usd', 'qty'] as const).map(m => (
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => { setMode(m); setAmount(''); }}
+                    className={`flex-1 rounded py-1 text-xs font-semibold ${mode === m ? 'bg-term-raised text-term-text' : 'text-term-muted hover:text-term-text'}`}>
+              {m === 'usd' ? 'Amount (USD)' : `Quantity (${coin.symbol.toUpperCase()})`}
+            </button>
+          ))}
+        </div>
+
+        <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
+          {mode === 'usd' ? 'Amount (USD)' : 'Quantity'}
+          <input type="number" min="0" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus
+                 className={`num mt-1 ${input}`} />
+        </label>
+        {presets.length > 0 && (
+          <div className="flex gap-1.5">
+            {presets.map(p => (
+              <button key={p} type="button" className="num flex-1 rounded border border-term-line py-1 text-xs text-term-muted hover:border-term-line2 hover:text-term-text"
+                      onClick={() => { setMode('usd'); setAmount((Math.floor((cash ?? 0) * p * 100) / 100).toString()); }}>
+                {pct(p, 0)} of cash
+              </button>
+            ))}
+          </div>
+        )}
+        <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
+          Trade date
+          <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className={`num mt-1 ${input}`} />
+        </label>
+
+        <dl className="grid grid-cols-2 gap-1.5 rounded-md border border-term-line bg-term-bg px-3 py-2 text-xs">
+          <dt className="text-term-dim">Quantity</dt><dd className="num text-right text-term-text">{fmtQty(quantity)}</dd>
+          <dt className="text-term-dim">Order value</dt><dd className="num text-right text-term-text">{usd(cost)}</dd>
+          {cash != null && (<>
+            <dt className="text-term-dim">Cash after</dt>
+            <dd className={`num text-right ${cost > cash ? 'text-term-down' : 'text-term-muted'}`}>{usd(cash - cost)}</dd>
+            <dt className="text-term-dim">Share of cash</dt>
+            <dd className={`num text-right ${cash > 0 && cost / cash > 0.25 ? 'text-term-warn' : 'text-term-muted'}`}>{cash > 0 ? pct(cost / cash, 1) : '—'}</dd>
+          </>)}
+        </dl>
+        {cash != null && cash > 0 && cost / cash > 0.25 && (
+          <p className="text-xs text-term-warn">Large single orders and same-day deployment lower your Evaluation score.</p>
+        )}
+        {error && <p role="alert" className="text-sm text-term-down">{error}</p>}
+        <button type="submit" disabled={saving} className="w-full rounded-md bg-term-up py-2 text-sm font-semibold text-white hover:bg-[#4BB896] disabled:opacity-50">
+          {saving ? 'Placing…' : `Buy ${coin.symbol.toUpperCase()}`}
+        </button>
+      </form>
+    </Modal>
+  );
+};
+
+export default CoinsPage;

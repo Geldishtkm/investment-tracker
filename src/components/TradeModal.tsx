@@ -1,26 +1,32 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
 import { Asset, TradeRequest } from '../types';
 import { assetService } from '../services/api';
 import { todayLocal } from '../utils/dates';
+import { Modal, btn, input } from './ui/kit';
+import { qty as fmtQty, usd } from './ui/format';
 
 interface TradeModalProps {
   asset: Asset;
   currentPrice: number;
+  /** Which side the ticket opens on. */
+  initialSide?: TradeRequest['side'];
+  /** Cash available for buys, shown on the ticket; omitted when unknown. */
+  cash?: number | null;
   onClose: () => void;
   /** Called after the trade is recorded, with a message for the user. */
   onSaved: (message: string) => void;
 }
 
-/** Records a buy or sell on a holding, with its price and date, in the trade ledger. */
-const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, onClose, onSaved }) => {
-  const [side, setSide] = useState<TradeRequest['side']>('BUY');
+/** Order ticket: records a buy or sell on a holding, with its price and date, in the trade ledger. */
+const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSide = 'BUY', cash, onClose, onSaved }) => {
+  const [side, setSide] = useState<TradeRequest['side']>(initialSide);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState(currentPrice > 0 ? String(currentPrice) : '');
   const [date, setDate] = useState(todayLocal());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = todayLocal();
+  const notional = (parseFloat(quantity) || 0) * (parseFloat(price) || 0);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -47,48 +53,59 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, onClose, o
     }
   };
 
-  const toggle = (value: TradeRequest['side'], active: string) =>
-    `flex-1 py-2 rounded-lg font-semibold transition-colors ${side === value ? active : 'bg-gray-800 text-gray-400 hover:text-white'}`;
+  const tab = (value: TradeRequest['side'], active: string) =>
+    `flex-1 py-1.5 text-sm font-semibold rounded transition-colors ${side === value ? active : 'text-term-muted hover:text-term-text'}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true"
-         aria-labelledby="trade-title">
-      <form onSubmit={submit} className="w-full max-w-md bg-gray-900 border border-gray-700 rounded-2xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 id="trade-title" className="text-lg font-bold text-white">Trade {asset.name}</h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-white"><X size={20} /></button>
+    <Modal title={`Trade ${asset.name}`} labelledBy="trade-title" onClose={onClose}>
+      <form onSubmit={submit} noValidate className="space-y-3">
+        <div className="flex gap-1 rounded-md border border-term-line bg-term-bg p-1" role="group" aria-label="Trade side">
+          <button type="button" aria-pressed={side === 'BUY'} onClick={() => setSide('BUY')} className={tab('BUY', 'bg-term-up-soft text-term-up')}>Buy</button>
+          <button type="button" aria-pressed={side === 'SELL'} onClick={() => setSide('SELL')} className={tab('SELL', 'bg-term-down-soft text-term-down')}>Sell</button>
         </div>
 
-        <div className="flex gap-2" role="group" aria-label="Trade side">
-          <button type="button" aria-pressed={side === 'BUY'} onClick={() => setSide('BUY')} className={toggle('BUY', 'bg-emerald-600 text-white')}>Buy</button>
-          <button type="button" aria-pressed={side === 'SELL'} onClick={() => setSide('SELL')} className={toggle('SELL', 'bg-red-600 text-white')}>Sell</button>
-        </div>
-
-        <label className="block text-sm text-gray-300">
-          Quantity{side === 'SELL' && <span className="text-gray-500"> (you hold {asset.quantity})</span>}
+        <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
+          Quantity{side === 'SELL' && <span className="normal-case tracking-normal text-term-muted"> (you hold {asset.quantity})</span>}
           <input type="number" step="any" min="0" value={quantity} onChange={e => setQuantity(e.target.value)}
-                 className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white" />
+                 className={`num mt-1 ${input}`} />
         </label>
-        <label className="block text-sm text-gray-300">
+        <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
           Price per unit (USD)
           <input type="number" step="any" min="0" value={price} onChange={e => setPrice(e.target.value)}
-                 className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white" />
+                 className={`num mt-1 ${input}`} />
         </label>
-        <label className="block text-sm text-gray-300">
+        <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
           Trade date
-          <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)}
-                 className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white" />
+          <input type="date" value={date} max={today} onChange={e => setDate(e.target.value)} className={`num mt-1 ${input}`} />
         </label>
 
-        {error && <p className="text-sm text-red-300" role="alert">{error}</p>}
+        <dl className="grid grid-cols-2 gap-2 rounded-md border border-term-line bg-term-bg px-3 py-2 text-xs">
+          <dt className="text-term-dim">Order value</dt>
+          <dd className="num text-right text-term-text">{usd(notional)}</dd>
+          {side === 'BUY' && cash != null && (
+            <>
+              <dt className="text-term-dim">Cash available</dt>
+              <dd className={`num text-right ${notional > cash ? 'text-term-down' : 'text-term-muted'}`}>{usd(cash)}</dd>
+            </>
+          )}
+          {side === 'SELL' && (
+            <>
+              <dt className="text-term-dim">Position after</dt>
+              <dd className="num text-right text-term-muted">{fmtQty(Math.max(0, asset.quantity - (parseFloat(quantity) || 0)))}</dd>
+            </>
+          )}
+        </dl>
 
-        <p className="text-xs text-gray-500">Dated trades feed the Institutional Evaluation (disposition, FOMO and panic analysis).</p>
+        {error && <p className="text-sm text-term-down" role="alert">{error}</p>}
+
+        <p className="text-xs text-term-dim">Paper trades execute near the market price and feed the Institutional Evaluation.</p>
         <button type="submit" disabled={saving}
-                className={`w-full py-3 rounded-xl font-semibold text-white disabled:opacity-50 ${side === 'BUY' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'}`}>
+                className={`w-full rounded-md py-2 text-sm font-semibold text-white disabled:opacity-50 ${side === 'BUY' ? 'bg-term-up hover:bg-[#4BB896]' : 'bg-term-down hover:bg-[#D85A62]'}`}>
           {saving ? 'Saving…' : side === 'BUY' ? 'Record buy' : 'Record sell'}
         </button>
+        <button type="button" onClick={onClose} className={`${btn.ghost} w-full`}>Cancel</button>
       </form>
-    </div>
+    </Modal>
   );
 };
 

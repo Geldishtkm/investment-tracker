@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { accountService, assetService, NewAsset } from './services/api';
 import { authService, SESSION_EXPIRED_EVENT, SessionExpiredError } from './services/authService';
 import { Account, Asset, AssetWithPrice, User } from './types';
-import AssetCard from './components/AssetCard';
-import PortfolioSummary from './components/PortfolioSummary';
-import EmptyState from './components/EmptyState';
+import PortfolioPage from './components/PortfolioPage';
 import PortfolioEmptyState, { AssetsLoadError } from './components/PortfolioEmptyState';
 import CoinsPage from './components/CoinsPage';
 import AnalyticsPage from './components/AnalyticsPage';
@@ -17,41 +15,39 @@ import BankrollModal from './components/BankrollModal';
 import AccountModal from './components/AccountModal';
 
 
-// Inline Toast component for App.tsx
+// Notification for the app shell
 const AppToast: React.FC<{
   type: 'success' | 'error' | 'info';
   message: string;
   onClose: () => void;
 }> = ({ type, message, onClose }) => {
-  const bgColor = type === 'success' 
-    ? 'bg-gradient-to-r from-green-500/90 to-emerald-600/90' 
-    : type === 'error'
-    ? 'bg-gradient-to-r from-red-500/90 to-red-600/90'
-    : 'bg-gradient-to-r from-blue-500/90 to-blue-600/90';
-  
-  const borderColor = type === 'success' 
-    ? 'border-green-400/30' 
-    : type === 'error'
-    ? 'border-red-400/30'
-    : 'border-blue-400/30';
-
+  const accent = type === 'success' ? 'border-l-term-up' : type === 'error' ? 'border-l-term-down' : 'border-l-term-accent';
   return (
-    <div className={`${bgColor} backdrop-blur-sm border ${borderColor} rounded-xl p-4 shadow-2xl min-w-[320px] max-w-[400px] animate-in slide-in-from-right-full duration-300`}>
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="text-white font-medium text-sm leading-relaxed">
-            {message}
-          </p>
-        </div>
-        <button
-          onClick={onClose}
-          className="flex-shrink-0 text-white/70 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10"
-        >
-          ✕
-        </button>
-      </div>
+    <div role={type === 'error' ? 'alert' : 'status'}
+         className={`flex min-w-[300px] max-w-[420px] items-start gap-3 rounded-md border border-term-line2 border-l-2 ${accent} bg-term-raised px-4 py-3 shadow-2xl shadow-black/60`}>
+      <p className="flex-1 text-sm leading-relaxed text-term-text">{message}</p>
+      <button onClick={onClose} aria-label="Dismiss" className="rounded p-0.5 text-term-dim hover:text-term-text">✕</button>
     </div>
   );
+};
+
+/** Sections of the terminal, in tab order. */
+const PAGES: { key: Page; label: string }[] = [
+  { key: 'portfolio', label: 'Portfolio' },
+  { key: 'coins', label: 'Top Coins' },
+  { key: 'analytics', label: 'Analytics' },
+  { key: 'var', label: 'VaR' },
+  { key: 'rebalancing', label: 'Rebalancing' },
+  { key: 'institutional', label: 'Evaluation' },
+];
+
+const PAGE_TITLES: Record<Page, { title: string; subtitle: string }> = {
+  portfolio: { title: 'Portfolio', subtitle: 'Positions, cash and performance against your starting bankroll' },
+  coins: { title: 'Markets', subtitle: 'Top 100 coins by market capitalisation · quotes refresh every 10 minutes' },
+  analytics: { title: 'Analytics', subtitle: 'Risk-adjusted performance, diversification and per-asset attribution' },
+  var: { title: 'Value at Risk', subtitle: 'Loss distribution, tail risk and exposure by asset' },
+  rebalancing: { title: 'Rebalancing', subtitle: 'Target weights from MVO or Black-Litterman, and the trades to reach them' },
+  institutional: { title: 'Institutional Evaluation', subtitle: 'Trader Index Score (0–1000) across risk, behavior, consistency and execution' },
 };
 
 type Page = 'portfolio' | 'coins' | 'analytics' | 'var' | 'rebalancing' | 'institutional';
@@ -72,7 +68,9 @@ function App() {
   // Set when assets could not be loaded, so an outage isn't mistaken for an empty portfolio
   const [assetsLoadError, setAssetsLoadError] = useState<string | null>(null);
   const [assetsWithPrices, setAssetsWithPrices] = useState<AssetWithPrice[]>([]);
-  const [loading, setLoading] = useState(true);
+  // booting: checking the saved session at startup; loading: (re)loading positions
+  const [booting, setBooting] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [toastCounter, setToastCounter] = useState(0);
   // The paper-trading account: S₀ and cash. Until S₀ is set the bankroll modal blocks the app.
@@ -101,9 +99,8 @@ function App() {
             if (tokenValid) {
               const user = authService.getCurrentUser();
               setCurrentUser(user);
-              
-              await loadAssets();
               setIsAuthenticated(true);
+              void loadAssets();
             } else {
               // An ended session was already cleared by authService; after a network error the
               // saved tokens are kept so the next visit can still renew them
@@ -131,7 +128,7 @@ function App() {
         setAssets([]);
         setAssetsWithPrices([]);
       } finally {
-        setLoading(false);
+        setBooting(false);
       }
     };
 
@@ -215,28 +212,11 @@ function App() {
     }
   };
 
-  const handleAddAsset = async (asset: NewAsset) => {
-    try {
-      await assetService.addAsset(asset);
-      await loadAssets();
-      showToast('success', 'Asset added successfully!');
-    } catch (error) {
-      console.error('Error adding asset:', error);
-      if (error instanceof SessionExpiredError) return;
-      showToast('error', 'Failed to add asset: ' + (error instanceof Error ? error.message : 'Unknown error'));
-    }
-  };
-
-  const handleUpdateAsset = async (id: number, asset: Omit<Asset, 'id'>) => {
-    try {
-      await assetService.updateAsset(id, asset);
-      await loadAssets();
-      showToast('success', 'Asset updated successfully!');
-    } catch (error) {
-      console.error('Error updating asset:', error);
-      if (error instanceof SessionExpiredError) return;
-      showToast('error', 'Failed to update asset');
-    }
+  /** Buys a new position from the market grid; errors are thrown to the order ticket that placed it. */
+  const handleBuy = async (asset: NewAsset) => {
+    await assetService.addAsset(asset);
+    showToast('success', `Bought ${asset.quantity} ${asset.name}.`);
+    void loadAssets();
   };
 
   const handleDeleteAsset = async (id: number, assetName: string) => {
@@ -303,9 +283,17 @@ function App() {
   };
 
   // Show authentication pages if not authenticated
+  if (booting) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-term-bg" role="status" aria-label="Loading">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-term-line2 border-t-term-accent" />
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-900">
+      <div className="min-h-screen bg-term-bg">
         {currentAuthPage === 'login' ? (
           <LoginPage
             onLoginSuccess={handleLoginSuccess}
@@ -318,8 +306,8 @@ function App() {
           />
         )}
         
-        {/* Toast Notifications */}
-        <div className="fixed top-4 right-4 z-50 space-y-2">
+        {/* Notifications */}
+        <div className="fixed top-4 right-4 z-50 space-y-2" aria-live="polite">
           {toasts.map((toast) => (
             <AppToast
               key={toast.id}
@@ -333,275 +321,100 @@ function App() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
-      </div>
-    );
-  }
+  const header = PAGE_TITLES[currentPage];
+  const goToMarkets = () => setCurrentPage('coins');
+  const equity = account?.cash != null
+    ? account.cash + assetsWithPrices.reduce((s, a) => s + a.quantity * (a.currentPrice || a.pricePerUnit), 0)
+    : null;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Navigation */}
-      <nav className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700/50 shadow-xl shadow-black/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <div className="flex items-center gap-4">
-                <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 tracking-tight">
-                  Portfolio Tracker
-                </h1>
-              </div>
-              {currentUser && (
-                <div className="ml-6 flex items-center gap-3">
-                  <div className="w-2.5 h-2.5 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50"></div>
-                  <span className="text-sm text-gray-300">
-                    Welcome, <span className="font-semibold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">{currentUser.username}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={() => setCurrentPage('portfolio')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'portfolio' 
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-xl shadow-emerald-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Portfolio
-              </button>
-              <button
-                onClick={() => setCurrentPage('coins')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'coins'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-xl shadow-blue-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Top Coins
-              </button>
-              <button
-                onClick={() => setCurrentPage('analytics')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'analytics'
-                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-xl shadow-purple-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Analytics
-              </button>
-              <button
-                onClick={() => setCurrentPage('var')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'var'
-                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-xl shadow-teal-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                VaR
-              </button>
-              <button
-                onClick={() => setCurrentPage('rebalancing')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'rebalancing'
-                    ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-xl shadow-orange-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Rebalancing
-              </button>
-              <button
-                onClick={() => setCurrentPage('institutional')}
-                className={`px-6 py-3 rounded-2xl transition-all duration-300 font-semibold text-sm tracking-wide ${
-                  currentPage === 'institutional'
-                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-xl shadow-amber-500/25 transform scale-105 border-0' 
-                    : 'text-gray-300 hover:text-white hover:bg-gray-800/60 hover:shadow-lg hover:shadow-gray-800/30 border border-gray-700/50 hover:border-gray-600/50'
-                }`}
-              >
-                Evaluation
-              </button>
+    <div className="min-h-screen bg-term-bg text-term-text">
+      {/* Terminal bar */}
+      <header className="sticky top-0 z-40 border-b border-term-line bg-term-bg/95 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-[1800px] items-center gap-6 px-4 sm:px-6">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded bg-term-accent text-[11px] font-bold text-term-bg">PT</span>
+            <span className="hidden text-sm font-semibold tracking-tight text-term-text sm:inline">Portfolio Tracker</span>
+            <span className="hidden rounded border border-term-line2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-term-dim lg:inline">Paper</span>
+          </div>
 
-              <div className="h-8 w-px bg-gradient-to-b from-gray-600/50 to-transparent mx-3"></div>
-              {account?.cash != null && (
-                <span className="px-3 py-2 text-sm text-gray-300 whitespace-nowrap" title={`Starting bankroll (S₀): $${(account.initialBankroll ?? 0).toLocaleString('en-US')}`}>
-                  Cash <span className="font-semibold text-emerald-300">
-                    {account.cash.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })}
-                  </span>
-                </span>
-              )}
-              <button
-                onClick={() => { void loadAccount(); setShowAccount(true); }}
-                className="px-4 py-3 rounded-2xl text-sm font-semibold text-gray-300 hover:text-white hover:bg-gray-800/60 border border-gray-700/50"
-              >
-                Account
+          <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" aria-label="Sections">
+            {PAGES.map(p => (
+              <button key={p.key} onClick={() => setCurrentPage(p.key)} aria-current={currentPage === p.key ? 'page' : undefined}
+                      className={`relative whitespace-nowrap px-3 py-4 text-sm font-medium transition-colors ${
+                        currentPage === p.key ? 'text-term-text' : 'text-term-muted hover:text-term-text'}`}>
+                {p.label}
+                {currentPage === p.key && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-term-accent" />}
               </button>
-              <button
-                onClick={handleLogout}
-                className="px-6 py-3 rounded-2xl text-sm font-semibold text-red-400 hover:text-red-300 hover:bg-red-900/20 transition-all duration-300 hover:shadow-lg hover:shadow-red-900/30 border border-red-800/30 hover:border-red-700/50"
-              >
-                Logout
-              </button>
-            </div>
+            ))}
+          </nav>
+
+          <div className="flex shrink-0 items-center gap-4">
+            {account?.cash != null && (
+              <div className="hidden items-center gap-4 border-r border-term-line pr-4 md:flex" data-testid="account-widget">
+                <div className="text-right">
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-term-dim">Equity</div>
+                  <div className="num text-sm text-term-text">{usdShort(equity)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-term-dim">Cash</div>
+                  <div className="num text-sm text-term-up">{usdShort(account.cash)}</div>
+                </div>
+              </div>
+            )}
+            <button onClick={() => { void loadAccount(); setShowAccount(true); }}
+                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-term-muted hover:bg-term-hover hover:text-term-text">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-term-raised text-[11px] font-semibold uppercase text-term-text">
+                {currentUser?.username?.[0] ?? '?'}
+              </span>
+              <span className="hidden lg:inline">{currentUser?.username}</span>
+              <span className="sr-only">Account</span>
+            </button>
+            <button onClick={handleLogout} className="rounded-md px-2 py-1.5 text-sm text-term-muted hover:bg-term-hover hover:text-term-down">
+              Logout
+            </button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="min-h-[600px]">
-          {currentPage === 'portfolio' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent mb-2">
-                  Portfolio Overview
-                </h2>
-                <p className="text-gray-400">Track your cryptocurrency investments and performance</p>
-              </div>
-              <PortfolioSummary assets={assetsWithPrices} />
-              
-              {/* Real-Time Market Data Widget */}
-              {assets.length > 0 && (
-                <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-xl flex items-center justify-center">
-                        <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      </div>
-                      Live Market Data
-                    </h3>
-                    <div className="text-sm text-gray-400">
-                      Auto-updating portfolio values
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-300">
-                    Your portfolio values are automatically updated with real-time market prices via manual refresh and polling.
-                  </div>
-                </div>
-              )}
-              
-              {assets.length === 0 ? (
-                <EmptyState onAddAsset={() => setCurrentPage('coins')} />
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-                  {assetsWithPrices.map((asset) => (
-                    <AssetCard
-                      key={asset.id}
-                      asset={asset}
-                      livePrice={asset.currentPrice}
-                      onUpdate={(updatedAsset) => handleUpdateAsset(asset.id, {
-                        name: updatedAsset.name,
-                        quantity: updatedAsset.quantity,
-                        pricePerUnit: updatedAsset.pricePerUnit,
-                        purchasePricePerUnit: updatedAsset.purchasePricePerUnit,
-                        initialInvestment: updatedAsset.initialInvestment
-                      })}
-                      onDelete={handleDeleteAsset}
-                      onShowToast={showToast}
-                      onTraded={loadAssets}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          
-          {currentPage === 'coins' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent mb-2">
-                  Top Cryptocurrencies
-                </h2>
-                <p className="text-gray-400">Explore the latest market data and add coins to your portfolio</p>
-              </div>
-              <CoinsPage 
-                onBack={() => setCurrentPage('portfolio')} 
-                onAssetAdded={(asset) => handleAddAsset({
-                  name: asset.name,
-                  quantity: asset.quantity,
-                  pricePerUnit: asset.pricePerUnit,
-                  purchasePricePerUnit: asset.purchasePricePerUnit,
-                  initialInvestment: asset.initialInvestment
-                })} 
-              />
-            </div>
-          )}
-          
-          {currentPage === 'analytics' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-2">
-                  Analytics & Insights
-                </h2>
-                <p className="text-gray-400">Analyze your portfolio performance and market trends</p>
-              </div>
-              {assetsLoadError ? (
-                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
-              ) : assets.length === 0 ? (
-                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
-              ) : (
-                <AnalyticsPage onAddAsset={() => setCurrentPage('coins')} />
-              )}
-            </div>
-          )}
-          
-          {currentPage === 'var' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-                  VaR Dashboard
-                </h2>
-                <p className="text-gray-400">Calculate and visualize Value at Risk for your portfolio</p>
-              </div>
-              {assetsLoadError ? (
-                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
-              ) : assets.length === 0 ? (
-                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
-              ) : (
-                <VaRDashboard onAddAsset={() => setCurrentPage('coins')} />
-              )}
-            </div>
-          )}
-
-          {currentPage === 'rebalancing' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-white mb-2">
-                  Portfolio Rebalancing
-                </h2>
-                <p className="text-gray-400">Optimize your portfolio with Mean-Variance Optimization and Black-Litterman models</p>
-              </div>
-              {assetsLoadError ? (
-                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
-              ) : assets.length === 0 ? (
-                <PortfolioEmptyState onAddAsset={() => setCurrentPage('coins')} />
-              ) : (
-                <PortfolioRebalancingDashboard onAddAsset={() => setCurrentPage('coins')} />
-              )}
-            </div>
-          )}
-
-          {currentPage === 'institutional' && (
-            <div className="space-y-6">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-amber-300 to-yellow-400 bg-clip-text text-transparent mb-2">
-                  Institutional Evaluation
-                </h2>
-                <p className="text-gray-400">Your 0–1000 Trader Index Score across risk, behavior, consistency and execution</p>
-              </div>
-              {assetsLoadError ? (
-                <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
-              ) : (
-                // Not gated on current holdings: closed positions still have a trade history to evaluate
-                <InstitutionalEvaluationPage onAddAsset={() => setCurrentPage('coins')} />
-              )}
-            </div>
-          )}
-
-
+      <main className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6">
+        <div className="mb-5">
+          <h1 className="text-xl font-semibold tracking-tight text-term-text">{header.title}</h1>
+          <p className="mt-0.5 text-sm text-term-muted">{header.subtitle}</p>
         </div>
+
+        {currentPage === 'portfolio' && (
+          <PortfolioPage assets={assetsWithPrices} account={account} loading={loading} loadError={assetsLoadError}
+                         onRetry={loadAssets} onAddAsset={goToMarkets} onChanged={loadAssets}
+                         onDelete={handleDeleteAsset} onShowToast={showToast} />
+        )}
+
+        {currentPage === 'coins' && (
+          <CoinsPage cash={account?.cash ?? null} onBuy={handleBuy}
+                     heldNames={assets.map(a => a.name)} />
+        )}
+
+        {currentPage !== 'portfolio' && currentPage !== 'coins' && currentPage !== 'institutional' && assetsLoadError && (
+          <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+        )}
+        {currentPage !== 'portfolio' && currentPage !== 'coins' && currentPage !== 'institutional' && !assetsLoadError
+          && !loading && assets.length === 0 && <PortfolioEmptyState onAddAsset={goToMarkets} />}
+
+        {currentPage === 'analytics' && !assetsLoadError && assets.length > 0 && (
+          <AnalyticsPage onAddAsset={goToMarkets} />
+        )}
+        {currentPage === 'var' && !assetsLoadError && assets.length > 0 && (
+          <VaRDashboard onAddAsset={goToMarkets} />
+        )}
+        {currentPage === 'rebalancing' && !assetsLoadError && assets.length > 0 && (
+          <PortfolioRebalancingDashboard onAddAsset={goToMarkets} onTraded={loadAssets} onShowToast={showToast} />
+        )}
+        {currentPage === 'institutional' && (
+          assetsLoadError
+            ? <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
+            // Not gated on current holdings: closed positions still have a trade history to evaluate
+            : <InstitutionalEvaluationPage onAddAsset={goToMarkets} />
+        )}
       </main>
 
       {account?.bankrollRequired && (
@@ -616,8 +429,8 @@ function App() {
         <AccountModal account={account} onClose={() => setShowAccount(false)} onDeleted={handleAccountDeleted} />
       )}
 
-      {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-50 space-y-2">
+      {/* Notifications */}
+      <div className="fixed right-4 top-16 z-[70] space-y-2" aria-live="polite">
         {toasts.map((toast) => (
           <AppToast
             key={toast.id}
@@ -631,4 +444,10 @@ function App() {
   );
 }
 
-export default App; 
+/** $12.3K / $1.25M for the header widget. */
+function usdShort(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return '—';
+  return v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+
+export default App;

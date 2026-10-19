@@ -1,120 +1,102 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { RefreshCw, RotateCcw, Scale } from 'lucide-react';
 import { API_BASE_URL } from '../config';
-import {
-  TrendingUp,
-  Target,
-  BarChart3,
-  RefreshCw,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Info,
-  Calculator,
-  PieChart,
-  ArrowRight,
-  DollarSign,
-  Shield,
-  Zap,
-  Loader2
-} from 'lucide-react';
 import { assetService } from '../services/api';
-import PortfolioEmptyState from './PortfolioEmptyState';
 import { authService } from '../services/authService';
 import { AssetWithPrice } from '../types';
+import { todayLocal } from '../utils/dates';
+import PortfolioEmptyState from './PortfolioEmptyState';
+import { SLICE_COLORS } from './PortfolioPage';
+import Term from './ui/Term';
+import { Badge, Metric, Modal, Panel, SkeletonRows, btn } from './ui/kit';
+import { pct, qty as fmtQty, usd } from './ui/format';
 
-interface RebalancingAction {
-  assetName: string;
-  actionType: 'BUY' | 'SELL';
-  quantityChange: number;
-  valueChange: number;
-  currentAllocation: number;
-  targetAllocation: number;
-  allocationChange: number;
-  transactionCost: number;
-  priority: number;
-  urgency: string;
-  actionDescription: string;
-  actionIcon: string;
-  actionColor: string;
-}
-
-interface PortfolioRebalancing {
-  userId: string;
-  currentPortfolioValue: number;
-  targetPortfolioValue: number;
-  riskTolerance: number;
+/** POST /api/portfolio-rebalancing/optimize and /black-litterman. */
+interface OptimizationResult {
   currentAllocation: Record<string, number>;
   targetAllocation: Record<string, number>;
-  recommendedActions: RebalancingAction[];
   currentRisk: number;
   targetRisk: number;
   expectedReturn: number;
   riskReduction: number;
-  returnImprovement: number;
   totalTransactionCost: number;
   optimizationMethod: string;
   portfolioStatus: string;
 }
 
-
-interface PortfolioRebalancingDashboardProps {
-  /** Opens the add-asset flow; shown when the portfolio is empty. */
-  onAddAsset: () => void;
+export interface SuggestedTrade {
+  asset: AssetWithPrice;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  value: number;
+  price: number;
 }
 
-const PortfolioRebalancingDashboard: React.FC<PortfolioRebalancingDashboardProps> = ({ onAddAsset }) => {
-  const [rebalancing, setRebalancing] = useState<PortfolioRebalancing | null>(null);
-  const [riskTolerance, setRiskTolerance] = useState(0.5);
-  const [loading, setLoading] = useState(false);
+/** Weights below this drift are left alone, so tiny differences don't generate trades. */
+const DEFAULT_BAND = 0.01;
+
+/**
+ * Trades that move each holding from its current weight to its target. Sizes are relative to the
+ * holdings' value, so sells fund buys. Sells come first; a target of 0 sells the whole position.
+ */
+export function suggestTrades(assets: AssetWithPrice[], targets: Record<string, number>, band: number): SuggestedTrade[] {
+  const priced = assets.map(a => ({ a, price: a.currentPrice || a.pricePerUnit, value: a.quantity * (a.currentPrice || a.pricePerUnit) }));
+  const total = priced.reduce((s, p) => s + p.value, 0);
+  if (!(total > 0)) return [];
+  const trades: SuggestedTrade[] = [];
+  for (const { a, price, value } of priced) {
+    const target = targets[a.name] ?? 0;
+    const drift = value / total - target;
+    if (Math.abs(drift) < band || !(price > 0)) continue;
+    const deltaValue = target * total - value;
+    const side = deltaValue > 0 ? 'BUY' : 'SELL';
+    // Round buys down and sells to the holding, so rounding never needs more cash or coins than exist
+    let quantity = Math.abs(deltaValue) / price;
+    quantity = target === 0 && side === 'SELL' ? a.quantity : Math.floor(quantity * 1e8) / 1e8;
+    if (side === 'SELL') quantity = Math.min(quantity, a.quantity);
+    if (quantity <= 0) continue;
+    trades.push({ asset: a, side, quantity, value: quantity * price, price });
+  }
+  return trades.sort((x, y) => (x.side === y.side ? y.value - x.value : x.side === 'SELL' ? -1 : 1));
+}
+
+interface Props {
+  /** Opens the add-asset flow; shown when the portfolio is empty. */
+  onAddAsset: () => void;
+  /** Reload holdings and cash after trades were executed. */
+  onTraded?: () => void;
+  onShowToast?: (type: 'success' | 'error' | 'info', message: string) => void;
+}
+
+type Source = 'Current' | 'MVO' | 'Black-Litterman' | 'Manual';
+
+const PortfolioRebalancingDashboard: React.FC<Props> = ({ onAddAsset, onTraded, onShowToast }) => {
+  const [assets, setAssets] = useState<AssetWithPrice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [optimizing, setOptimizing] = useState<null | 'MVO' | 'Black-Litterman'>(null);
   const [error, setError] = useState<string | null>(null);
-  const [portfolioAssets, setPortfolioAssets] = useState<AssetWithPrice[]>([]);
-  const [portfolioValue, setPortfolioValue] = useState(0);
-  const [userViews, setUserViews] = useState<{ [key: string]: number }>({});
-  const [showViewsInput, setShowViewsInput] = useState(false);
+  const [targets, setTargets] = useState<Record<string, number>>({});
+  const [source, setSource] = useState<Source>('Current');
+  const [result, setResult] = useState<OptimizationResult | null>(null);
+  const [riskTolerance, setRiskTolerance] = useState(0.5);
+  const [views, setViews] = useState<Record<string, number>>({});
+  const [showViews, setShowViews] = useState(false);
+  const [band, setBand] = useState(DEFAULT_BAND);
+  const [confirming, setConfirming] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [execLog, setExecLog] = useState<{ label: string; ok: boolean; message?: string }[] | null>(null);
 
-  // Load real portfolio data on component mount
-  useEffect(() => {
-    loadPortfolioData();
-  }, []);
-
-  const loadPortfolioData = async () => {
+  const load = async () => {
     try {
       setLoading(true);
-      const assets = await assetService.getAllAssetsWithPrices();
-      setPortfolioAssets(assets);
-
-      // Calculate total portfolio value
-      const totalValue = assets.reduce((sum, asset) => {
-        return sum + ((asset.currentPrice || 0) * asset.quantity);
-      }, 0);
-      setPortfolioValue(totalValue);
-
-      // Initialize with current allocation
-      if (assets.length > 0) {
-        const currentAllocation: Record<string, number> = {};
-        assets.forEach(asset => {
-          const assetValue = (asset.currentPrice || 0) * asset.quantity;
-          currentAllocation[asset.name] = assetValue / totalValue;
-        });
-
-        setRebalancing({
-          userId: 'current_user',
-          currentPortfolioValue: totalValue,
-          targetPortfolioValue: totalValue,
-          riskTolerance: 0.5,
-          currentAllocation,
-          targetAllocation: { ...currentAllocation },
-          recommendedActions: [],
-          currentRisk: 0,
-          targetRisk: 0,
-          expectedReturn: 0,
-          riskReduction: 0,
-          returnImprovement: 0,
-          totalTransactionCost: 0,
-          optimizationMethod: 'MVO',
-          portfolioStatus: 'BALANCED'
-        });
-      }
+      setError(null);
+      // Largest first, matching the colours used on the other pages
+      const data = [...await assetService.getAllAssetsWithPrices()]
+        .sort((x, y) => y.quantity * (y.currentPrice || y.pricePerUnit) - x.quantity * (x.currentPrice || x.pricePerUnit));
+      setAssets(data);
+      setTargets(currentWeights(data));
+      setSource('Current');
+      setResult(null);
     } catch (err) {
       setError('Failed to load portfolio data');
       console.error('Error loading portfolio data:', err);
@@ -123,538 +105,286 @@ const PortfolioRebalancingDashboard: React.FC<PortfolioRebalancingDashboardProps
     }
   };
 
-  const handleOptimize = async () => {
-    if (!rebalancing || portfolioAssets.length === 0) return;
+  useEffect(() => { void load(); }, []);
 
+  const current = useMemo(() => currentWeights(assets), [assets]);
+  const total = assets.reduce((s, a) => s + a.quantity * (a.currentPrice || a.pricePerUnit), 0);
+  const targetSum = Object.values(targets).reduce((s, w) => s + w, 0);
+  const sumOk = Math.abs(targetSum - 1) < 0.005;
+  const trades = useMemo(() => (sumOk ? suggestTrades(assets, targets, band) : []), [assets, targets, band, sumOk]);
+  const turnover = trades.reduce((s, t) => s + t.value, 0) / 2;
+  const maxDrift = Math.max(0, ...assets.map(a => Math.abs((current[a.name] ?? 0) - (targets[a.name] ?? 0))));
+
+  const optimize = async (method: 'MVO' | 'Black-Litterman') => {
+    setOptimizing(method);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-
-      const response = await authService.authFetch(`${API_BASE_URL}/api/portfolio-rebalancing/optimize`, {
+      const path = method === 'MVO' ? 'optimize' : 'black-litterman';
+      const response = await authService.authFetch(`${API_BASE_URL}/api/portfolio-rebalancing/${path}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username: 'current_user',
-          riskTolerance
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'current_user', riskTolerance, ...(method === 'Black-Litterman' ? { userViews: views } : {}) }),
       });
-
+      const body = await response.json().catch(() => null);
       if (!response.ok) {
-        // The backend explains data problems (e.g. no assets, too little history) in "error"
-        const body = await response.json().catch(() => null);
-        if (body?.code === 'NO_ASSETS') {
-          // Assets were removed elsewhere: show the empty-portfolio state, not an error
-          setPortfolioAssets([]);
-          return;
-        }
-        throw new Error(body?.error || `HTTP ${response.status}`);
+        // Assets removed elsewhere: show the empty state, not an error
+        if (body?.code === 'NO_ASSETS') { setAssets([]); return; }
+        throw new Error(body?.error || `Optimization failed (HTTP ${response.status})`);
       }
-
-      const result = await response.json();
-      setRebalancing(result);
+      const r = body as OptimizationResult;
+      setResult(r);
+      const next: Record<string, number> = {};
+      assets.forEach(a => { next[a.name] = r.targetAllocation?.[a.name] ?? 0; });
+      setTargets(next);
+      setSource(method);
     } catch (err) {
-      setError(err instanceof Error && !err.message.startsWith('HTTP') ? err.message : 'Failed to optimize portfolio. Please try again.');
-      console.error('Error optimizing portfolio:', err);
+      setError(err instanceof Error ? err.message : 'Optimization failed. Please try again.');
     } finally {
-      setLoading(false);
+      setOptimizing(null);
     }
   };
 
-  const handleBlackLitterman = async () => {
-    if (!rebalancing || portfolioAssets.length === 0) return;
+  const setTarget = (name: string, weight: number) => {
+    setTargets(t => ({ ...t, [name]: Math.max(0, Math.min(1, weight)) }));
+    setSource('Manual');
+  };
 
-    try {
-      setLoading(true);
-      setError(null);
+  const normalize = () => {
+    if (!(targetSum > 0)) return;
+    setTargets(t => Object.fromEntries(Object.entries(t).map(([k, w]) => [k, w / targetSum])));
+  };
 
-      const response = await authService.authFetch(`${API_BASE_URL}/api/portfolio-rebalancing/black-litterman`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          username: 'current_user',
-          riskTolerance,
-          userViews: userViews  // Send actual user views instead of empty object
-        })
-      });
-
-      if (!response.ok) {
-        // The backend explains data problems (e.g. no assets, too little history) in "error"
-        const body = await response.json().catch(() => null);
-        if (body?.code === 'NO_ASSETS') {
-          // Assets were removed elsewhere: show the empty-portfolio state, not an error
-          setPortfolioAssets([]);
-          return;
-        }
-        throw new Error(body?.error || `HTTP ${response.status}`);
+  const execute = async () => {
+    setExecuting(true);
+    const log: { label: string; ok: boolean; message?: string }[] = [];
+    // Sells first, so their proceeds pay for the buys
+    for (const t of trades) {
+      const label = `${t.side === 'BUY' ? 'Buy' : 'Sell'} ${fmtQty(t.quantity)} ${t.asset.name}`;
+      try {
+        await assetService.recordTrade(t.asset.id, { side: t.side, quantity: t.quantity, price: t.price, date: todayLocal() });
+        log.push({ label, ok: true });
+      } catch (err) {
+        log.push({ label, ok: false, message: err instanceof Error ? err.message : 'failed' });
       }
-
-      const result = await response.json();
-      setRebalancing(result);
-    } catch (err) {
-      setError(err instanceof Error && !err.message.startsWith('HTTP') ? err.message : 'Failed to apply Black-Litterman optimization. Please try again.');
-      console.error('Error applying Black-Litterman:', err);
-    } finally {
-      setLoading(false);
     }
+    setExecLog(log);
+    setExecuting(false);
+    const failed = log.filter(l => !l.ok).length;
+    onShowToast?.(failed ? 'error' : 'success',
+      failed ? `${log.length - failed} of ${log.length} rebalancing trades executed; ${failed} failed.` : `Rebalanced with ${log.length} trades.`);
+    onTraded?.();
+    await load();
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'BALANCED': return 'text-green-400';
-      case 'NEEDS_REBALANCING': return 'text-yellow-400';
-      case 'CRITICAL': return 'text-red-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'BALANCED': return <CheckCircle className="w-5 h-5" />;
-      case 'NEEDS_REBALANCING': return <AlertTriangle className="w-5 h-5" />;
-      case 'CRITICAL': return <XCircle className="w-5 h-5" />;
-      default: return <Info className="w-5 h-5" />;
-    }
-  };
-
-  if (loading && !rebalancing) {
-    return (
-      <div className="min-h-screen bg-black p-6">
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <Loader2 className="w-12 h-12 animate-spin text-white mx-auto mb-4" />
-            <p className="text-gray-300 text-lg">Loading portfolio data...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!loading && !error && portfolioAssets.length === 0) {
-    return <PortfolioEmptyState onAddAsset={onAddAsset} />;
-  }
-
-  if (!rebalancing || portfolioAssets.length === 0) {
-    // Portfolio data could not be loaded (a real failure, so offer a retry)
-    return (
-      <div className="min-h-screen bg-black p-6">
-        <div className="text-center">
-          <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Target className="w-12 h-12 text-white" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-4">Couldn't load your portfolio</h2>
-          <p className="text-gray-300 mb-6">{error || 'Something went wrong while loading your assets.'}</p>
-          <button
-            onClick={loadPortfolioData}
-            className="px-6 py-3 bg-gray-800 text-white rounded-xl font-medium hover:bg-gray-700 transition-all duration-300"
-          >
-            <RefreshCw className="w-5 h-5 inline mr-2" />
-            Refresh Data
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!loading && !error && assets.length === 0) return <PortfolioEmptyState onAddAsset={onAddAsset} />;
 
   return (
-    <div className="min-h-screen bg-black p-6">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Target className="w-10 h-10 text-white" />
-        </div>
-        <h1 className="text-4xl font-bold text-white mb-2">Portfolio Rebalancing</h1>
-        <p className="text-gray-300 text-lg">Optimize your portfolio with institutional-grade algorithms</p>
-      </div>
-
-      {/* Portfolio Status */}
-      <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-8 shadow-xl shadow-black/20">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-white">Portfolio Status</h2>
-          <div className={`flex items-center gap-2 ${getStatusColor(rebalancing.portfolioStatus)}`}>
-            {getStatusIcon(rebalancing.portfolioStatus)}
-            <span className="font-medium">{rebalancing.portfolioStatus}</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="text-center">
-            <div className="text-3xl font-bold text-green-400">${portfolioValue.toLocaleString()}</div>
-            <div className="text-gray-400">Total Value</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-400">{portfolioAssets.length}</div>
-            <div className="text-gray-400">Assets</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-purple-400">{rebalancing.recommendedActions.length}</div>
-            <div className="text-gray-400">Actions Needed</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Risk Tolerance & Controls */}
-      <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-8 shadow-xl shadow-black/20">
-        <div className="flex flex-col lg:flex-row gap-6 items-start lg:items-center">
-          <div className="flex-1">
-            <label className="block text-white font-medium mb-2">Risk Tolerance</label>
-            <div className="flex items-center gap-4">
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={riskTolerance}
-                onChange={(e) => setRiskTolerance(parseFloat(e.target.value))}
-                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
-              />
-              <span className="text-white font-medium min-w-[60px]">{Math.round(riskTolerance * 100)}%</span>
-            </div>
-            <div className="flex justify-between text-xs text-gray-400 mt-1">
-              <span>Conservative</span>
-              <span>Aggressive</span>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleOptimize}
-              disabled={loading}
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-medium hover:from-blue-600 hover:to-indigo-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
-              MVO Optimize
+    <div className="space-y-4">
+      {/* Optimizer controls */}
+      <Panel title="Optimizer" subtitle="Generate target weights, then fine-tune them below">
+        <div className="flex flex-wrap items-end gap-6">
+          <label className="block w-64">
+            <span className="flex justify-between text-xs text-term-muted">
+              <Term term="Risk tolerance" />
+              <span className="num text-term-text">{riskTolerance.toFixed(2)}</span>
+            </span>
+            <input type="range" min={0} max={1} step={0.05} value={riskTolerance} onChange={e => setRiskTolerance(parseFloat(e.target.value))}
+                   className="mt-1 w-full" aria-label="Risk tolerance" />
+            <span className="flex justify-between text-[10px] uppercase tracking-wider text-term-dim"><span>Min variance</span><span>Max return</span></span>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btn.primary} disabled={!!optimizing} onClick={() => void optimize('MVO')}>
+              {optimizing === 'MVO' ? 'Optimizing…' : 'Optimize (MVO)'}
             </button>
-
-            <button
-              onClick={() => setShowViewsInput(!showViewsInput)}
-              className="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl font-medium hover:from-green-600 hover:to-emerald-600 transition-all duration-300 flex items-center gap-2"
-            >
-              <BarChart3 className="w-4 h-4" />
-              Set Views
+            <button type="button" className={btn.secondary} disabled={!!optimizing} onClick={() => void optimize('Black-Litterman')}>
+              {optimizing === 'Black-Litterman' ? 'Optimizing…' : 'Black-Litterman'}
             </button>
-
-            <button
-              onClick={handleBlackLitterman}
-              disabled={loading}
-              className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium hover:from-purple-600 hover:to-pink-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-              Black-Litterman
+            <button type="button" className={btn.ghost} aria-expanded={showViews} onClick={() => setShowViews(s => !s)}>
+              {showViews ? 'Hide views' : `Market views${Object.keys(views).length ? ` (${Object.keys(views).length})` : ''}`}
             </button>
           </div>
-
-          {/* User Views Input System */}
-          {showViewsInput && (
-            <div className="mt-8 p-8 bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl">
-              <h3 className="text-2xl font-bold text-white mb-8 flex items-center gap-3">
-                <BarChart3 className="w-7 h-7 text-green-400" />
-                Your Market Views (Black-Litterman)
-              </h3>
-              
-              <p className="text-gray-300 text-lg mb-10 leading-relaxed">
-                Express your confidence in each asset. Higher values = more bullish, lower values = more bearish.
-              </p>
-              
-              <div className="mb-10">
-                {/* Coin Selector */}
-                <div className="flex justify-center mb-8">
-                  <div className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl p-6">
-                    <label className="block text-white font-semibold text-lg mb-4 text-center">
-                      Select Asset to Set Views
-                    </label>
-                    <select
-                      value={Object.keys(userViews).length > 0 ? Object.keys(userViews)[0] : ''}
-                      onChange={(e) => {
-                        const selectedCoin = e.target.value;
-                        if (selectedCoin) {
-                          // If this coin doesn't have a view yet, add it with neutral (0.5)
-                          if (!userViews[selectedCoin]) {
-                            setUserViews(prev => ({ ...prev, [selectedCoin]: 0.5 }));
-                          } else {
-                            // If coin already has a view, just switch to it (keep all existing views)
-                            const currentViews = { ...userViews };
-                            // Reorder so selected coin is first
-                            const { [selectedCoin]: selectedValue, ...otherViews } = currentViews;
-                            setUserViews({ [selectedCoin]: selectedValue, ...otherViews });
-                          }
-                        }
-                      }}
-                      className="w-64 px-4 py-3 bg-gray-600 border border-gray-500 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    >
-                      <option value="">Choose an asset...</option>
-                      {portfolioAssets.map((asset) => (
-                        <option key={asset.name} value={asset.name}>
-                          {asset.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Single Coin Box */}
-                {Object.keys(userViews).length > 0 && (
-                  <div className="flex justify-center">
-                    <div className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl p-10 hover:border-gray-500/50 transition-all duration-200 min-h-[350px] min-w-[400px] max-w-[500px]">
-                      <div className="text-center mb-8">
-                        <span className="text-white font-bold text-2xl break-words">
-                          {Object.keys(userViews)[0]}
-                        </span>
-                      </div>
-                      
-                      <div className="space-y-8">
-                        <div className="flex items-center gap-4">
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={userViews[Object.keys(userViews)[0]] || 0.5}
-                            onChange={(e) => {
-                              const selectedCoin = Object.keys(userViews)[0];
-                              setUserViews(prev => ({
-                                ...prev,
-                                [selectedCoin]: parseFloat(e.target.value)
-                              }));
-                            }}
-                            className="flex-1 h-5 bg-gray-600 rounded-lg appearance-none cursor-pointer slider min-w-[200px]"
-                            style={{
-                              background: `linear-gradient(to right, #ef4444 0%, #f59e0b 50%, #10b981 100%)`
-                            }}
-                          />
-                        </div>
-                        
-                        <div className="flex justify-center">
-                          <div className="bg-gradient-to-br from-gray-600/40 to-gray-700/40 border border-gray-500/30 rounded-lg p-3 min-w-[80px] text-center">
-                            <div className="text-white font-bold text-2xl">
-                              {Math.round((userViews[Object.keys(userViews)[0]] || 0.5) * 100)}%
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Set and Save Button */}
-                {Object.keys(userViews).length > 0 && (
-                  <div className="flex justify-center mt-8">
-                    <button
-                      onClick={() => {
-                        setShowViewsInput(false);
-                        // Here you could also save the views to backend if needed
-                      }}
-                      className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-lg font-semibold hover:shadow-lg border border-green-500/30"
-                    >
-                      Set and Save Views
-                    </button>
-                  </div>
-                )}
-              </div>
-              
-              {/* Single Legend for All Assets */}
-              <div className="flex justify-center mb-8">
-                <div className="flex items-center gap-8 text-base text-gray-300 font-semibold">
-                  <span className="flex items-center gap-2">
-                    <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-                    Bearish
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-3 h-3 bg-yellow-500 rounded-full"></span>
-                    Neutral
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                    Bullish
-                  </span>
-                </div>
-              </div>
-              
-              <div className="flex gap-6 justify-center">
-                <button
-                  onClick={() => setUserViews({})}
-                  className="px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-gray-500/30"
-                >
-                  Reset Views
-                </button>
-                <button
-                  onClick={() => setShowViewsInput(false)}
-                  className="px-8 py-4 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors text-base font-semibold hover:shadow-lg border border-green-500/30"
-                >
-                  Done
-                </button>
-              </div>
+          {result && (
+            <div className="ml-auto grid grid-cols-2 gap-6 md:grid-cols-4">
+              <Metric size="sm" label="Expected return" value={pct(result.expectedReturn, 2)} />
+              <Metric size="sm" label="Current risk" term="Volatility" value={pct(result.currentRisk, 2)} />
+              <Metric size="sm" label="Target risk" term="Volatility" value={pct(result.targetRisk, 2)} />
+              <Metric size="sm" label="Est. costs" term="Drift" value={usd(result.totalTransactionCost)} />
             </div>
           )}
         </div>
-      </div>
 
-      {/* Error Display */}
-      {error && (
-        <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 rounded-xl p-4 mb-6">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-400" />
-            <span className="text-red-200">{error}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Current vs Target Allocation */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-blue-400" />
-            Current Allocation
-          </h3>
-          <div className="space-y-3">
-            {Object.entries(rebalancing.currentAllocation).map(([asset, allocation]) => (
-              <div key={asset} className="flex items-center justify-between">
-                <span className="text-gray-300">{asset}</span>
-                <div className="flex items-center gap-3">
-                  <div className="w-24 bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${allocation * 100}%` }}
-                    ></div>
+        {showViews && (
+          <div className="mt-4 border-t border-term-line pt-4" data-testid="views-panel">
+            <p className="mb-3 text-xs text-term-muted">
+              <Term term="Black-Litterman" />: tilt the market-cap starting point with your own conviction. Only assets you switch on carry a view.
+            </p>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-2 md:grid-cols-2 2xl:grid-cols-3">
+              {assets.map(a => {
+                const on = a.name in views;
+                return (
+                  <div key={a.id} className="flex items-center gap-3">
+                    <label className="flex w-40 shrink-0 items-center gap-2 text-sm text-term-text">
+                      <input type="checkbox" checked={on}
+                             onChange={e => setViews(v => { const next = { ...v }; if (e.target.checked) next[a.name] = 0.5; else delete next[a.name]; return next; })} />
+                      {a.name}
+                    </label>
+                    <input type="range" min={0} max={1} step={0.1} disabled={!on} value={views[a.name] ?? 0.5} aria-label={`${a.name} view`}
+                           onChange={e => setViews(v => ({ ...v, [a.name]: parseFloat(e.target.value) }))} className="flex-1 disabled:opacity-30" />
+                    <span className={`num w-16 text-right text-xs ${!on ? 'text-term-dim' : (views[a.name] ?? 0.5) > 0.5 ? 'text-term-up' : (views[a.name] ?? 0.5) < 0.5 ? 'text-term-down' : 'text-term-muted'}`}>
+                      {!on ? 'off' : (views[a.name] ?? 0.5) > 0.5 ? 'bullish' : (views[a.name] ?? 0.5) < 0.5 ? 'bearish' : 'neutral'}
+                    </span>
                   </div>
-                  <span className="text-white font-medium min-w-[60px]">{(allocation * 100).toFixed(1)}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-green-400" />
-            Target Allocation
-          </h3>
-          <div className="space-y-3">
-            {Object.entries(rebalancing.targetAllocation).map(([asset, allocation]) => (
-              <div key={asset} className="flex items-center justify-between">
-                <span className="text-gray-300">{asset}</span>
-                <div className="flex items-center gap-3">
-                  <div className="w-24 bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${allocation * 100}%` }}
-                    ></div>
-                  </div>
-                  <span className="text-white font-medium min-w-[60px]">{(allocation * 100).toFixed(1)}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Recommended Actions */}
-      {rebalancing.recommendedActions.length > 0 && (
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-8 shadow-xl shadow-black/20">
-          <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <ArrowRight className="w-5 h-5 text-orange-400" />
-            Recommended Actions
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {rebalancing.recommendedActions.map((action, index) => (
-              <div key={index} className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 border border-gray-600/50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-white">{action.assetName}</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    action.actionType === 'BUY'
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                  }`}>
-                    {action.actionType}
-                  </span>
-                </div>
-                <div className="text-sm text-gray-300 mb-2">{action.actionDescription}</div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">Value: ${Math.abs(action.valueChange).toLocaleString()}</span>
-                  <span className="text-gray-400">Cost: ${action.transactionCost.toFixed(2)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Performance Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 text-center shadow-xl shadow-black/20">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <TrendingUp className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-2xl font-bold text-white mb-1">{(rebalancing.expectedReturn * 100).toFixed(2)}%</div>
-          <div className="text-gray-400 text-sm">Expected Return</div>
-        </div>
-
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 text-center shadow-xl shadow-black/20">
-          <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <Shield className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-2xl font-bold text-white mb-1">{(rebalancing.currentRisk * 100).toFixed(2)}%</div>
-          <div className="text-gray-400 text-sm">Current Risk</div>
-        </div>
-
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 text-center shadow-xl shadow-black/20">
-          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <Zap className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-2xl font-bold text-white mb-1">{(rebalancing.riskReduction * 100).toFixed(2)}%</div>
-          <div className="text-gray-400 text-sm">Risk Reduction</div>
-        </div>
-
-        <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 text-center shadow-xl shadow-black/20">
-          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-            <DollarSign className="w-6 h-6 text-white" />
-          </div>
-          <div className="text-2xl font-bold text-white mb-1">${rebalancing.totalTransactionCost.toFixed(2)}</div>
-          <div className="text-gray-400 text-sm">Transaction Cost</div>
-        </div>
-      </div>
-
-      {/* Info Section */}
-      <div className="bg-gradient-to-br from-blue-900/20 to-indigo-900/20 border border-blue-500/30 rounded-2xl p-6">
-        <div className="flex items-start gap-3">
-          <Info className="w-6 h-6 text-blue-400 mt-1 flex-shrink-0" />
-          <div>
-            <h3 className="text-lg font-semibold text-blue-200 mb-2">About Portfolio Rebalancing</h3>
-            <div className="text-blue-100 space-y-2 text-sm">
-              <p><strong>Mean-Variance Optimization (MVO):</strong> Uses historical data to find the optimal balance between risk and return based on your risk tolerance.</p>
-              <p><strong>Black-Litterman Model:</strong> Combines market equilibrium with your personal views to create more personalized portfolio allocations.</p>
-              <p><strong>Risk Tolerance:</strong> Lower values mean more conservative allocations, higher values mean more aggressive allocations.</p>
+                );
+              })}
             </div>
           </div>
+        )}
+      </Panel>
+
+      {error && <div className="rounded-lg border border-term-down/40 bg-term-down-soft px-4 py-3 text-sm text-term-down" role="alert">{error}</div>}
+
+      {/* Target vs actual */}
+      <Panel flush title="Target vs actual"
+             subtitle={<>Target source: <span className="text-term-text">{source}</span> · Portfolio {usd(total)} · Max <Term term="Drift">drift</Term> {pct(maxDrift, 1)}</>}
+             actions={<>
+               <span className={`num text-xs ${sumOk ? 'text-term-muted' : 'text-term-warn'}`} data-testid="target-sum">Σ targets {pct(targetSum, 1)}</span>
+               {!sumOk && <button type="button" className={btn.secondary} onClick={normalize}><Scale size={14} /> Normalize</button>}
+               <button type="button" className={btn.ghost} onClick={() => { setTargets(currentWeights(assets)); setSource('Current'); setResult(null); }}>
+                 <RotateCcw size={14} /> Reset
+               </button>
+               <button type="button" className={btn.ghost} onClick={() => void load()} aria-label="Reload positions"><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button>
+             </>}>
+        {loading && assets.length === 0 ? <SkeletonRows rows={4} cols={6} /> : (
+          <div className="overflow-auto">
+            <table className="w-full min-w-[980px] text-sm" aria-label="Target versus actual weights">
+              <thead className="text-[11px] uppercase tracking-wider text-term-dim">
+                <tr className="border-b border-term-line">
+                  <th scope="col" className="px-3 py-2 text-left font-medium">Asset</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Actual</th>
+                  <th scope="col" className="w-[34%] px-3 py-2 text-left font-medium">Target</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium"><Term term="Drift" /></th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Value → target</th>
+                  <th scope="col" className="px-3 py-2 text-right font-medium">Suggested trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-term-line">
+                {assets.map((a, i) => {
+                  const actual = current[a.name] ?? 0;
+                  const target = targets[a.name] ?? 0;
+                  const drift = actual - target;
+                  const trade = trades.find(t => t.asset.id === a.id);
+                  const value = a.quantity * (a.currentPrice || a.pricePerUnit);
+                  return (
+                    <tr key={a.id} className="hover:bg-term-hover" data-testid={`target-row-${a.name}`}>
+                      <td className="px-3 py-3">
+                        <span className="flex items-center gap-2 font-medium text-term-text">
+                          <span className="h-2 w-2 rounded-sm" style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }} />{a.name}
+                        </span>
+                      </td>
+                      <td className="num px-3 py-3 text-right text-term-muted">{pct(actual, 1)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-1">
+                            {/* Custom track: actual weight in grey, the move to target in its direction's colour */}
+                            <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-term-line">
+                              <div className="absolute inset-y-0 left-0 bg-term-dim" style={{ width: `${Math.min(actual, target) * 100}%` }} />
+                              <div className={`absolute inset-y-0 ${target > actual ? 'bg-term-up/70' : 'bg-term-down/70'}`}
+                                   style={{ left: `${Math.min(actual, target) * 100}%`, width: `${Math.abs(target - actual) * 100}%` }} />
+                            </div>
+                            <span className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-y-1/2 bg-term-muted" style={{ left: `${actual * 100}%` }}
+                                  title={`Actual ${pct(actual, 1)}`} aria-hidden="true" />
+                            <input type="range" min={0} max={100} step={0.5} value={Math.round(target * 1000) / 10}
+                                   onChange={e => setTarget(a.name, parseFloat(e.target.value) / 100)}
+                                   aria-label={`${a.name} target weight`} className="range-clear relative w-full" />
+                          </div>
+                          <input type="number" min={0} max={100} step={0.1} value={Math.round(target * 1000) / 10}
+                                 onChange={e => setTarget(a.name, (parseFloat(e.target.value) || 0) / 100)}
+                                 aria-label={`${a.name} target percent`}
+                                 className="num w-20 rounded border border-term-line2 bg-term-bg px-2 py-1 text-right text-sm text-term-text focus:border-term-accent focus:outline-none" />
+                          <span className="text-xs text-term-dim">%</span>
+                        </div>
+                      </td>
+                      <td className={`num px-3 py-3 text-right ${Math.abs(drift) < band ? 'text-term-muted' : drift > 0 ? 'text-term-warn' : 'text-term-accent'}`}>
+                        {drift > 0 ? '+' : ''}{pct(drift, 1)}
+                      </td>
+                      <td className="num px-3 py-3 text-right text-term-muted">{usd(value, 0)} → <span className="text-term-text">{usd(target * total, 0)}</span></td>
+                      <td className="px-3 py-3 text-right">
+                        {trade ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Badge tone={trade.side === 'BUY' ? 'up' : 'down'}>{trade.side}</Badge>
+                            <span className="num text-term-text">{fmtQty(trade.quantity)}</span>
+                            <span className="num text-xs text-term-muted">{usd(trade.value)}</span>
+                          </span>
+                        ) : <span className="text-xs text-term-dim">{sumOk ? 'within band' : '—'}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {/* Execution */}
+      <Panel title="Execution" subtitle="Paper trades at current market prices, recorded in your trade ledger">
+        <div className="flex flex-wrap items-center gap-6">
+          <label className="text-xs text-term-muted">
+            Rebalance band
+            <select value={band} onChange={e => setBand(parseFloat(e.target.value))}
+                    className="num ml-2 rounded border border-term-line2 bg-term-bg px-2 py-1 text-sm text-term-text">
+              {[0.005, 0.01, 0.02, 0.05].map(b => <option key={b} value={b}>±{pct(b, 1)}</option>)}
+            </select>
+          </label>
+          <Metric size="sm" label="Trades" term="Drift" value={trades.length} />
+          <Metric size="sm" label="Turnover" term="Drift" value={usd(turnover)} sub={total ? `${pct(turnover / total, 1)} of portfolio` : undefined} />
+          <div className="ml-auto flex items-center gap-3">
+            {!sumOk && <span className="text-xs text-term-warn">Targets must add up to 100% before trading.</span>}
+            <button type="button" className={btn.primary} disabled={!trades.length || executing} onClick={() => setConfirming(true)}>
+              {executing ? 'Executing…' : `Execute ${trades.length} trade${trades.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
         </div>
-      </div>
+        {execLog && (
+          <ul className="mt-4 space-y-1 border-t border-term-line pt-3 text-sm" aria-label="Execution results">
+            {execLog.map((l, i) => (
+              <li key={i} className={l.ok ? 'text-term-up' : 'text-term-down'}>
+                {l.ok ? '✓' : '✕'} {l.label}{l.message ? ` — ${l.message}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
 
-      <style>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #f97316, #ef4444);
-          cursor: pointer;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-        }
-
-        .slider::-moz-range-thumb {
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #f97316, #ef4444);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-        }
-      `}</style>
+      {confirming && (
+        <Modal title="Confirm rebalancing trades" labelledBy="rebalance-confirm" onClose={() => setConfirming(false)} width="max-w-lg">
+          <p className="mb-3 text-sm text-term-muted">These paper trades execute at current market prices, sells first.</p>
+          <table className="w-full text-sm" aria-label="Trades to execute">
+            <tbody className="divide-y divide-term-line">
+              {trades.map(t => (
+                <tr key={t.asset.id}>
+                  <td className="py-1.5"><Badge tone={t.side === 'BUY' ? 'up' : 'down'}>{t.side}</Badge></td>
+                  <td className="py-1.5 text-term-text">{t.asset.name}</td>
+                  <td className="num py-1.5 text-right text-term-text">{fmtQty(t.quantity)}</td>
+                  <td className="num py-1.5 text-right text-term-muted">@ {usd(t.price)}</td>
+                  <td className="num py-1.5 text-right text-term-text">{usd(t.value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" className={btn.ghost} onClick={() => setConfirming(false)}>Cancel</button>
+            <button type="button" className={btn.primary} onClick={() => { setConfirming(false); void execute(); }}>Execute trades</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
+
+function currentWeights(assets: AssetWithPrice[]): Record<string, number> {
+  const total = assets.reduce((s, a) => s + a.quantity * (a.currentPrice || a.pricePerUnit), 0);
+  return Object.fromEntries(assets.map(a => [a.name, total > 0 ? (a.quantity * (a.currentPrice || a.pricePerUnit)) / total : 0]));
+}
 
 export default PortfolioRebalancingDashboard;

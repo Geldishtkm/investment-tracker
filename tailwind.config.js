@@ -49,15 +49,47 @@ export default {
           500: '#f97316',
           600: '#ea580c',
         },
+        term: {
+          bg: '#0B0E14',
+          panel: '#12161F',
+          raised: '#171C27',
+          hover: '#1B2130',
+          line: '#222938',
+          line2: '#2E3647',
+          text: '#E4E8EF',
+          muted: '#8C95A8',
+          dim: '#5D667A',
+          up: '#3FA586',
+          'up-soft': '#173229',
+          down: '#C8464F',
+          'down-soft': '#35191D',
+          warn: '#C99A3E',
+          'warn-soft': '#33280F',
+          accent: '#5B8DEF',
+          'accent-soft': '#16233D',
+          gold: '#C6A15B',
+        },
         indigo: {
           400: '#818cf8',
           500: '#6366f1',
           600: '#4f46e5',
         }
       },
+      // Institutional terminal palette: matte charcoal surfaces, hairline borders, muted semantic colors
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
       animation: {
         'spin': 'spin 1s linear infinite',
         'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'shimmer': 'shimmer 1.4s ease-in-out infinite',
+      },
+      keyframes: {
+        shimmer: {
+          '0%': { backgroundPosition: '-400px 0' },
+          '100%': { backgroundPosition: '400px 0' },
+        },
       },
       backdropBlur: {
         xs: '2px',

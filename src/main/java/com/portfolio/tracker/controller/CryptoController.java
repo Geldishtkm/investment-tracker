@@ -67,13 +67,8 @@ public class CryptoController {
     public ResponseEntity<?> getTopCoins() {
         try {
             List<Map<String, Object>> topCoins = cryptoPriceService.getTopCoins();
-            
-            // Log the first coin for debugging
-            if (!topCoins.isEmpty()) {
-                Map<String, Object> firstCoin = topCoins.get(0);
-                System.out.println("DEBUG - First coin in response: " + firstCoin);
-            }
-            
+
+
             return ResponseEntity.ok(Map.of("coins", topCoins, "count", topCoins.size()));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
