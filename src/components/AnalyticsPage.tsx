@@ -5,6 +5,7 @@ import { assetService } from '../services/api';
 import { PortfolioAnalytics } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import { SLICE_COLORS } from './PortfolioPage';
+import { correlationLabel } from './institutional/DiversificationCard';
 import Term from './ui/Term';
 import { Delta, Metric, Panel, ShareBar, SkeletonMetrics, SkeletonRows, btn } from './ui/kit';
 import { num, pct, qty, toneOf, usd } from './ui/format';
@@ -135,13 +136,14 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 
                 </div>
                 <ShareBar value={(divScore ?? 0) / 100} tone={(divScore ?? 0) >= 60 ? 'up' : (divScore ?? 0) < 35 ? 'down' : 'accent'} className="h-1.5" />
               </div>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                <Metric label="HHI" value={num(data.herfindahlIndex, 3)} size="sm" sub="Σ w²" />
-                <Metric label="Effective holdings" term="N_eff" value={num(data.effectiveNumberOfAssets, 2)} size="sm" sub={`of ${data.totalAssets}`} />
-                <Metric label="Avg correlation" term="ρ̄" value={num(data.averageCorrelation, 2)} size="sm"
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Metric label="HHI" value={data.herfindahlIndex == null ? '—' : data.herfindahlIndex.toFixed(2)} sub="Σ w² · 1.00 = a single holding" />
+                <Metric label="Effective holdings" term="N_eff"
+                        value={data.effectiveNumberOfAssets == null ? '—' : `${num(data.effectiveNumberOfAssets, 2)} of ${data.totalAssets}`}
+                        sub={`${data.totalAssets === 1 ? 'holding' : 'holdings'}, weighted by size`} />
+                <Metric label="Avg correlation" term="ρ̄" value={data.averageCorrelation == null ? '—' : data.averageCorrelation.toFixed(2)}
+                        sub={data.averageCorrelation == null ? 'needs two or more holdings' : correlationLabel(data.averageCorrelation)}
                         tone={data.averageCorrelation == null ? undefined : data.averageCorrelation >= 0.7 ? 'down' : data.averageCorrelation <= 0.3 ? 'up' : 'flat'} />
-                <Metric label="Independent bets" value={num(data.effectiveIndependentBets, 2)} size="sm" sub="correlation-adjusted" />
-                <Metric label="Diversification ratio" term="Independent bets" value={num(data.diversificationRatio, 2)} size="sm" sub="Σwσ / σₚ" />
               </div>
             </div>
           ) : <p className="text-sm text-term-muted">Needs price history for your holdings.</p>}

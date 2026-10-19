@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
-import DiversificationCard, { correlationColor } from '../institutional/DiversificationCard';
+import DiversificationCard, { correlationColor, correlationLabel } from '../institutional/DiversificationCard';
 import { ScoreComponent } from '../../types';
 import { diversificationFixture } from './fixtures';
 
@@ -17,21 +17,30 @@ const riskComponents = [
 ];
 
 describe('DiversificationCard', () => {
-  it('shows holdings, effective holdings and correlation-adjusted independent bets', () => {
+  it('shows only HHI, effective holdings and average correlation', () => {
     render(<DiversificationCard diversification={diversificationFixture()} riskComponents={riskComponents} />);
     const card = screen.getByTestId('diversification-card');
-    expect(within(card).getByText('Holdings').nextSibling).toHaveTextContent('3');
-    expect(within(card).getByText('Effective holdings').nextSibling).toHaveTextContent('2.6');
-    expect(within(card).getByText('N = 1 / HHI · HHI 0.38')).toBeInTheDocument();
-    expect(within(card).getByText('Independent bets').nextSibling).toHaveTextContent('1.2');
+    expect(screen.getByTestId('div-stat-HHI')).toHaveTextContent('0.38');
+    expect(screen.getByTestId('div-stat-Effective holdings')).toHaveTextContent('2.63 of 3');
+    expect(screen.getByTestId('div-stat-Average correlation')).toHaveTextContent('0.82');
+    expect(screen.getByTestId('div-stat-Average correlation')).toHaveTextContent('high: holdings move together');
     expect(within(card).getByText('31')).toBeInTheDocument();
+    // The secondary ratios are gone
+    expect(card).not.toHaveTextContent(/Independent bets|Diversification ratio|Σ ?wσ/);
+  });
+
+  it('reads correlation in plain words', () => {
+    expect(correlationLabel(0.85)).toMatch(/^high/);
+    expect(correlationLabel(0.5)).toBe('moderate');
+    expect(correlationLabel(0.22)).toBe('low');
+    expect(correlationLabel(0)).toMatch(/^near zero/);
+    expect(correlationLabel(-0.4)).toMatch(/^negative/);
   });
 
   it('counts only the diversification components toward the Risk pillar points', () => {
     render(<DiversificationCard diversification={diversificationFixture()} riskComponents={riskComponents} />);
     expect(screen.getByText(/Earns 18 of 60 points in the Risk Control pillar/)).toBeInTheDocument();
     expect(screen.queryByText('Sharpe ratio')).not.toBeInTheDocument();
-    expect(screen.getByText('Average pairwise correlation')).toBeInTheDocument();
   });
 
   it('renders the correlation matrix and lists pairs moving in lockstep', () => {
@@ -42,7 +51,6 @@ describe('DiversificationCard', () => {
     expect(screen.getByText('Bitcoin / Ethereum: 0.86')).toBeInTheDocument();
     expect(screen.getByText('Ethereum / Solana: 0.84')).toBeInTheDocument();
     expect(screen.getByText('Bitcoin / Solana: 0.79')).toBeInTheDocument(); // best diversifying pair
-    expect(screen.getByRole('img', { name: /Average correlation 0.82/ })).toBeInTheDocument();
   });
 
   it('explains when correlations could not be measured', () => {
@@ -55,7 +63,7 @@ describe('DiversificationCard', () => {
       component('correlation', 'Average pairwise correlation', 0, false),
     ]} />);
     expect(screen.getByText(/Correlation not measured: Price history for your holdings is unavailable/)).toBeInTheDocument();
-    expect(screen.getByText('Independent bets').nextSibling).toHaveTextContent('—');
+    expect(screen.getByTestId('div-stat-Average correlation')).toHaveTextContent('—');
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(screen.getByText(/metrics without history are left out/)).toBeInTheDocument();
   });
