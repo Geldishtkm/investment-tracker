@@ -13,7 +13,14 @@ import { num, pct, usd } from './ui/format';
 export interface VaRCalculation {
   confidenceLevel: number;
   timeHorizon: number;
+  /** The whole account: holdings plus cash. */
   portfolioValue: number;
+  /** Market value of the coin holdings. */
+  investedValue?: number;
+  /** Uninvested cash from the starting bankroll (riskless). */
+  cashValue?: number;
+  /** Holdings' share of the account. */
+  exposure?: number;
   historicalVaR: number;
   parametricVaR: number;
   monteCarloVaR: number;
@@ -66,11 +73,13 @@ export function histogram(returns: number[], bins: number, cutoff: number) {
 interface VaRDashboardProps {
   /** Opens the add-asset flow; shown when the portfolio turns out to be empty. */
   onAddAsset: () => void;
+  /** Changes after every trade, so the figures recalculate on the new positions. */
+  refreshKey?: number;
 }
 
 const segment = segmented.option;
 
-const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
+const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset, refreshKey = 0 }) => {
   const [calc, setCalc] = useState<VaRCalculation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +106,9 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
     } finally {
       setLoading(false);
     }
-  }, [confidenceLevel, timeHorizon]);
+    // refreshKey: recalculate after trades
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confidenceLevel, timeHorizon, refreshKey]);
 
   useEffect(() => { void calculateVaR(); }, [calculateVaR]);
 
@@ -126,6 +137,8 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
   if (portfolioEmpty) return <PortfolioEmptyState onAddAsset={onAddAsset} />;
 
   const v = calc?.portfolioValue || 0;
+  const invested = calc?.investedValue ?? v;
+  const cash = calc?.cashValue ?? 0;
   const level = calc ? riskLevel(calc.historicalVaR / (v || 1)) : null;
   const methods = calc ? [
     { key: 'Historical VaR', value: calc.historicalVaR },
@@ -172,7 +185,10 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
       ) : calc && (
         <div className={`space-y-4 transition-opacity ${loading ? 'opacity-60' : ''}`}>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-term-line bg-term-line md:grid-cols-5" data-testid="var-headline">
-            <div className="bg-term-panel p-4"><Metric label="Portfolio value" term="Equity" value={usd(v)} sub={`${pct(confidenceLevel, 0)} · ${timeHorizon}-day`} /></div>
+            <div className="bg-term-panel p-4" data-testid="var-account">
+              <Metric label="Account value" term="Equity" value={usd(v)}
+                      sub={cash > 0 ? `coins ${usd(invested, 0)} · cash ${usd(cash, 0)}` : `${pct(confidenceLevel, 0)} · ${timeHorizon}-day`} />
+            </div>
             {methods.map(m => (
               <div key={m.key} className="bg-term-panel p-4">
                 <Metric label={m.key === 'CVaR' ? 'CVaR (ES)' : m.key} term={m.key} value={usd(-m.value)} tone="down"
@@ -245,7 +261,8 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
             </div>
           </div>
 
-          <Panel flush title="Exposure breakdown" subtitle="Current weights, and the loss each position would cause under a price shock">
+          <Panel flush title="Exposure breakdown"
+                 subtitle={`Share of the account, and the loss each position would cause under a price shock${cash > 0 ? ` · ${pct(calc.exposure ?? invested / (v || 1), 1)} of the account is in coins` : ''}`}>
             <div className="overflow-auto">
               <table className="w-full min-w-[820px] text-sm" aria-label="Exposure breakdown">
                 <thead className="text-[11px] uppercase tracking-wider text-term-dim">
@@ -273,13 +290,28 @@ const VaRDashboard: React.FC<VaRDashboardProps> = ({ onAddAsset }) => {
                       {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right text-term-down">{usd(e.value * s)}</td>)}
                     </tr>
                   ))}
+                  {cash > 0 && (
+                    <tr className="hover:bg-term-hover" data-testid="var-cash-row">
+                      <td className="px-3 py-2.5"><span className="flex items-center gap-2 font-medium text-term-text">
+                        <span className="h-2 w-2 rounded-sm bg-term-dim" />Cash</span></td>
+                      <td className="px-3 py-2.5"><div className="ml-auto w-24"><div className="num text-right text-xs">{pct(cash / v, 1)}</div>
+                        <ShareBar value={cash / v} tone="muted" className="mt-1" /></div></td>
+                      <td className="num px-3 py-2.5 text-right text-term-text">{usd(cash)}</td>
+                      <td className="num px-3 py-2.5 text-right text-term-dim">riskless</td>
+                      {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right text-term-dim">{usd(0)}</td>)}
+                    </tr>
+                  )}
                 </tbody>
                 <tfoot className="border-t border-term-line2">
                   <tr>
-                    <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-term-dim" colSpan={2}>Portfolio</td>
+                    <td className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-term-dim" colSpan={2}>Account</td>
                     <td className="num px-3 py-2.5 text-right font-semibold text-term-text">{usd(v)}</td>
                     <td />
-                    {SHOCKS.map(s => <td key={s} className="num px-3 py-2.5 text-right font-semibold text-term-down">{usd(v * s)}</td>)}
+                    {SHOCKS.map(s => (
+                      <td key={s} className="num px-3 py-2.5 text-right font-semibold text-term-down">
+                        {usd(invested * s)} <span className="text-xs font-normal text-term-dim">({pct(v ? (invested * s) / v : 0, 1)})</span>
+                      </td>
+                    ))}
                   </tr>
                 </tfoot>
               </table>

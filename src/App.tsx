@@ -76,6 +76,9 @@ function App() {
   // The paper-trading account: S₀ and cash. Until S₀ is set the bankroll modal blocks the app.
   const [account, setAccount] = useState<Account | null>(null);
   const [showAccount, setShowAccount] = useState(false);
+  // Bumped after every trade; pages that compute on positions (score, VaR, analytics) reload when it changes
+  const [dataVersion, setDataVersion] = useState(0);
+  const [score, setScore] = useState<{ score: number; rank: number; name: string } | null>(null);
 
   const loadAccount = async (): Promise<Account | null> => {
     try {
@@ -170,11 +173,12 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- register the listener once
   }, []);
 
-  const loadAssets = async () => {
+  /** silent: refresh values in place (price polling) without loading states or error toasts. */
+  const loadAssets = async ({ silent = false }: { silent?: boolean } = {}) => {
     void loadAccount();
     try {
-      setLoading(true);
-      
+      if (!silent) setLoading(true);
+
       // Bring stored prices up to date first (one batched CoinGecko request on the backend).
       // If market data is unavailable the portfolio still loads with the last known prices.
       try {
@@ -220,7 +224,7 @@ function App() {
       }
     } catch (error) {
       console.error('Error loading assets:', error);
-      if (error instanceof SessionExpiredError) return; // the login page and a notice are shown instead
+      if (error instanceof SessionExpiredError || silent) return; // the login page and a notice are shown instead
       setAssetsLoadError(error instanceof Error ? error.message : 'Unknown error');
       showToast('error', 'Failed to load assets: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
@@ -229,16 +233,25 @@ function App() {
   };
 
   /** Buys a new position from the market grid; errors are thrown to the order ticket that placed it. */
+  /**
+   * After any trade (buy, sell, rebalance, removal): reload positions and cash, and bump the data version
+   * so the score, VaR and analytics recalculate on the new positions straight away.
+   */
+  const afterTrade = () => {
+    setDataVersion(v => v + 1);
+    return loadAssets();
+  };
+
   const handleBuy = async (asset: NewAsset) => {
     await assetService.addAsset(asset);
     showToast('success', `Bought ${asset.quantity} ${asset.name}.`);
-    void loadAssets();
+    void afterTrade();
   };
 
   const handleDeleteAsset = async (id: number, assetName: string) => {
     try {
       await assetService.deleteAsset(id);
-      await loadAssets();
+      await afterTrade();
       showToast('success', `${assetName} deleted successfully!`);
     } catch (error) {
       console.error('Error deleting asset:', error);
@@ -299,6 +312,26 @@ function App() {
   };
 
   // Show authentication pages if not authenticated
+  // The Trader Index Score in the header, re-evaluated after every trade
+  useEffect(() => {
+    if (!isAuthenticated) { setScore(null); return; }
+    let cancelled = false;
+    assetService.getInstitutionalScore()
+      .then(s => { if (!cancelled) setScore({ score: s.score, rank: s.tier.rank, name: s.tier.name }); })
+      .catch(() => { if (!cancelled) setScore(null); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated, dataVersion]);
+
+  // Keep values current while the tab is open: re-price positions every minute when visible
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadAssets({ silent: true });
+    }, 60_000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAssets only reads setters
+  }, [isAuthenticated]);
+
   if (booting) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-term-bg" role="status" aria-label="Loading">
@@ -366,6 +399,15 @@ function App() {
           </nav>
 
           <div className="flex shrink-0 items-center gap-4">
+            {score && (
+              <button type="button" onClick={() => setCurrentPage('institutional')} data-testid="score-chip"
+                      title={`Trader Index Score: Tier ${score.rank} · ${score.name}`}
+                      className="hidden items-center gap-2 rounded-md border border-term-line px-2.5 py-1 text-left transition-colors hover:border-white/20 lg:flex">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-term-dim">TIS</span>
+                <span className="num text-sm text-term-text">{score.score}</span>
+                <span className="text-[11px] text-term-accent">T{score.rank}</span>
+              </button>
+            )}
             {account?.cash != null && (
               <div className="hidden items-center gap-4 border-r border-term-line pr-4 md:flex" data-testid="account-widget">
                 <div className="text-right">
@@ -401,7 +443,7 @@ function App() {
 
         {currentPage === 'portfolio' && (
           <PortfolioPage assets={assetsWithPrices} account={account} loading={loading} loadError={assetsLoadError}
-                         onRetry={loadAssets} onAddAsset={goToMarkets} onChanged={loadAssets}
+                         onRetry={() => void loadAssets()} onAddAsset={goToMarkets} onChanged={afterTrade}
                          onDelete={handleDeleteAsset} onShowToast={showToast} />
         )}
 
@@ -419,19 +461,19 @@ function App() {
           && !loading && assets.length === 0 && <PortfolioEmptyState onAddAsset={goToMarkets} />}
 
         {currentPage === 'analytics' && !assetsLoadError && assets.length > 0 && (
-          <AnalyticsPage onAddAsset={goToMarkets} />
+          <AnalyticsPage onAddAsset={goToMarkets} refreshKey={dataVersion} />
         )}
         {currentPage === 'var' && !assetsLoadError && assets.length > 0 && (
-          <VaRDashboard onAddAsset={goToMarkets} />
+          <VaRDashboard onAddAsset={goToMarkets} refreshKey={dataVersion} />
         )}
         {currentPage === 'rebalancing' && !assetsLoadError && assets.length > 0 && (
-          <PortfolioRebalancingDashboard onAddAsset={goToMarkets} onTraded={loadAssets} onShowToast={showToast} />
+          <PortfolioRebalancingDashboard onAddAsset={goToMarkets} onTraded={afterTrade} onShowToast={showToast} />
         )}
         {currentPage === 'institutional' && (
           assetsLoadError
             ? <AssetsLoadError message={assetsLoadError} onRetry={loadAssets} />
             // Not gated on current holdings: closed positions still have a trade history to evaluate
-            : <InstitutionalEvaluationPage onAddAsset={goToMarkets} />
+            : <InstitutionalEvaluationPage onAddAsset={goToMarkets} refreshKey={dataVersion} />
         )}
       </main>
 

@@ -14,6 +14,8 @@ import { pct } from './ui/format';
 interface InstitutionalEvaluationPageProps {
   /** Opens the add-asset flow; shown when there is nothing to evaluate. */
   onAddAsset: () => void;
+  /** Changes after every trade, so the score is re-evaluated at once. */
+  refreshKey?: number;
 }
 
 export const STALE_RETRY_MS = 75_000;
@@ -22,7 +24,7 @@ const MAX_STALE_RETRIES = 3;
 /** Flags about how much capital a trade or holding put at risk. */
 const SIZING_FLAGS = new Set(['position-sizing', 'speculative-accumulation', 'impulsive-deployment']);
 
-const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = ({ onAddAsset }) => {
+const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = ({ onAddAsset, refreshKey = 0 }) => {
   const [data, setData] = useState<InstitutionalScore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
@@ -39,7 +41,7 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   // Saved history was used because CoinGecko was busy; the backend refetches it in the background,
   // so check again shortly (a few times at most) instead of leaving the user on old data

@@ -26,6 +26,10 @@ import java.util.concurrent.ThreadLocalRandom;
  *       the log-return covariance matrix.</li>
  *   <li>Conditional VaR (Expected Shortfall): mean loss beyond the historical VaR.</li>
  * </ul>
+ *
+ * <p>The portfolio is the whole account: coin holdings plus the uninvested cash left from the starting
+ * bankroll. Cash is riskless, so it doesn't change the dollar losses, but every return, volatility and
+ * percentage is relative to the account's total value (equity), and the coins' share of it is the exposure.
  */
 @Service
 public class VaRCalculationService {
@@ -34,15 +38,18 @@ public class VaRCalculationService {
     private final PortfolioDataService portfolioDataService;
     private final AnalyticsProperties properties;
     private final AssetPriceRefreshService priceRefreshService;
+    private final AccountService accountService;
 
     public VaRCalculationService(AssetService assetService,
                                  PortfolioDataService portfolioDataService,
                                  AnalyticsProperties properties,
-                                 AssetPriceRefreshService priceRefreshService) {
+                                 AssetPriceRefreshService priceRefreshService,
+                                 AccountService accountService) {
         this.assetService = assetService;
         this.portfolioDataService = portfolioDataService;
         this.properties = properties;
         this.priceRefreshService = priceRefreshService;
+        this.accountService = accountService;
     }
 
     /**
@@ -56,14 +63,24 @@ public class VaRCalculationService {
             throw PortfolioDataException.noAssets();
         }
         PortfolioSnapshot snapshot = portfolioDataService.snapshot(assets, false);
-        double value = snapshot.totalValue();
-        double[] portfolioReturns = snapshot.portfolioReturns();
+        double invested = snapshot.totalValue();
+        Double accountCash = accountService.account(user).cash();
+        double cash = accountCash == null ? 0.0 : Math.max(0.0, accountCash);
+        double value = invested + cash;
+        double exposure = value > 0 ? invested / value : 1.0;
+        // Daily returns of the whole account: the coins' returns diluted by the cash share
+        double[] holdingsReturns = snapshot.portfolioReturns();
+        double[] portfolioReturns = new double[holdingsReturns.length];
+        for (int t = 0; t < holdingsReturns.length; t++) portfolioReturns[t] = exposure * holdingsReturns[t];
 
         VaRCalculation varCalculation = new VaRCalculation();
         varCalculation.setUserId(user.getUsername());
         varCalculation.setConfidenceLevel(confidenceLevel);
         varCalculation.setTimeHorizon(timeHorizon);
         varCalculation.setPortfolioValue(value);
+        varCalculation.setInvestedValue(invested);
+        varCalculation.setCashValue(cash);
+        varCalculation.setExposure(exposure);
         varCalculation.setNumberOfSimulations(properties.getMonteCarloSimulations());
         varCalculation.setRiskFreeRate(properties.getRiskFreeRate());
         varCalculation.setObservations(snapshot.observations());
@@ -74,7 +91,7 @@ public class VaRCalculationService {
         Map<String, Double> meanReturns = new LinkedHashMap<>();
         double[] assetMeans = RiskMath.columnMeans(snapshot.returns());
         for (int i = 0; i < snapshot.size(); i++) {
-            weights.put(snapshot.names().get(i), snapshot.weights()[i]);
+            weights.put(snapshot.names().get(i), snapshot.weights()[i] * exposure); // share of the whole account
             meanReturns.put(snapshot.names().get(i), assetMeans[i]);
         }
         varCalculation.setAssetWeights(weights);
@@ -94,8 +111,9 @@ public class VaRCalculationService {
         double historicalVaR = historicalVaR(horizon, confidenceLevel) * value;
         varCalculation.setHistoricalVaR(historicalVaR);
         varCalculation.setConditionalVaR(expectedShortfall(horizon, confidenceLevel) * value);
-        varCalculation.setParametricVaR(parametricVaR(snapshot, confidenceLevel, timeHorizon) * value);
-        varCalculation.setMonteCarloVaR(monteCarloVaR(snapshot, confidenceLevel, timeHorizon) * value);
+        // These model the coins alone, so their loss fractions apply to the invested amount
+        varCalculation.setParametricVaR(parametricVaR(snapshot, confidenceLevel, timeHorizon) * invested);
+        varCalculation.setMonteCarloVaR(monteCarloVaR(snapshot, confidenceLevel, timeHorizon) * invested);
 
         return varCalculation;
     }

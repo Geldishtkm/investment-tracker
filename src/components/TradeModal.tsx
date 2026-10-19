@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Asset, TradeRequest } from '../types';
-import { assetService } from '../services/api';
+import { ApiError, assetService } from '../services/api';
 import { todayLocal } from '../utils/dates';
 import { Modal, btn, focusRing, input, segmented } from './ui/kit';
 import { qty as fmtQty, usd } from './ui/format';
@@ -19,14 +19,35 @@ interface TradeModalProps {
 
 /** Order ticket: records a buy or sell on a holding, with its price and date, in the trade ledger. */
 const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSide = 'BUY', cash, onClose, onSaved }) => {
-  const [side, setSide] = useState<TradeRequest['side']>(initialSide);
-  const [quantity, setQuantity] = useState('');
+  const [side, setSideState] = useState<TradeRequest['side']>(initialSide);
+  // A sell starts as the whole position; a buy starts empty
+  const [quantity, setQuantity] = useState(initialSide === 'SELL' ? String(asset.quantity) : '');
+  /** Set when a buy costs more than the cash: the balance shown in the banner. */
+  const [shortOf, setShortOf] = useState<number | null>(null);
   const [price, setPrice] = useState(currentPrice > 0 ? String(currentPrice) : '');
   const [date, setDate] = useState(todayLocal());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const today = todayLocal();
   const notional = (parseFloat(quantity) || 0) * (parseFloat(price) || 0);
+  const px = parseFloat(price) || 0;
+
+  const setSide = (next: TradeRequest['side']) => {
+    setSideState(next);
+    setError(null);
+    setShortOf(null);
+    setQuantity(next === 'SELL' ? String(asset.quantity) : '');
+  };
+
+  /** Share of the position (sell) or of the cash (buy), rounded down to 8 decimals. */
+  const fill = (share: number) => {
+    setShortOf(null);
+    if (side === 'SELL') {
+      setQuantity(String(share === 1 ? asset.quantity : Math.floor(asset.quantity * share * 1e8) / 1e8));
+    } else if (cash != null && px > 0) {
+      setQuantity(String(Math.floor((cash * share / px) * 1e8) / 1e8));
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -37,17 +58,26 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
     if (side === 'SELL' && qty > asset.quantity * (1 + 1e-9)) {
       return setError(`You hold ${asset.quantity} ${asset.name}; you can't sell more than that.`);
     }
+    if (side === 'BUY' && cash != null && qty * px > cash + 0.005) {
+      setError(null);
+      return setShortOf(cash);
+    }
     if (!date || date > today) return setError('Choose a trade date that is not in the future.');
 
     setSaving(true);
     setError(null);
+    setShortOf(null);
     try {
       const result = await assetService.recordTrade(asset.id, { side, quantity: qty, price: px, date });
       onSaved(result.positionClosed
         ? `Sold all ${asset.name}; the position is closed and kept in your trade history.`
         : `${side === 'BUY' ? 'Bought' : 'Sold'} ${qty} ${asset.name}.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to record the trade');
+      if (e instanceof ApiError && e.code === 'INSUFFICIENT_FUNDS') {
+        setShortOf(typeof e.details.cash === 'number' ? e.details.cash : cash ?? 0);
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to record the trade');
+      }
     } finally {
       setSaving(false);
     }
@@ -66,9 +96,19 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
 
         <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
           Quantity{side === 'SELL' && <span className="normal-case tracking-normal text-term-muted"> (you hold {asset.quantity})</span>}
-          <input type="number" step="any" min="0" value={quantity} onChange={e => setQuantity(e.target.value)}
+          <input type="number" step="any" min="0" value={quantity} onChange={e => { setQuantity(e.target.value); setShortOf(null); }}
                  className={`num mt-1 ${input}`} />
         </label>
+        {(side === 'SELL' || (cash != null && cash > 0)) && (
+          <div className="flex gap-1.5" role="group" aria-label={side === 'SELL' ? 'Share of position' : 'Share of cash'}>
+            {[0.25, 0.5, 0.75, 1].map(share => (
+              <button key={share} type="button" onClick={() => fill(share)}
+                      className={`num flex-1 rounded-md border border-term-line py-1 text-xs text-term-muted transition-colors duration-150 hover:border-white/20 hover:text-term-text ${focusRing}`}>
+                {side === 'SELL' ? (share === 1 ? 'All' : `${share * 100}%`) : `${share * 100}% cash`}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
           Price per unit (USD)
           <input type="number" step="any" min="0" value={price} onChange={e => setPrice(e.target.value)}
@@ -96,6 +136,11 @@ const TradeModal: React.FC<TradeModalProps> = ({ asset, currentPrice, initialSid
           )}
         </dl>
 
+        {shortOf != null && (
+          <div role="alert" className="rounded-md border border-term-down/40 bg-term-down/10 px-3 py-2 text-sm text-term-down">
+            Insufficient cash available. Current cash balance: {usd(shortOf)}
+          </div>
+        )}
         {error && <p className="text-sm text-term-down" role="alert">{error}</p>}
 
         <p className="text-xs text-term-dim">Paper trades execute near the market price and feed the Institutional Evaluation.</p>

@@ -12,10 +12,12 @@ import { num, pct, qty, toneOf, usd } from './ui/format';
 interface AnalyticsPageProps {
   /** Opens the add-asset flow; shown when the portfolio is empty. */
   onAddAsset: () => void;
+  /** Changes after every trade, so the figures reload on the new positions. */
+  refreshKey?: number;
 }
 
 /** Risk-adjusted performance, diversification and per-asset attribution, all computed by the backend. */
-const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
+const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 0 }) => {
   const [data, setData] = useState<PortfolioAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +35,8 @@ const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset }) => {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reload after trades
+  useEffect(() => { void load(); }, [refreshKey]);
 
   const rows = useMemo(() => {
     if (!data) return [];

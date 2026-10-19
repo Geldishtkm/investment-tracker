@@ -39,6 +39,9 @@ public class VaRCalculation {
 
     // Data provenance
     private double annualizedVolatility;
+    private double investedValue;
+    private double cashValue;
+    private double exposure = 1.0;
     private int observations; // daily returns the estimates are based on
     private String historyStart;
     private String historyEnd;
@@ -50,6 +53,16 @@ public class VaRCalculation {
     }
 
     // Getters and Setters
+    /** Market value of the coin holdings. */
+    public double getInvestedValue() { return investedValue; }
+    public void setInvestedValue(double investedValue) { this.investedValue = investedValue; }
+    /** Uninvested cash from the starting bankroll; it carries no market risk. */
+    public double getCashValue() { return cashValue; }
+    public void setCashValue(double cashValue) { this.cashValue = cashValue; }
+    /** Share of the account in coins: investedValue / portfolioValue. */
+    public double getExposure() { return exposure; }
+    public void setExposure(double exposure) { this.exposure = exposure; }
+
     public double getAnnualizedVolatility() { return annualizedVolatility; }
     public void setAnnualizedVolatility(double annualizedVolatility) { this.annualizedVolatility = annualizedVolatility; }
 
