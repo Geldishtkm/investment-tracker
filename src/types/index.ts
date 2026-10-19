@@ -245,11 +245,22 @@ export interface ScoreCap {
   detail: string;
 }
 
+/** One requirement of a tier gate, e.g. Return on Capital: +0.4% (Target: ≥ +5.0%). */
+export interface GateRequirement {
+  label: string;
+  met: boolean;
+  actual: string;
+  name: string;
+  target: string;
+  /** How far the actual value is towards the target, 0–1. */
+  progress: number;
+}
+
 export interface TierGate {
   minScore: number;
   name: string;
   unlocked: boolean;
-  requirements: { label: string; met: boolean; actual: string }[];
+  requirements: GateRequirement[];
 }
 
 /** Concentration and correlation of the current holdings (see Diversification.java). */

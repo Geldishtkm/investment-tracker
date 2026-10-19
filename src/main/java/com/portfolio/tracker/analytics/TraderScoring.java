@@ -166,8 +166,12 @@ public final class TraderScoring {
     /** A limit on the score with the reason, e.g. "no sells recorded" capping at 499. */
     public record ScoreCap(String id, int maxScore, String title, String detail) {}
 
-    /** One requirement of a tier gate, with the user's actual value. */
-    public record Requirement(String label, boolean met, String actual) {}
+    /**
+     * One requirement of a tier gate. name and target read as a checklist line ("Return on Capital:
+     * +0.4% (Target: ≥ +5.0%)"); progress is how far the actual value is towards the target, 0–1.
+     * label is the whole requirement in one sentence.
+     */
+    public record Requirement(String label, boolean met, String actual, String name, String target, double progress) {}
 
     /** Requirements that must all be met before scores of minScore and above are allowed. */
     public record TierGate(int minScore, String name, boolean unlocked, List<Requirement> requirements) {}
@@ -330,21 +334,40 @@ public final class TraderScoring {
         List<TierGate> gates = new ArrayList<>();
         for (double[] g : GATES) {
             int min = (int) g[0];
+            int trades = (int) g[4], days = (int) g[5];
             List<Requirement> reqs = List.of(
                     new Requirement("Return on capital (S₀) of at least " + pct0(g[1]), ret >= g[1],
-                            Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn())),
+                            Double.isNaN(e.bankrollReturn()) ? "no data" : signedPct1(e.bankrollReturn()),
+                            "Return on Capital", "≥ " + signedPct1(g[1]), progress(ret, g[1])),
                     new Requirement("Profit factor of at least " + fmt1(g[2]) + " on closed trades", pf >= g[2],
                             Double.isNaN(e.profitFactor()) ? "fewer than " + MIN_SELLS + " sells"
-                                    : Double.isInfinite(e.profitFactor()) ? "∞ (no losses)" : fmt2(e.profitFactor())),
+                                    : Double.isInfinite(e.profitFactor()) ? "∞ (no losses)" : fmt2(e.profitFactor()),
+                            "Profit Factor", "≥ " + fmt2(g[2]) + " on closed trades",
+                            Double.isInfinite(pf) ? 1.0 : progress(pf, g[2])),
                     new Requirement("Sharpe ratio of at least " + fmt1(g[3]), sharpe >= g[3],
-                            Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe())),
-                    new Requirement("At least " + (int) g[4] + " dated trades over " + (int) g[5] + "+ days",
-                            e.datedTrades() >= g[4] && e.activeDays() >= g[5],
-                            e.datedTrades() + " trades over " + e.activeDays() + " days"));
+                            Double.isNaN(e.sharpe()) ? "no data" : fmt2(e.sharpe()),
+                            "Risk-Adjusted Return (Sharpe)", "≥ " + fmt2(g[3]), progress(sharpe, g[3])),
+                    new Requirement("At least " + trades + " dated trades over " + days + "+ days",
+                            e.datedTrades() >= trades && e.activeDays() >= days,
+                            e.datedTrades() + " trade" + (e.datedTrades() == 1 ? "" : "s") + " over "
+                                    + e.activeDays() + " day" + (e.activeDays() == 1 ? "" : "s"),
+                            "Trading Longevity", "Minimum " + days + "-day track record, " + trades + "+ trades",
+                            Math.min(progress(e.datedTrades(), trades), progress(e.activeDays(), days))));
             gates.add(new TierGate(min, tierFor(min).rank() == 1 ? "Tier 1" : "Tier " + tierFor(min).rank() + " and above",
                     reqs.stream().allMatch(Requirement::met), reqs));
         }
         return gates;
+    }
+
+    /** Share of the way from zero to the target, 0–1; unknown or negative values count as no progress. */
+    static double progress(double actual, double target) {
+        if (Double.isNaN(actual) || !(target > 0)) return 0.0;
+        return Math.max(0.0, Math.min(1.0, actual / target));
+    }
+
+    /** "Tier 5 Advancement Locked" for the gate guarding scores of minScore and above. */
+    static String lockTitle(int minScore) {
+        return "Tier " + tierFor(minScore).rank() + " Advancement Locked";
     }
 
     static List<ScoreCap> scoreCaps(Evidence e, int pillarsScored, int pillarCount, List<TierGate> gates) {
@@ -380,9 +403,9 @@ public final class TraderScoring {
         for (TierGate gate : gates) {
             if (gate.unlocked()) continue;
             String missing = String.join("; ", gate.requirements().stream().filter(r -> !r.met())
-                    .map(r -> r.label() + " (now " + r.actual() + ")").toList());
-            caps.add(new ScoreCap("gate-" + gate.minScore(), gate.minScore() - 1, gate.name() + " locked",
-                    "Requires: " + missing + "."));
+                    .map(r -> r.name() + " " + r.actual() + " (target " + r.target() + ")").toList());
+            caps.add(new ScoreCap("gate-" + gate.minScore(), gate.minScore() - 1, lockTitle(gate.minScore()),
+                    "Still needed: " + missing + "."));
             break; // higher gates are implied by the first locked one
         }
         caps.sort(Comparator.comparingInt(ScoreCap::maxScore));
@@ -394,31 +417,31 @@ public final class TraderScoring {
         List<ScoreCap> caps = new ArrayList<>();
         TradeSize spec = a.largestSpeculativeBuy();
         if (spec != null && spec.share() >= RECKLESS_SPECULATIVE_SHARE) {
-            caps.add(new ScoreCap("reckless-allocation", RECKLESS_CAP, "Reckless speculative bet",
-                    "A single buy put " + pct1(spec.share()) + " of your capital into " + spec.trade().name() + ", a "
-                            + spec.asset().label() + ", on " + spec.trade().date() + ". A bet that size in a speculative "
-                            + "coin can wipe out most of the account, so the score stays in Tier 10 for "
-                            + ALLOCATION_WINDOW_DAYS + " days after it."));
+            caps.add(new ScoreCap("reckless-allocation", RECKLESS_CAP, "Oversized Speculative Position",
+                    "Putting " + pct0(RECKLESS_SPECULATIVE_SHARE) + " or more of capital into one speculative coin triggers a "
+                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to protect the account. On "
+                            + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name() + ", a "
+                            + spec.asset().label() + "."));
         } else if (spec != null && spec.share() >= IMPULSIVE_SPECULATIVE_SHARE) {
-            caps.add(new ScoreCap("speculative-over-allocation", IMPULSIVE_CAP, "Over-allocated speculative position",
-                    "A single buy put " + pct1(spec.share()) + " of your capital into " + spec.trade().name() + ", a "
-                            + spec.asset().label() + ", on " + spec.trade().date() + ". Speculative positions above "
-                            + pct0(IMPULSIVE_SPECULATIVE_SHARE) + " keep the score in Tier 9 or below for "
-                            + ALLOCATION_WINDOW_DAYS + " days."));
+            caps.add(new ScoreCap("speculative-over-allocation", IMPULSIVE_CAP, "Speculative Concentration Warning",
+                    "Putting over " + pct0(IMPULSIVE_SPECULATIVE_SHARE) + " of capital into one speculative coin triggers a "
+                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to encourage disciplined sizing. On "
+                            + spec.trade().date() + ", " + pct1(spec.share()) + " went into " + spec.trade().name() + ", a "
+                            + spec.asset().label() + "."));
         }
         TradeSize largest = a.largestBuy();
         if (largest != null && largest.share() >= IMPULSIVE_TRADE_SHARE) {
-            caps.add(new ScoreCap("over-allocation", IMPULSIVE_CAP, "Over-allocated position",
-                    "A single buy put " + pct1(largest.share()) + " of your capital into " + largest.trade().name() + " on "
-                            + largest.trade().date() + ". Any buy of " + pct0(IMPULSIVE_TRADE_SHARE) + " or more keeps the "
-                            + "score in Tier 9 or below for " + ALLOCATION_WINDOW_DAYS + " days."));
+            caps.add(new ScoreCap("over-allocation", IMPULSIVE_CAP, "Position Concentration Warning",
+                    "A single buy of " + pct0(IMPULSIVE_TRADE_SHARE) + " or more of capital triggers a " + ALLOCATION_WINDOW_DAYS
+                            + "-day risk cooling period to encourage disciplined sizing. On " + largest.trade().date() + ", "
+                            + pct1(largest.share()) + " went into " + largest.trade().name() + "."));
         }
         if (a.busiestDay() != null && a.busiestDayShare() >= IMPULSIVE_DAY_SHARE) {
-            caps.add(new ScoreCap("impulsive-deployment", IMPULSIVE_CAP, "Impulsive deployment",
-                    pct1(a.busiestDayShare()) + " of your capital went into " + a.busiestDayBuys() + " buy"
-                            + (a.busiestDayBuys() == 1 ? "" : "s") + " on " + a.busiestDay() + ". Deploying "
-                            + pct0(IMPULSIVE_DAY_SHARE) + " or more in a single day keeps the score in Tier 9 or below for "
-                            + ALLOCATION_WINDOW_DAYS + " days."));
+            caps.add(new ScoreCap("impulsive-deployment", IMPULSIVE_CAP, "Rapid Capital Deployment Warning",
+                    "Deploying over " + pct0(IMPULSIVE_DAY_SHARE) + " of capital in a single day triggers a "
+                            + ALLOCATION_WINDOW_DAYS + "-day risk cooling period to encourage disciplined scaling. On "
+                            + a.busiestDay() + ", " + pct1(a.busiestDayShare()) + " went into " + a.busiestDayBuys() + " buy"
+                            + (a.busiestDayBuys() == 1 ? "" : "s") + "."));
         }
         return caps;
     }

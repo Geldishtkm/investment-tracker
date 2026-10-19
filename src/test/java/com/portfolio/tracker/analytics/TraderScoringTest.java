@@ -691,7 +691,11 @@ class TraderScoringTest {
             assertEquals(9, e.tier().rank());
             ScoreCap binding = e.caps().get(0);
             assertEquals("impulsive-deployment", binding.id());
-            assertTrue(binding.detail().startsWith("98.5% of your capital went into 3 buys on " + TODAY), binding.detail());
+            assertEquals("Rapid Capital Deployment Warning", binding.title());
+            assertEquals(299, binding.maxScore());
+            assertTrue(binding.detail().startsWith("Deploying over 75% of capital in a single day triggers a 90-day risk cooling "
+                    + "period to encourage disciplined scaling."), binding.detail());
+            assertTrue(binding.detail().endsWith("On " + TODAY + ", 98.5% went into 3 buys."), binding.detail());
             assertFalse(e.caps().stream().anyMatch(c -> c.id().equals("stagnant")), "a new portfolio isn't stagnant");
             assertEquals(0.0, component(e, "deployment-pacing").score(), EPS);
             Flag f = flag(e, "impulsive-deployment").orElseThrow();
@@ -709,7 +713,7 @@ class TraderScoringTest {
             assertTrue(e.score() <= 149, "score " + e.score());
             assertEquals(10, e.tier().rank());
             assertEquals("reckless-allocation", e.caps().get(0).id());
-            assertTrue(e.caps().get(0).detail().contains("60.0% of your capital into pepe, a micro-cap asset"), e.caps().get(0).detail());
+            assertTrue(e.caps().get(0).detail().contains("60.0% went into pepe, a micro-cap asset"), e.caps().get(0).detail());
         }
 
         @Test
@@ -914,7 +918,8 @@ class TraderScoringTest {
             assertEquals(599, e.score());
             ScoreCap cap = e.caps().get(0);
             assertEquals("gate-600", cap.id());
-            assertTrue(cap.detail().contains("Profit factor of at least 1.2"), cap.detail());
+            assertEquals("Tier 5 Advancement Locked", cap.title());
+            assertTrue(cap.detail().contains("Profit Factor 1.10 (target ≥ 1.20 on closed trades)"), cap.detail());
             assertFalse(cap.detail().contains("Sharpe"), "only the failed requirements are listed");
         }
 
@@ -937,6 +942,32 @@ class TraderScoringTest {
             assertTrue(e.score() >= 900, "score " + e.score());
             assertEquals(1, e.tier().rank());
             assertEquals(e.rawScore(), e.score());
+        }
+
+        @Test
+        @DisplayName("A locked tier reads as a checklist: name, actual, target and progress")
+        void gateChecklist() {
+            var e = new TraderScoring.Evidence(0.6, -0.58, 0.004, Double.NaN, 1, 16, 1, 4, TraderScoring.Allocation.NONE);
+            TierGate tier5 = TraderScoring.tierGates(e).get(0);
+            Requirement ret = tier5.requirements().get(0);
+            assertEquals("Return on Capital", ret.name());
+            assertEquals("+0.4%", ret.actual());
+            assertEquals("≥ +5.0%", ret.target());
+            assertEquals(0.08, ret.progress(), 1e-9);
+            assertFalse(ret.met());
+
+            Requirement longevity = tier5.requirements().get(3);
+            assertEquals("Trading Longevity", longevity.name());
+            assertEquals("16 trades over 1 day", longevity.actual());
+            assertEquals("Minimum 90-day track record, 10+ trades", longevity.target());
+            assertEquals(1.0 / 90, longevity.progress(), 1e-9); // trades are enough; days are not
+            assertEquals(0.0, tier5.requirements().get(2).progress(), EPS); // a negative Sharpe is no progress
+            assertEquals(0.0, tier5.requirements().get(1).progress(), EPS); // no profit factor yet
+
+            ScoreCap lock = TraderScoring.scoreCaps(e, 4, 4, TraderScoring.tierGates(e)).stream()
+                    .filter(c -> c.id().equals("gate-600")).findFirst().orElseThrow();
+            assertEquals("Tier 5 Advancement Locked", lock.title());
+            assertTrue(lock.detail().contains("Return on Capital +0.4% (target ≥ +5.0%)"), lock.detail());
         }
 
         @Test
