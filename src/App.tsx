@@ -77,11 +77,27 @@ function App() {
   const [account, setAccount] = useState<Account | null>(null);
   const [showAccount, setShowAccount] = useState(false);
 
-  const loadAccount = async () => {
+  const loadAccount = async (): Promise<Account | null> => {
     try {
-      setAccount(await accountService.getAccount());
+      const loaded = await accountService.getAccount();
+      setAccount(loaded);
+      return loaded;
     } catch (error) {
       console.warn('Account details unavailable:', error);
+      return null;
+    }
+  };
+
+  /**
+   * Called when a buy needs a starting bankroll: re-reads the account so the bankroll setup opens
+   * (it shows whenever S₀ is missing), even if the account hadn't loaded before.
+   */
+  const requireBankroll = async () => {
+    const latest = await loadAccount();
+    if (!latest) {
+      showToast('error', 'Your account could not be loaded to set a starting bankroll. Please try again.');
+    } else if (!latest.bankrollRequired) {
+      showToast('info', 'Your starting bankroll is already set.');
     }
   };
 
@@ -391,7 +407,9 @@ function App() {
 
         {currentPage === 'coins' && (
           <CoinsPage cash={account?.cash ?? null} onBuy={handleBuy}
-                     heldNames={assets.map(a => a.name)} />
+                     heldNames={assets.map(a => a.name)}
+                     bankrollRequired={account?.bankrollRequired ?? false}
+                     onRequireBankroll={() => void requireBankroll()} />
         )}
 
         {currentPage !== 'portfolio' && currentPage !== 'coins' && currentPage !== 'institutional' && assetsLoadError && (

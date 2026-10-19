@@ -11,6 +11,7 @@ vi.mock('../../services/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/api')>();
   return { ...actual, assetService: api };
 });
+const { ApiError } = await import('../../services/api');
 
 const coins: Coin[] = [
   { id: 'bitcoin', name: 'Bitcoin', symbol: 'btc', image: '', current_price: 80000, market_cap: 1.6e12, market_cap_rank: 1,
@@ -59,7 +60,7 @@ describe('CoinsPage', () => {
 
     await userEvent.type(within(dialog).getByLabelText('Amount (USD)', { selector: 'input' }), '2000');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Buy SOL' }));
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Not enough cash');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Insufficient cash available. Current cash balance: $1,000.00');
     expect(onBuy).not.toHaveBeenCalled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: '10% of cash' }));
@@ -104,5 +105,60 @@ describe('CoinsPage', () => {
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search coins' }), 'Coin 487');
     expect(await screen.findByTestId('coin-coin-487')).toBeInTheDocument();
     expect(screen.getByText(/1 match ·/)).toBeInTheDocument();
+  });
+
+  describe('click to buy', () => {
+    it('opens the ticket from a row click, pre-filled with the asset id, market price, name and today', async () => {
+      render(<CoinsPage cash={1000} onBuy={vi.fn()} />);
+      await userEvent.click(await screen.findByText('Solana'));
+      const dialog = screen.getByRole('dialog', { name: 'Buy Solana' });
+      expect(within(dialog).getByTestId('ticket-asset-id')).toHaveTextContent('solana');
+      expect(within(dialog).getByTestId('ticket-price')).toHaveTextContent('$100.00');
+      expect(within(dialog).getByLabelText('Trade date')).toHaveValue(todayLocal());
+    });
+
+    it('opens from the keyboard, and the row buttons open only their own action', async () => {
+      render(<CoinsPage cash={1000} onBuy={vi.fn()} />);
+      const row = await screen.findByTestId('coin-bitcoin');
+      row.focus();
+      await userEvent.keyboard('{Enter}');
+      expect(screen.getByRole('dialog', { name: 'Buy Bitcoin' })).toBeInTheDocument();
+      await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Close' }));
+
+      await userEvent.click(within(row).getByRole('button', { name: 'Buy Bitcoin' }));
+      expect(screen.getAllByRole('dialog')).toHaveLength(1);
+    });
+
+    it('opens the bankroll setup instead when S₀ isn’t set, then the ticket once it is', async () => {
+      const onRequireBankroll = vi.fn();
+      const { rerender } = render(<CoinsPage cash={null} onBuy={vi.fn()} bankrollRequired onRequireBankroll={onRequireBankroll} />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Buy Solana' }));
+      expect(onRequireBankroll).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+      rerender(<CoinsPage cash={10000} onBuy={vi.fn()} bankrollRequired={false} onRequireBankroll={onRequireBankroll} />);
+      expect(await screen.findByRole('dialog', { name: 'Buy Solana' })).toBeInTheDocument();
+    });
+
+    it('hands off to the bankroll setup when the server says S₀ is missing', async () => {
+      const onRequireBankroll = vi.fn();
+      const onBuy = vi.fn().mockRejectedValue(new ApiError('Set your starting bankroll before buying.', 409, 'BANKROLL_REQUIRED'));
+      render(<CoinsPage cash={null} onBuy={onBuy} onRequireBankroll={onRequireBankroll} />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Buy Solana' }));
+      await userEvent.type(screen.getByLabelText('Amount (USD)', { selector: 'input' }), '50');
+      await userEvent.click(screen.getByRole('button', { name: 'Buy SOL' }));
+      expect(onRequireBankroll).toHaveBeenCalled();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('shows the server’s cash balance when it refuses for insufficient funds', async () => {
+      const onBuy = vi.fn().mockRejectedValue(new ApiError('Not enough cash', 400, 'INSUFFICIENT_FUNDS', { cash: 42.5, cost: 50 }));
+      render(<CoinsPage cash={1000} onBuy={onBuy} />);
+      await userEvent.click(await screen.findByRole('button', { name: 'Buy Solana' }));
+      const dialog = screen.getByRole('dialog', { name: 'Buy Solana' });
+      await userEvent.type(within(dialog).getByLabelText('Amount (USD)', { selector: 'input' }), '50');
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Buy SOL' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Insufficient cash available. Current cash balance: $42.50');
+    });
   });
 });

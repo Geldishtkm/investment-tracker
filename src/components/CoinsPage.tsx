@@ -1,7 +1,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { LineChart, RefreshCw, Search } from 'lucide-react';
 import { Coin } from '../types';
-import { NewAsset } from '../services/api';
+import { ApiError, NewAsset } from '../services/api';
 import { useMarketData } from '../hooks/useMarketData';
 import { useVirtualRows } from '../hooks/useVirtualRows';
 import { todayLocal } from '../utils/dates';
@@ -22,6 +22,10 @@ interface CoinsPageProps {
   onBuy: (asset: NewAsset) => Promise<void>;
   /** Names of current holdings, to mark coins already held. */
   heldNames?: string[];
+  /** True while the starting bankroll (S₀) isn't set: buying then opens the bankroll setup first. */
+  bankrollRequired?: boolean;
+  /** Opens the bankroll setup. */
+  onRequireBankroll?: () => void;
 }
 
 const sortValue = (c: Coin, key: SortKey): number => {
@@ -40,11 +44,29 @@ const sortValue = (c: Coin, key: SortKey): number => {
  * Market grid: the top 500 coins by market cap with trends, volume, and a quick-buy ticket. Rows are
  * windowed (only those in view are rendered) and search is deferred, so typing and scrolling stay fast.
  */
-const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) => {
+const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [], bankrollRequired = false, onRequireBankroll }) => {
   const { coins, loading, error, asOf, refresh } = useMarketData();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'rank', desc: true });
   const [buying, setBuying] = useState<Coin | null>(null);
+  // A coin the user tried to buy before setting S₀: its ticket opens once the bankroll is set
+  const [pending, setPending] = useState<Coin | null>(null);
+
+  const openTicket = (coin: Coin) => {
+    if (bankrollRequired) {
+      setPending(coin);
+      onRequireBankroll?.();
+      return;
+    }
+    setBuying(coin);
+  };
+
+  useEffect(() => {
+    if (pending && !bankrollRequired && cash != null) {
+      setBuying(pending);
+      setPending(null);
+    }
+  }, [pending, bankrollRequired, cash]);
   const [charting, setCharting] = useState<Coin | null>(null);
 
   const deferredSearch = useDeferredValue(search);
@@ -143,8 +165,11 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
                 {rows.slice(win.start, win.end).map((c, i) => {
                   const turnover = c.market_cap ? (c.total_volume ?? 0) / c.market_cap : null;
                   return (
-                    <tr key={c.id} className="whitespace-nowrap transition-colors duration-100 hover:bg-white/[0.03]" style={{ height: ROW_HEIGHT }}
-                        aria-rowindex={win.start + i + 2} data-testid={`coin-${c.id}`}>
+                    <tr key={c.id} className={`cursor-pointer whitespace-nowrap transition-colors duration-100 hover:bg-white/[0.03] focus-visible:bg-white/[0.04] focus-visible:outline-none`}
+                        style={{ height: ROW_HEIGHT }} aria-rowindex={win.start + i + 2} data-testid={`coin-${c.id}`}
+                        tabIndex={0} title={`Buy ${c.name}`}
+                        onClick={() => openTicket(c)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTicket(c); } }}>
                       <td className="num px-3 py-2 text-left text-term-dim">{c.market_cap_rank ?? '—'}</td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2.5">
@@ -171,10 +196,12 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
                       <td className="px-3 py-2">
                         <div className="flex justify-end gap-1.5">
                           <button type="button" className="rounded p-1 text-term-dim hover:bg-term-raised hover:text-term-text"
-                                  aria-label={`${c.name} price chart`} onClick={() => setCharting(c)}>
+                                  aria-label={`${c.name} price chart`} onClick={e => { e.stopPropagation(); setCharting(c); }}
+                                  onKeyDown={e => e.stopPropagation()}>
                             <LineChart size={15} />
                           </button>
-                          <button type="button" className={btn.buy} aria-label={`Buy ${c.name}`} onClick={() => setBuying(c)}>Buy</button>
+                          <button type="button" className={btn.buy} aria-label={`Buy ${c.name}`}
+                                  onClick={e => { e.stopPropagation(); openTicket(c); }} onKeyDown={e => e.stopPropagation()}>Buy</button>
                         </div>
                       </td>
                     </tr>
@@ -187,20 +214,28 @@ const CoinsPage: React.FC<CoinsPageProps> = ({ cash, onBuy, heldNames = [] }) =>
         )}
       </Panel>
 
-      {buying && <QuickBuyModal coin={buying} cash={cash} onBuy={onBuy} onClose={() => setBuying(null)} />}
+      {buying && <QuickBuyModal coin={buying} cash={cash} onBuy={onBuy} onClose={() => setBuying(null)}
+                                onRequireBankroll={() => { setPending(buying); setBuying(null); onRequireBankroll?.(); }} />}
       {charting && <PriceHistoryChart selectedCoin={charting} onClose={() => setCharting(null)} />}
     </div>
   );
 };
 
 /** Order ticket for a coin: size by quantity or by USD amount, at the market price, dated today by default. */
-export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (a: NewAsset) => Promise<void>; onClose: () => void }> = ({
-  coin, cash, onBuy, onClose,
-}) => {
+export const QuickBuyModal: React.FC<{
+  coin: Coin;
+  cash: number | null;
+  onBuy: (a: NewAsset) => Promise<void>;
+  onClose: () => void;
+  /** Called when the server says S₀ isn't set yet. */
+  onRequireBankroll?: () => void;
+}> = ({ coin, cash, onBuy, onClose, onRequireBankroll }) => {
   const [mode, setMode] = useState<'usd' | 'qty'>('usd');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayLocal());
   const [error, setError] = useState<string | null>(null);
+  /** Set when the order costs more than the cash: the balance to show in the banner. */
+  const [shortOf, setShortOf] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const price = coin.current_price;
   const entered = parseFloat(amount) || 0;
@@ -212,18 +247,25 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+    setShortOf(null);
     if (!(quantity > 0)) return setError('Enter an amount greater than 0.');
-    if (cash != null && cost > cash + 0.005) return setError(`Not enough cash: this costs ${usd(cost)} and you have ${usd(cash)}.`);
+    if (cash != null && cost > cash + 0.005) return setShortOf(cash);
     if (!date || date > today) return setError('Choose a trade date that is not in the future.');
     setSaving(true);
-    setError(null);
     try {
       // Round to 8 decimals: enough precision for any coin, and avoids float noise in the ledger
       const q = Math.round(quantity * 1e8) / 1e8;
       await onBuy({ name: coin.name, quantity: q, pricePerUnit: price, purchasePricePerUnit: price, initialInvestment: q * price, purchaseDate: date });
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The buy failed');
+      if (err instanceof ApiError && err.code === 'BANKROLL_REQUIRED') {
+        onRequireBankroll?.();
+      } else if (err instanceof ApiError && err.code === 'INSUFFICIENT_FUNDS') {
+        setShortOf(typeof err.details.cash === 'number' ? err.details.cash : cash ?? 0);
+      } else {
+        setError(err instanceof Error ? err.message : 'The buy failed');
+      }
     } finally {
       setSaving(false);
     }
@@ -233,9 +275,18 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
     <Modal title={`Buy ${coin.name}`} labelledBy="buy-title" onClose={onClose}>
       <form onSubmit={submit} noValidate className="space-y-3">
         <div className="flex items-center justify-between rounded-md border border-term-line bg-black/20 px-3 py-2 text-sm">
-          <span className="flex items-center gap-2"><CoinIcon src={coin.image} name={coin.name} size={16} />{coin.symbol.toUpperCase()} / USD</span>
-          <span className="num text-term-text">{usd(price)}</span>
+          <span className="flex items-center gap-2">
+            <CoinIcon src={coin.image} name={coin.name} size={16} />{coin.symbol.toUpperCase()} / USD
+            <span className="num text-[11px] text-term-dim" data-testid="ticket-asset-id">{coin.id}</span>
+          </span>
+          <span className="num text-term-text" data-testid="ticket-price">{usd(price)}</span>
         </div>
+
+        {shortOf != null && (
+          <div role="alert" className="rounded-md border border-term-down/40 bg-term-down/10 px-3 py-2 text-sm text-term-down">
+            Insufficient cash available. Current cash balance: {usd(shortOf)}
+          </div>
+        )}
 
         <div className={`${segmented.track} flex w-full`} role="group" aria-label="Order size in">
           {(['usd', 'qty'] as const).map(m => (
@@ -248,7 +299,7 @@ export const QuickBuyModal: React.FC<{ coin: Coin; cash: number | null; onBuy: (
 
         <label className="block text-xs font-medium uppercase tracking-wider text-term-dim">
           {mode === 'usd' ? 'Amount (USD)' : 'Quantity'}
-          <input type="number" min="0" step="any" value={amount} onChange={e => setAmount(e.target.value)} autoFocus
+          <input type="number" min="0" step="any" value={amount} onChange={e => { setAmount(e.target.value); setShortOf(null); }} autoFocus
                  className={`num mt-1 ${input}`} />
         </label>
         {presets.length > 0 && (

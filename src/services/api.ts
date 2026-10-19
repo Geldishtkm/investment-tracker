@@ -7,19 +7,23 @@ import { authService } from './authService';
 export class ApiError extends Error {
   code?: string;
   status: number;
+  /** The rest of the error body, e.g. { cash, cost } for INSUFFICIENT_FUNDS. */
+  details: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details: Record<string, unknown> = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
 async function jsonOrThrow<T>(response: Response, fallback: string): Promise<T> {
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new ApiError(body?.error || `${fallback} (HTTP ${response.status})`, response.status, body?.code);
+    const { error, code, ...details } = body ?? {};
+    throw new ApiError(error || `${fallback} (HTTP ${response.status})`, response.status, code, details);
   }
   return body as T;
 }
