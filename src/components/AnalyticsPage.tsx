@@ -22,7 +22,7 @@ interface AnalyticsPageProps {
   onShowToast?: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
-/** Risk-adjusted performance, diversification and per-asset attribution, all computed by the backend. */
+/** Risk-adjusted performance, allocation and per-asset attribution, all computed by the backend. */
 const AnalyticsPage: React.FC<AnalyticsPageProps> = ({ onAddAsset, refreshKey = 0, cash = null, onTraded, onShowToast }) => {
   const [actionFor, setActionFor] = useState<Asset | null>(null);
   const [data, setData] = useState<PortfolioAnalytics | null>(null);
