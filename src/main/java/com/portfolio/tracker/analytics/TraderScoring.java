@@ -78,7 +78,14 @@ public final class TraderScoring {
     static final double MAX_IMPACT = 4.0;             // (a 25% speculative trade counts four times)
     static final double MICRO_CAP = 250e6;            // market capitalisation below $250M
     static final double SPECULATIVE_VOLATILITY = 1.0; // annualized volatility of 100% or more
-    static final int MIN_VOLATILITY_DAYS = 30;
+    /**
+     * Daily returns needed before any volatility-based figure (volatility, Sharpe, Sortino, beta, a coin's
+     * own volatility) is computed: fewer make annualized figures swing wildly, so the metric is left out.
+     */
+    static final int MIN_RISK_OBSERVATIONS = 60;
+    static final int MIN_VOLATILITY_DAYS = MIN_RISK_OBSERVATIONS;
+    /** Rolling-beta windows where the benchmark barely moved (below this share of its typical variance) are skipped. */
+    static final double MIN_BENCHMARK_VARIANCE_SHARE = 0.05;
 
     private TraderScoring() {
     }
@@ -335,7 +342,7 @@ public final class TraderScoring {
     static Evidence evidence(Inputs in, LotBook book, Sizing sizing) {
         double[] rp = in.portfolioReturns();
         double vol = Double.NaN, sharpe = Double.NaN;
-        if (rp != null && rp.length > 1) {
+        if (rp != null && rp.length >= MIN_RISK_OBSERVATIONS) {
             vol = RiskMath.sampleStdDev(rp) * Math.sqrt(in.periodsPerYear());
             if (vol > 0) sharpe = (RiskMath.mean(rp) * in.periodsPerYear() - in.riskFreeRate()) / vol;
         }
@@ -520,6 +527,11 @@ public final class TraderScoring {
         int periods = in.periodsPerYear();
         String noHistory = in.historyUnavailableReason() != null ? in.historyUnavailableReason()
                 : "Price history for your holdings is unavailable.";
+        // Annualizing a handful of days makes volatility (and everything built on it) meaningless
+        if (rp != null && rp.length < MIN_RISK_OBSERVATIONS) {
+            noHistory = "Needs at least " + MIN_RISK_OBSERVATIONS + " daily returns of price history; " + rp.length + " available.";
+            rp = null;
+        }
         double volatility = rp == null ? Double.NaN : RiskMath.sampleStdDev(rp) * Math.sqrt(periods);
         boolean hasHistory = rp != null && volatility > 0;
         double annualReturn = rp == null ? Double.NaN : RiskMath.mean(rp) * periods;
@@ -629,10 +641,11 @@ public final class TraderScoring {
         }
 
         if (div.holdings() == 1) {
-            out.add(component("correlation", "Average pairwise correlation", 20, null, "n/a (one holding)", 0.0,
-                    "A single holding has nothing to offset it"));
-            out.add(component("independent-bets", "Independent bets (correlation-adjusted)", 20, 1.0, "1.0", 0.0,
-                    "A single holding is one bet"));
+            // Correlation is undefined for one coin; the concentration and independent-bets scores already
+            // reflect having a single position, so it is left out rather than scored as zero
+            out.add(unavailable("correlation", "Average pairwise correlation", 20, "Needs two or more holdings."));
+            out.add(component("independent-bets", "Independent bets (correlation-adjusted)", 20, 1.0, "1.0",
+                    lin(1.0, Diversification.BETS_WORST, Diversification.BETS_BEST), "A single holding is one bet"));
             return;
         }
         if (!div.correlationAvailable()) {
@@ -693,11 +706,14 @@ public final class TraderScoring {
 
     static List<Double> rollingBetas(double[] rp, double[] bench) {
         List<Double> betas = new ArrayList<>();
+        // Beta divides by the benchmark's variance: a window where the benchmark barely moved would make it
+        // explode, so windows below a small share of the benchmark's overall variance are skipped
+        double floor = MIN_BENCHMARK_VARIANCE_SHARE * RiskMath.sampleVariance(bench);
         for (int start = 0; start + BETA_WINDOW <= rp.length; start += BETA_STEP) {
             double[] x = Arrays.copyOfRange(rp, start, start + BETA_WINDOW);
             double[] m = Arrays.copyOfRange(bench, start, start + BETA_WINDOW);
             double var = RiskMath.sampleVariance(m);
-            if (var > 0) betas.add(RiskMath.covariance(x, m) / var);
+            if (var > 0 && var >= floor) betas.add(RiskMath.covariance(x, m) / var);
         }
         return betas;
     }
@@ -1115,9 +1131,13 @@ public final class TraderScoring {
                             "Profit factor " + fmt2(pf) + ": closed trades lost " + money(loss) + " against " + money(profit) + " gained.",
                             "Let winners run longer and cut losers sooner; review whether losing trades shared an entry pattern."));
                 }
-            } else {
-                out.add(component("profit-factor", "Profit factor", 80, null, "∞ (no losing sells)", profit > 0 ? 1.0 : 0.5,
+            } else if (profit > 0) {
+                // No losses: the ratio is unbounded, at or beyond the top of the band
+                out.add(component("profit-factor", "Profit factor", 80, null, "∞ (no losing sells)", lin(Double.POSITIVE_INFINITY, 0.5, 2.0),
                         "Gross realized profit " + money(profit) + ", no realized losses"));
+            } else {
+                out.add(unavailable("profit-factor", "Profit factor", 80,
+                        "Every closed trade broke even, so profit factor (profit ÷ loss) is undefined."));
             }
         } else {
             out.add(unavailable("profit-factor", "Profit factor", 80, "Needs at least " + MIN_EVALUABLE_TRADES + " sells."));

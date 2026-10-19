@@ -9,6 +9,8 @@ import PillarRadar from './institutional/PillarRadar';
 import DiversificationCard from './institutional/DiversificationCard';
 import { PILLAR_SHORT_NAME, SEVERITY_STYLE, tierColor } from './institutional/styles';
 import Term from './ui/Term';
+import InfoTip from './ui/InfoTip';
+import { METRIC_GUIDE } from './institutional/metricGuide';
 import { Badge, Metric, Panel, ShareBar, Skeleton, SkeletonRows, btn, input } from './ui/kit';
 import { pct } from './ui/format';
 
@@ -192,6 +194,9 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
 
 const PillarCard: React.FC<{ pillar: ScorePillar }> = ({ pillar }) => {
   const pctScore = pillar.available ? pillar.points / pillar.maxPoints : 0;
+  const withData = pillar.components.filter(c => c.available);
+  const availableWeight = withData.reduce((s, c) => s + c.weight, 0);
+  const availablePoints = withData.reduce((s, c) => s + c.points, 0);
   return (
     <div className="rounded-lg border border-term-line bg-term-panel" data-testid={`pillar-${pillar.key}`}>
       <div className="flex items-baseline justify-between border-b border-term-line px-4 py-2.5">
@@ -202,14 +207,22 @@ const PillarCard: React.FC<{ pillar: ScorePillar }> = ({ pillar }) => {
       </div>
       <div className="px-4 pt-2">
         <ShareBar value={pctScore} tone={pctScore >= 0.7 ? 'up' : pctScore < 0.4 ? 'down' : 'accent'} />
-        <div className="mt-1 text-[11px] text-term-dim">{Math.round(pillar.coverage * 100)}% of this pillar's metrics have data</div>
+        <div className="mt-1 text-[11px] text-term-dim" data-testid={`coverage-${pillar.key}`}>
+          {Math.round(pillar.coverage * 100)}% of this pillar's metrics have data
+          {pillar.available && pillar.coverage < 0.999 && (
+            <> · scaled to {pillar.maxPoints} from the {Math.round(availablePoints)} of {Math.round(availableWeight)} points with data, so missing data costs nothing</>
+          )}
+        </div>
       </div>
       <table className="mt-1 w-full text-sm">
         <tbody className="divide-y divide-term-line">
           {pillar.components.map(c => (
-            <tr key={c.key} title={c.detail}>
+            <tr key={c.key}>
               <td className="px-4 py-2">
-                <div className={c.available ? 'text-term-text' : 'text-term-dim'}>{c.name}</div>
+                <div className={`flex items-center gap-1.5 ${c.available ? 'text-term-text' : 'text-term-dim'}`}>
+                  {c.name}
+                  {METRIC_GUIDE[c.key] && <InfoTip title={c.name} {...METRIC_GUIDE[c.key]} />}
+                </div>
                 <div className="text-xs text-term-dim">{c.available ? c.displayValue : c.detail}</div>
               </td>
               <td className="w-28 px-4 py-2 align-middle">

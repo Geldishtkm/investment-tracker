@@ -232,4 +232,28 @@ describe('InstitutionalEvaluationPage', () => {
     expect(within(form).getByRole('alert')).toHaveTextContent('between 1% and 300%');
     expect(api.setRiskTarget).not.toHaveBeenCalled();
   });
+
+  it('puts an info tooltip on every pillar metric and explains coverage scaling', async () => {
+    const component = (key: string, name: string, points: number, weight: number, available = true) => ({
+      key, name, available, value: available ? 1 : null, displayValue: available ? 'shown' : 'Not enough data', weight,
+      score: available ? points / weight : 0, points: available ? points : 0, detail: available ? 'how' : 'Trading volume unavailable.',
+    });
+    const base = scoreFixture();
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture({
+      pillars: base.pillars.map(p => p.key !== 'execution' ? p : {
+        ...p, points: 250, coverage: 0.4, components: [
+          component('velocity', 'Trading velocity', 100, 100),
+          component('liquidity', 'Liquidity impact', 0, 75, false),
+          component('risk-target', 'Risk target adherence', 0, 75, false),
+        ],
+      }),
+    }));
+    render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
+    const exec = await screen.findByTestId('pillar-execution');
+    for (const name of ['Trading velocity', 'Liquidity impact', 'Risk target adherence']) {
+      expect(within(exec).getByRole('button', { name: `About ${name}` })).toBeInTheDocument();
+    }
+    expect(screen.getByTestId('coverage-execution'))
+      .toHaveTextContent('40% of this pillar\'s metrics have data · scaled to 250 from the 100 of 100 points with data, so missing data costs nothing');
+  });
 });

@@ -287,13 +287,42 @@ class TraderScoringTest {
         }
 
         @Test
-        @DisplayName("A single holding scores nothing for correlation or independent bets")
+        @DisplayName("A single holding: correlation is undefined and left out; it is one independent bet")
         void singleHoldingDiversification() {
             Evaluation e = TraderScoring.evaluate(holdingsOnly(List.of(new Holding("eth", "Ethereum", 5000))));
-            assertEquals(0.0, component(e, "correlation").score(), EPS);
-            assertTrue(component(e, "correlation").available());
+            assertFalse(component(e, "correlation").available(), "no fixed zero for an undefined metric");
+            assertEquals("Needs two or more holdings.", component(e, "correlation").detail());
             assertEquals(1.0, component(e, "independent-bets").value(), EPS);
-            assertEquals(0.0, component(e, "independent-bets").points(), EPS);
+            assertEquals(0.0, component(e, "independent-bets").points(), EPS); // 1 bet is the bottom of the band
+        }
+
+        @Test
+        @DisplayName("Fewer than 60 daily returns: volatility, Sharpe, Sortino and beta are left out, not annualized from noise")
+        void shortHistoryLeftOut() {
+            double[] few = new double[6];
+            for (int i = 0; i < few.length; i++) few[i] = i % 2 == 0 ? 0.20 : -0.18;   // would annualize to ~370%
+            Evaluation e = TraderScoring.evaluate(inputs(equalHoldings(3), few, few, List.of(), Map.of(), Map.of(), null));
+            for (String key : List.of("sharpe", "sortino", "volatility", "beta-stability")) {
+                Component c = component(e, key);
+                assertFalse(c.available(), key);
+                assertTrue(c.detail().contains("at least 60 daily returns"), c.detail());
+            }
+            assertTrue(flag(e, "high-volatility").isEmpty(), "no 'astronomical volatility' flag from 6 days");
+        }
+
+        @Test
+        @DisplayName("Beta skips windows where the benchmark barely moved instead of dividing by almost nothing")
+        void betaIgnoresFlatBenchmarkWindows() {
+            Random rnd = new Random(11);
+            double[] bench = new double[150], port = new double[150];
+            for (int t = 0; t < 150; t++) {
+                boolean flat = t >= 60 && t < 90;                // a month where Bitcoin hardly moved
+                bench[t] = flat ? rnd.nextGaussian() * 1e-6 : rnd.nextGaussian() * 0.03;
+                port[t] = flat ? rnd.nextGaussian() * 0.02 : bench[t];
+            }
+            List<Double> betas = TraderScoring.rollingBetas(port, bench);
+            assertFalse(betas.isEmpty());
+            for (double b : betas) assertTrue(Math.abs(b) < 5, "beta " + b);
         }
 
         @Test
@@ -1026,6 +1055,35 @@ class TraderScoringTest {
             assertTrue(TraderScoring.tierGates(e).get(0).unlocked());
             var below = new TraderScoring.Evidence(0.4, 1.0, 0.0494, 1.5, 4, 25, 200, 5, TraderScoring.Allocation.NONE);
             assertFalse(TraderScoring.tierGates(below).get(0).unlocked());
+        }
+
+        @Test
+        @DisplayName("Closed trades that all broke even leave profit factor out instead of a made-up 0.5")
+        void breakEvenProfitFactor() {
+            List<TradeEvent> flat = roundTrips(3, 10, 100, 100, 0);   // every sell at the buy price
+            Evaluation e = TraderScoring.evaluate(inputs(List.of(), null, null, flat, Map.of(), Map.of(), null));
+            assertFalse(component(e, "profit-factor").available());
+            assertTrue(component(e, "profit-factor").detail().contains("broke even"));
+        }
+
+        @Test
+        @DisplayName("Missing market volume data costs no points: the pillar is scaled over the metrics that have data")
+        void coverageNormalization() {
+            List<TradeEvent> trades = roundTrips(4, 7, 100, 110, 0);
+            Evaluation withoutVolume = TraderScoring.evaluate(inputs(List.of(), null, null, trades, Map.of(), Map.of(), null));
+            Pillar exec = pillar(withoutVolume, "execution");
+            assertFalse(component(withoutVolume, "liquidity").available());
+            assertEquals(0.4, exec.coverage(), 1e-9);               // only velocity (100 of 250) has data
+            assertTrue(exec.available());
+            assertEquals(250 * component(withoutVolume, "velocity").score(), exec.points(), 1e-9);
+
+            // Real market data comes with both 24h volume and market cap (a listed coin without a cap counts as unverified)
+            Evaluation withVolume = TraderScoring.evaluate(new Inputs(List.of(), null, null, "No price history.", trades, Map.of(),
+                    Map.of(), Map.of("btc", 1e12), null, 0.04, 365, TODAY, null, Map.of("btc", 1.6e12)));
+            assertEquals(1.0, component(withVolume, "liquidity").score(), EPS);
+            // Adding a perfect liquidity score can only help; its absence never hurt
+            assertTrue(pillar(withVolume, "execution").points() >= exec.points() - 1e-9,
+                    pillar(withVolume, "execution") + " vs " + exec);
         }
 
         @Test
