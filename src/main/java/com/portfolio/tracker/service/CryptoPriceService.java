@@ -57,6 +57,8 @@ public class CryptoPriceService {
     }
 
     private final Map<String, SpotPrice> spotPrices = new ConcurrentHashMap<>();
+    /** True while {@link #refreshCache()} is calling CoinGecko. */
+    private volatile boolean refreshing;
 
     public CryptoPriceService(CoinGeckoClient coinGecko,
                               @Value("${coingecko.spot-price-ttl-seconds}") long spotPriceTtlSeconds) {
@@ -72,6 +74,15 @@ public class CryptoPriceService {
      */
     @Scheduled(fixedRate = CACHE_DURATION_MS)
     public synchronized void refreshCache() {
+        refreshing = true;
+        try {
+            refreshPages();
+        } finally {
+            refreshing = false;
+        }
+    }
+
+    private void refreshPages() {
         List<Map<String, Object>> coins = new ArrayList<>();
         int pages = (TOP_COINS_LIMIT + PAGE_SIZE - 1) / PAGE_SIZE;
         for (int page = 1; page <= pages; page++) {
@@ -147,6 +158,10 @@ public class CryptoPriceService {
     public List<Map<String, Object>> getTopCoins() {
         if (isCacheValid(System.currentTimeMillis())) {
             return cachedTopCoins;
+        }
+        List<Map<String, Object>> stale = cachedTopCoins;
+        if (refreshing && stale != null && !stale.isEmpty()) {
+            return stale; // a refresh is already running; don't make the request wait on CoinGecko
         }
         synchronized (this) {
             // Another request may have refreshed it while we waited
