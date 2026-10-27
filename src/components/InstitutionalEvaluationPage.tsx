@@ -6,7 +6,6 @@ import { DiagnosticFlag, InstitutionalScore, ScorePillar } from '../types';
 import PortfolioEmptyState from './PortfolioEmptyState';
 import ScoreGauge from './institutional/ScoreGauge';
 import PillarRadar from './institutional/PillarRadar';
-import DiversificationCard from './institutional/DiversificationCard';
 import { PILLAR_SHORT_NAME, SEVERITY_STYLE, tierColor } from './institutional/styles';
 import Term from './ui/Term';
 import InfoTip from './ui/InfoTip';
@@ -124,11 +123,6 @@ const InstitutionalEvaluationPage: React.FC<InstitutionalEvaluationPageProps> = 
           {data.pillars.map(p => <PillarCard key={p.key} pillar={p} />)}
         </div>
       </section>
-
-      {data.diversification && (
-        <DiversificationCard diversification={data.diversification}
-                             riskComponents={data.pillars.find(p => p.key === 'risk')?.components ?? []} />
-      )}
 
       {/* Diagnostics */}
       <Panel flush title="Diagnostic assessment" id="diagnostics"

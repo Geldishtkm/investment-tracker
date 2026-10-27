@@ -58,18 +58,12 @@ describe('InstitutionalEvaluationPage', () => {
     expect(screen.getByText(/Liquidity impact: largest trade/)).toBeInTheDocument();
   });
 
-  it('shows the Risk & Diversification card under the pillar breakdown, and hides it without holdings', async () => {
-    api.getInstitutionalScore.mockResolvedValueOnce(scoreFixture());
-    const { unmount } = render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
-    const card = await screen.findByTestId('diversification-card');
-    expect(within(card).getByRole('heading', { name: 'Risk & Diversification' })).toBeInTheDocument();
-    unmount();
-    resetScoreCache(); // a new evaluation, not the one just cached
-
-    api.getInstitutionalScore.mockResolvedValueOnce(scoreFixture({ diversification: null }));
+  it('does not show the Risk & Diversification card', async () => {
+    api.getInstitutionalScore.mockResolvedValue(scoreFixture());
     render(<InstitutionalEvaluationPage onAddAsset={() => {}} />);
     await screen.findByRole('meter', { name: 'Trader Index Score' });
-    expect(screen.queryByTestId('diversification-card')).not.toBeInTheDocument();
+    expect(screen.queryByText('Risk & Diversification')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Correlation matrix' })).not.toBeInTheDocument();
   });
 
   it('shows position-sizing findings with the capital share at risk', async () => {
